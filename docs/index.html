@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>الإذاعة المدرسية — تحميل تطبيق أندرويد</title>
+<meta name="description" content="تحميل أحدث إصدار من تطبيق الإذاعة المدرسية للأندرويد — Kotlin، APK موقّع، arm64-v8a + armeabi-v7a">
+<style>
+  :root{
+    --primary:#00695C; --primary-dark:#004D40; --primary-light:#4DB6AC;
+    --accent:#C62828; --bg:#F6F9F8; --card:#FFFFFF;
+    --text:#1C2B2A; --text2:#5A6B6A; --chip:#E0F2F1;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI',Tahoma,Arial,sans-serif}
+  body{background:var(--bg);color:var(--text);min-height:100vh}
+  header{background:linear-gradient(135deg,var(--primary-dark),var(--primary));color:#fff;padding:48px 20px 40px;text-align:center}
+  header .logo{width:88px;height:88px;border-radius:24px;background:rgba(255,255,255,.12);display:inline-flex;align-items:center;justify-content:center;font-size:44px;margin-bottom:14px;border:2px solid rgba(255,255,255,.25)}
+  header h1{font-size:30px;margin-bottom:8px}
+  header p{opacity:.85;font-size:14px}
+  .badges{margin-top:14px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+  .badge{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);border-radius:20px;padding:4px 14px;font-size:12px}
+  main{max-width:860px;margin:-24px auto 40px;padding:0 16px}
+  .card{background:var(--card);border-radius:16px;box-shadow:0 6px 24px rgba(0,0,0,.07);padding:26px;margin-bottom:18px}
+  .latest{border-top:4px solid var(--primary)}
+  .tag{display:inline-block;background:var(--chip);color:var(--primary-dark);border-radius:20px;padding:3px 14px;font-size:13px;font-weight:bold;margin-bottom:10px}
+  h2{font-size:21px;margin-bottom:12px;color:var(--primary-dark)}
+  h3{font-size:16px;margin:14px 0 6px}
+  .btn{display:inline-block;background:var(--primary);color:#fff;text-decoration:none;border-radius:12px;padding:13px 26px;font-weight:bold;font-size:15px;transition:.2s;margin:4px 4px 4px 0}
+  .btn:hover{background:var(--primary-dark)}
+  .btn.outline{background:transparent;color:var(--primary);border:2px solid var(--primary)}
+  .btn.outline:hover{background:var(--chip)}
+  .btn.accent{background:var(--accent)}
+  .btn.accent:hover{background:#a01f1f}
+  .meta{color:var(--text2);font-size:13px;margin-top:8px;line-height:1.9}
+  ul.feat{list-style:none;margin-top:6px}
+  ul.feat li{padding:7px 0;border-bottom:1px dashed #e3ece9;font-size:14.5px}
+  ul.feat li:before{content:'◂ ';color:var(--primary-light);font-weight:bold}
+  table.rel{width:100%;border-collapse:collapse;margin-top:10px;font-size:14px}
+  table.rel th{background:var(--chip);color:var(--primary-dark);padding:9px 12px;text-align:right}
+  table.rel td{padding:9px 12px;border-bottom:1px solid #eef3f1}
+  .fp{background:#0d2b27;color:#8ef0dc;border-radius:10px;padding:12px 14px;font-size:12px;direction:ltr;text-align:left;overflow-x:auto;font-family:monospace;line-height:1.7}
+  footer{text-align:center;color:var(--text2);font-size:12.5px;padding:22px;line-height:2}
+  a{color:var(--primary)}
+  .warn{background:#FFF8E1;border:1px solid #FFE082;border-radius:10px;padding:12px 16px;font-size:13.5px;margin-top:12px;color:#7A5C00}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🎙️</div>
+  <h1>الإذاعة المدرسية</h1>
+  <p>تطبيق أندرويد للفقرات الصوتية والجدول الأسبوعي والبث المباشر — Kotlin</p>
+  <div class="badges">
+    <span class="badge">Kotlin 2.0</span>
+    <span class="badge">arm64-v8a + armeabi-v7a</span>
+    <span class="badge">APK موقّع — نفس المفتاح دائماً</span>
+    <span class="badge">minSdk 24 (أندرويد 7+)</span>
+  </div>
+</header>
+
+<main>
+
+  <div class="card latest">
+    <span class="tag">أحدث إصدار</span>
+    <h2>الإصدار v0.1.0 — الإصدار الأول</h2>
+    <a class="btn" id="apk-link" href="https://github.com/saidjte/school-radio-android/releases/download/v0.1.0/SchoolRadio_v0.1.0.apk">⬇ تحميل SchoolRadio_v0.1.0.apk</a>
+    <a class="btn outline" href="https://github.com/saidjte/school-radio-android/releases/download/v0.1.0/SchoolRadio_Source_v0.1.0.zip">الحزمة المصدرية (zip)</a>
+    <a class="btn outline" href="https://github.com/saidjte/school-radio-android/releases/tag/v0.1.0">صفحة الإصدار</a>
+    <p class="meta">
+      المعماريات: يعمل على arm64-v8a و armeabi-v7a • التثبيت فوق النسخ القديمة مدعوم (نفس مفتاح التوقيع)
+    </p>
+    <div class="warn">
+      عند أول تثبيت: اسمح بـ «تثبيت التطبيقات من مصدر غير معروف» لهذا المتصفح،
+      ثم افتح الملف المحمّل. التحديثات اللاحقة ستُثبَّت فوق النسخة الحالية مباشرة دون حذف.
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>المزايا</h2>
+    <ul class="feat">
+      <li>فقرات إذاعية: قرآن كريم، حديث وكلمة، وطنيات، إعلانات إدارية — مع مشغل صوتي سفلي (تقدم، تشغيل/إيقاف)</li>
+      <li>كتالوج حيّ: الفقرات والجدول تُجلب من ملف catalog.json على GitHub — تحديث المحتوى بلا إصدار APK جديد</li>
+      <li>جدول أسبوعي للبرنامج (اليوم/الساعة/المقدم)</li>
+      <li>بث مباشر اختياري يُفعَّل من الكتالوج عند توفر رابط المدرسة</li>
+      <li>تحقق من التحديثات داخل التطبيق (GitHub Releases) مع رابط تحميل مباشر</li>
+      <li>إدارة تركيز الصوت: إيقاف تلقائي عند المكالمات</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>كل الإصدارات</h2>
+    <table class="rel">
+      <tr><th>الإصدار</th><th>APK</th><th>المصدر</th><th>صفحة الإصدار</th></tr>
+      <tr>
+        <td><b>v0.1.0</b></td>
+        <td><a href="https://github.com/saidjte/school-radio-android/releases/download/v0.1.0/SchoolRadio_v0.1.0.apk">SchoolRadio_v0.1.0.apk</a></td>
+        <td><a href="https://github.com/saidjte/school-radio-android/releases/download/v0.1.0/SchoolRadio_Source_v0.1.0.zip">Source zip</a></td>
+        <td><a href="https://github.com/saidjte/school-radio-android/releases/tag/v0.1.0">تفاصيل</a></td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>التوقيع والتحقق</h2>
+    <p class="meta">كل الإصدارات موقّعة بنفس المفتاح. بصمة الشهادة SHA-256:</p>
+    <div class="fp">08:32:19:AA:51:F3:6D:15:70:B8:68:8B:66:7D:61:FE:49:C7:CE:67:9F:4D:74:3A:41:47:A8:09:3D:4C:64:F4</div>
+    <p class="meta">
+      للتحقق بعد التحميل:
+      <code style="direction:ltr;display:inline-block">apksigner verify --print-certs SchoolRadio_vX.Y.Z.apk</code><br>
+      إذا اختلفت البصمة فالملف ليس إصداراً رسمياً من هذا المشروع.
+    </p>
+  </div>
+
+</main>
+
+<footer>
+  الإذاعة المدرسية — school-radio-android • مستودع:
+  <a href="https://github.com/saidjte/school-radio-android">github.com/saidjte/school-radio-android</a><br>
+  تُحدَّث هذه الصفحة بعد كل إصدار جديد بروابط التحميل المتحقق منها (HTTP 200/206).
+</footer>
+
+</body>
+</html>
