@@ -1,5 +1,12 @@
 package com.saidjte.schoolradio.feature.player
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -8,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
@@ -17,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -26,17 +35,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.saidjte.schoolradio.core.ui.AppIcons
+import com.saidjte.schoolradio.core.ui.MirroredIcon
 import com.saidjte.schoolradio.core.util.ScheduleLogic
 import com.saidjte.schoolradio.di.ServiceLocator
 
 /**
- * شريط المشغل المصغر — يظهر فوق شريط التنقل عند وجود قائمة تشغيل.
- * يعرض: العنوان، تشغيل/إيقاف، التالي/السابق، التقدم، وزر إيقاف كامل.
- * الأخطاء (ملف مفقود/صيغة غير مدعومة) تُعرض في حوار واضح.
+ * شريط المشغل المصغر (v0.4.0 — تصميم عائم):
+ * كارت بزوايا دائرية وارتفاع نغمي فوق شريط التنقل، عنوان مقصوص بسطر واحد،
+ * أيقونات تقدّم/تراجع معكوسة للاتجاه العربي، وانتقال متحرك بين أيقونتي التشغيل.
+ * النقر يفتح المشغل الموسع (شريط تقدم تفاعلي + قائمة الانتظار).
  */
 @Composable
 fun PlayerBar(snackbar: androidx.compose.material3.SnackbarHostState) {
@@ -61,48 +73,72 @@ fun PlayerBar(snackbar: androidx.compose.material3.SnackbarHostState) {
         FullPlayerDialog(onDismiss = { expanded = false })
     }
 
-    Column(
-        Modifier
+    Surface(
+        modifier = Modifier
             .fillMaxWidth()
-            .clickable { expanded = true }
-            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .clickable { expanded = true },
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        tonalElevation = 2.dp,
+        shadowElevation = 6.dp
     ) {
-        LinearProgressIndicator(
-            progress = {
-                if (state.durationMs > 0) state.positionMs.toFloat() / state.durationMs else 0f
-            },
-            modifier = Modifier.fillMaxWidth().height(3.dp)
-        )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    state.currentTitle ?: "—",
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1
-                )
-                Text(
-                    "${ScheduleLogic.formatDuration(state.positionMs)} / " +
-                        ScheduleLogic.formatDuration(state.durationMs) +
-                        "  •  ${state.queueIndex + 1}/${state.queueSize}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            IconButton(onClick = { playback.previous() }) {
-                Icon(AppIcons.SkipPrevious, "السابق")
-            }
-            IconButton(onClick = { playback.playPause() }) {
-                Icon(
-                    if (state.isPlaying) AppIcons.Pause else Icons.Filled.PlayArrow,
-                    "تشغيل/إيقاف مؤقت",
-                    modifier = Modifier.size(32.dp)
-                )
-            }
-            IconButton(onClick = { playback.next() }) {
-                Icon(AppIcons.SkipNext, "التالي")
-            }
-            IconButton(onClick = { playback.stopAll() }) {
-                Icon(Icons.Filled.Close, "إيقاف كامل", tint = Color(0xFFC62828))
+        Column {
+            LinearProgressIndicator(
+                progress = {
+                    if (state.durationMs > 0) state.positionMs.toFloat() / state.durationMs else 0f
+                },
+                modifier = Modifier.fillMaxWidth().height(3.dp)
+            )
+            Row(
+                Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                    Text(
+                        state.currentTitle ?: "—",
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        "${ScheduleLogic.formatDuration(state.positionMs)} / " +
+                            ScheduleLogic.formatDuration(state.durationMs) +
+                            "  •  ${state.queueIndex + 1}/${state.queueSize}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                IconButton(onClick = { playback.previous() }) {
+                    MirroredIcon(AppIcons.SkipPrevious, "السابق")
+                }
+                AnimatedContent(
+                    targetState = state.isPlaying,
+                    transitionSpec = {
+                        (fadeIn(tween(150)) + scaleIn(initialScale = 0.6f, animationSpec = tween(150)))
+                            .togetherWith(fadeOut(tween(100)) + scaleOut(targetScale = 0.6f, animationSpec = tween(100)))
+                    },
+                    label = "play-pause"
+                ) { playing ->
+                    IconButton(onClick = { playback.playPause() }) {
+                        Icon(
+                            if (playing) AppIcons.Pause else Icons.Filled.PlayArrow,
+                            "تشغيل/إيقاف مؤقت",
+                            modifier = Modifier.size(32.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+                IconButton(onClick = { playback.next() }) {
+                    MirroredIcon(AppIcons.SkipNext, "التالي")
+                }
+                IconButton(onClick = { playback.stopAll() }) {
+                    Icon(
+                        Icons.Filled.Close, "إيقاف كامل",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
             }
         }
     }
@@ -138,8 +174,11 @@ private fun FullPlayerDialog(onDismiss: () -> Unit) {
                 )
                 if (state.errorMessage != null) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.Warning, null, tint = Color(0xFFC62828))
-                        Text(" ${state.errorMessage}", color = Color(0xFFC62828))
+                        Icon(Icons.Filled.Warning, null, tint = MaterialTheme.colorScheme.error)
+                        Text(
+                            " ${state.errorMessage}",
+                            color = MaterialTheme.colorScheme.error
+                        )
                     }
                 }
                 // قائمة الانتظار بعناوينها الحقيقية

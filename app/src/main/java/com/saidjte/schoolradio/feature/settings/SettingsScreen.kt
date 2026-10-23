@@ -20,6 +20,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -35,10 +38,32 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.saidjte.schoolradio.BuildConfig
+import com.saidjte.schoolradio.core.ui.AppIcons
 import com.saidjte.schoolradio.data.backup.BackupRepository
 import com.saidjte.schoolradio.data.settings.AppSettings
 import com.saidjte.schoolradio.di.ServiceLocator
 import kotlinx.coroutines.launch
+
+/** عنوان بطاقة إعداد بأيقونة حاوية */
+@Composable
+private fun CardTitle(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String) {
+    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        androidx.compose.material3.Surface(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+        ) {
+            Icon(
+                icon, null,
+                Modifier.padding(7.dp),
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
+        Text(
+            "  $title",
+            style = MaterialTheme.typography.titleMedium
+        )
+    }
+}
 
 /**
  * الإعدادات: هوية المدرسة، المظهر، مستويات الصوت والخفض التلقائي،
@@ -124,15 +149,19 @@ fun SettingsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
 
         // ===== المظهر =====
         Card {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("المظهر", style = MaterialTheme.typography.titleMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(0 to "حسب النظام", 1 to "فاتح", 2 to "داكن").forEach { (mode, label) ->
-                        FilterChip(
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                CardTitle(AppIcons.Palette, "المظهر")
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    listOf(
+                        0 to "حسب النظام",
+                        1 to "فاتح",
+                        2 to "داكن"
+                    ).forEachIndexed { index, (mode, label) ->
+                        SegmentedButton(
                             selected = settings.themeMode == mode,
                             onClick = { scope.launch { locator.settings.setThemeMode(mode) } },
-                            label = { Text(label) }
-                        )
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = 3)
+                        ) { Text(label) }
                     }
                 }
             }
@@ -141,7 +170,7 @@ fun SettingsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
         // ===== الصوت والخفض التلقائي =====
         Card {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("الصوت والبث المباشر", style = MaterialTheme.typography.titleMedium)
+                CardTitle(AppIcons.VolumeUp, "الصوت والبث المباشر")
 
                 Text("مستوى الصوت الافتراضي: ${(settings.defaultVolume * 100).toInt()}%")
                 Slider(
@@ -261,17 +290,7 @@ private fun UsersAndRolesCard(snackbar: androidx.compose.material3.SnackbarHostS
 
     Card {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    com.saidjte.schoolradio.core.ui.AppIcons.Person,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    "  المستخدمون والأدوار",
-                    style = MaterialTheme.typography.titleMedium
-                )
-            }
+            CardTitle(AppIcons.Person, "المستخدمون والأدوار")
             Text(
                 "الطالب: بث وتسجيل وتحضير — المعلم: + الجدولة وإدارة التسجيلات — المشرف: + إدارة المستخدمين",
                 style = MaterialTheme.typography.bodySmall,

@@ -160,3 +160,61 @@
 6. إنشاء Release عبر REST API (ليس CI!) ورفع `SchoolRadio_vX.Y.Z.apk` + `SchoolRadio_Source_vX.Y.Z.zip`
 7. فحص الروابط المباشرة: HTTP 200/206 إلزامي
 8. تحديث `docs/index.html` و`README.md` بروابط الإصدار الجديد
+
+---
+
+## v0.4.0 — تحسين تجربة المستخدم UI/UX (2026-10-24)
+
+### ما نُفّذ
+- **نظام تصميم كامل** (core/theme/Theme.kt): مخططا ألوان M3 كاملان (فاتح/داكن) بكل
+  الفتحات (surfaceContainer…، outline، errorContainer…) بهوية Teal/Amber،
+  مقياس طباعة عربي مضبوط (ارتفاعات أسطر أوسع + `tnum` جدولية للساعات/العدّادات)،
+  نظام أشكال موحّد 8→28dp، و`AppStatusColors` + `LocalAppStatusColors`:
+  ألوان دلالية (نجاح/تشغيل/فشل/تحذير/حي) تتكيف مع الوضع الداكن — استُبدلت بها
+  كل الألوان الصلبة `Color(0xFF...)` المنتشرة في الشاشات (كانت تنكسر في الداكن).
+- **مكوّنات مشتركة** (core/ui/Components.kt جديد): `ScreenHeader` (ترويسة موحّدة)،
+  `EmptyStateCard` (حالة فارغة بأيقونة قرصية + زر إجراء اختياري)،
+  `StatusBadge`، `MirroredIcon` (يقلب أسهم التالي/السابق أفقياً في RTL —
+  اصطلاح مشغلات الوسائط العربية كما في يوتيوب).
+- **8 أيقونات متجهة جديدة** في AppIcons (المجموع 18): Palette، VolumeUp،
+  ScheduleClock، CloudUpload، GraphicEq، MusicNote، QueueMusic، Event —
+  مسارات Material الرسمية (Apache 2.0) حفاظاً على استبعاد material-icons-extended.
+- **MainActivity**: انتقالات NavHost (تلاشٍ+تكبير 0.97 محايد الاتجاه آمن مع RTL)،
+  شارة عدد تسجيلات حية (BadgedBox) على تبويب الأرشيف، وتمرير `onNavigateToSchedule`
+  و`onNavigateToLibrary` للوحة الرئيسية لحالات فارغة تفاعلية.
+- **PlayerBar**: إعادة تصميم ككارت عائم (clip 18dp + surfaceContainerHighest +
+  shadow)، عنوان Ellipsis بسطر واحد، AnimatedContent بين أيقونتي التشغيل/الإيقاف،
+  أيقونات تخطٍّ معكوسة، ولون الخطأ من المخطط الداكن.
+- **Dashboard**: تحية زمنية عربية (صباح/نهار/مساء/ليل) باسم المستخدم الحالي ودوره،
+  بطاقة بطل بتدرج primary→tertiary (Box+background brush لأن Surface لا يقبل brush)
+  وساعة بأرقام جدولية، شريط إحصاءات اليوم (فقرات/أُنجزت/متبقية)، بطاقة «الفقرة
+  التالية» بعدّاد تنازلي حي بالثانية، شارة «● مباشر» نابضة (AnimatedVisibility+alpha)،
+  haptics على الضغط للتحديث وبدء/إيقاف التسجيل، تنعيم حلقة المستوى بـ
+  animateFloatAsState(tween 90)، صفوف فقرات بقرص وقت container وحدود تمييز
+  للفقرة قيد التشغيل، EmptyStateCard بانتقال مباشر للجدولة، وبطاقة «انتهت فقرات
+  اليوم» تقترح المكتبة.
+- **RecordingsScreen**: بحث rememberSaveable بزر مسح + مرشّح مصدر
+  (RecFilter: الكل/بث مباشر/تحضيرية)، ملخص العدد والحجم الكلي، FilledTonalIconButton
+  دائرية 46dp بلون primary للتشغيل الحالي، AnimatedVisibility لقسم التقدم،
+  عنوان السطر SemiBold عند التشغيل.
+- **LibraryScreen**: ScreenHeader بعدد المقاطع، زر مسح البحث، EmptyStateCard بزر
+  «استيراد مقاطع» يفتح SAF مباشرة، FilledTonalIconButton للتشغيل **معطّلة**
+  للمقاطع غير المتاحة (إصلاح سلوكي: كان زر التشغيل يختفي بدل أن يُعطَّل).
+- **PlaylistsScreen**: ScreenHeader بعدد القوائم + EmptyStateCard + قرص أيقونة
+  QueueMusic في كل بطاقة.
+- **ScheduleScreen**: ترويسات ScreenHeader للقسمين مع شرح وظيفي، EmptyStateCard
+  للفقرات، ألوان «آخر تنفيذ» والتعارض من MaterialTheme.status/المخطط.
+- **SettingsScreen**: CardTitle (أيقونة في حاوية زاوية 10dp) لتوحيد عناوين
+  البطاقات، SingleChoiceSegmentedButtonRow لاختيار المظهر بدل 3 رقاقات.
+
+### دروس وأخطاء البناء (بالترتيب)
+1. `Surface(brush=)` غير موجود — بطاقة البطل أصبحت `Box + shadow + background(brush, shape)`.
+2. نسيان `import ...layout.size` في LibraryScreen بعد إدخال Modifier.size.
+3. نسيان استيرادَي `core.theme.status` و`core.ui.StatusBadge` في RecordingsScreen.
+4. استيراد `foundation.layout.weight` غير موجود (weight عضو في RowScope) — حُذف.
+5. سلسلة alpha مبالغ فيها في Dashboard بدأت بدوال ميتة — استُبدلت
+   باستيراد واحد `androidx.compose.ui.draw.alpha` (أبسط حل دائماً أولاً).
+
+### التحقق
+- اختبارات الوحدة: **28/28 خضراء** (16 تسجيلات + 12 جدولة).
+- `verify_release.sh`: **7/7** (versionCode 4، المعماريات، البصمة الثابتة، v1/v2).

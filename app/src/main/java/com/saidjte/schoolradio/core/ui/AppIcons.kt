@@ -268,6 +268,295 @@ object AppIcons {
         }
     }
 
+    /** لوحة ألوان — قسم المظهر في الإعدادات */
+    val Palette: ImageVector by lazy {
+        builder("Palette") {
+            path(
+                fill = SolidColor(Color.Black),
+                pathFillType = PathFillType.NonZero
+            ) {
+                // Material Icons — Palette (Apache 2.0)
+                moveTo(12f, 3f)
+                curveToRelative(-4.97f, 0f, -9f, 4.03f, -9f, 9f)
+                reflectiveCurveToRelative(4.03f, 9f, 9f, 9f)
+                curveToRelative(0.83f, 0f, 1.5f, -0.67f, 1.5f, -1.5f)
+                curveToRelative(0f, -0.39f, -0.15f, -0.74f, -0.39f, -1.01f)
+                curveToRelative(-0.23f, -0.26f, -0.38f, -0.61f, -0.38f, -0.99f)
+                curveToRelative(0f, -0.83f, 0.67f, -1.5f, 1.5f, -1.5f)
+                horizontalLineTo(16f)
+                curveToRelative(2.76f, 0f, 5f, -2.24f, 5f, -5f)
+                curveToRelative(0f, -4.42f, -4.03f, -8f, -9f, -8f)
+                close()
+                moveTo(6.5f, 12f)
+                curveToRelative(-0.83f, 0f, -1.5f, -0.67f, -1.5f, -1.5f)
+                reflectiveCurveTo(5.67f, 9f, 6.5f, 9f)
+                reflectiveCurveTo(8f, 9.67f, 8f, 10.5f)
+                reflectiveCurveTo(7.33f, 12f, 6.5f, 12f)
+                close()
+                moveTo(9.5f, 8f)
+                curveTo(8.67f, 8f, 8f, 7.33f, 8f, 6.5f)
+                reflectiveCurveTo(8.67f, 5f, 9.5f, 5f)
+                reflectiveCurveTo(11f, 5.67f, 11f, 6.5f)
+                reflectiveCurveTo(10.33f, 8f, 9.5f, 8f)
+                close()
+                moveTo(14.5f, 8f)
+                curveToRelative(-0.83f, 0f, -1.5f, -0.67f, -1.5f, -1.5f)
+                reflectiveCurveTo(13.67f, 5f, 14.5f, 5f)
+                reflectiveCurveTo(16f, 5.67f, 16f, 6.5f)
+                reflectiveCurveTo(15.33f, 8f, 14.5f, 8f)
+                close()
+                moveTo(17.5f, 12f)
+                curveToRelative(-0.83f, 0f, -1.5f, -0.67f, -1.5f, -1.5f)
+                reflectiveCurveTo(16.67f, 9f, 17.5f, 9f)
+                reflectiveCurveTo(19f, 9.67f, 19f, 10.5f)
+                reflectiveCurveTo(18.33f, 12f, 17.5f, 12f)
+                close()
+            }
+        }
+    }
+
+    /** مكبر صوت — قسم الصوت في الإعدادات */
+    val VolumeUp: ImageVector by lazy {
+        builder("VolumeUp") {
+            path(
+                fill = SolidColor(Color.Black),
+                pathFillType = PathFillType.NonZero
+            ) {
+                // Material Icons — VolumeUp (Apache 2.0)
+                moveTo(3f, 9f)
+                verticalLineToRelative(6f)
+                horizontalLineToRelative(4f)
+                lineToRelative(5f, 5f)
+                verticalLineTo(4f)
+                lineTo(7f, 9f)
+                horizontalLineTo(3f)
+                close()
+                moveTo(16.5f, 12f)
+                curveToRelative(0f, -1.77f, -1.02f, -3.29f, -2.5f, -4.03f)
+                verticalLineToRelative(8.05f)
+                curveToRelative(1.48f, -0.73f, 2.5f, -2.25f, 2.5f, -4.02f)
+                close()
+                moveTo(14f, 3.23f)
+                verticalLineToRelative(2.06f)
+                curveToRelative(2.89f, 0.86f, 5f, 3.54f, 5f, 6.71f)
+                reflectiveCurveToRelative(-2.11f, 5.85f, -5f, 6.71f)
+                verticalLineToRelative(2.06f)
+                curveToRelative(4.01f, -0.91f, 7f, -4.49f, 7f, -8.77f)
+                reflectiveCurveToRelative(-2.99f, -7.86f, -7f, -8.77f)
+                close()
+            }
+        }
+    }
+
+    /** ساعة — عدّاد الفقرة التالية وأقسام الجدولة */
+    val ScheduleClock: ImageVector by lazy {
+        builder("ScheduleClock") {
+            path(
+                fill = SolidColor(Color.Black),
+                pathFillType = PathFillType.NonZero
+            ) {
+                // Material Icons — Schedule (Apache 2.0)
+                moveTo(11.99f, 2f)
+                curveTo(6.47f, 2f, 2f, 6.48f, 2f, 12f)
+                reflectiveCurveToRelative(4.47f, 10f, 9.99f, 10f)
+                curveTo(17.52f, 22f, 22f, 17.52f, 22f, 12f)
+                reflectiveCurveTo(17.52f, 2f, 11.99f, 2f)
+                close()
+                moveTo(12f, 20f)
+                curveToRelative(-4.42f, 0f, -8f, -3.58f, -8f, -8f)
+                reflectiveCurveToRelative(3.58f, -8f, 8f, -8f)
+                reflectiveCurveToRelative(8f, 3.58f, 8f, 8f)
+                reflectiveCurveToRelative(-3.58f, 8f, -8f, 8f)
+                close()
+                moveTo(12.5f, 7f)
+                horizontalLineTo(11f)
+                verticalLineToRelative(6f)
+                lineToRelative(5.25f, 3.15f)
+                lineToRelative(0.75f, -1.23f)
+                lineToRelative(-4.5f, -2.67f)
+                close()
+            }
+        }
+    }
+
+    /** رفع للسحابة — النسخ الاحتياطي */
+    val CloudUpload: ImageVector by lazy {
+        builder("CloudUpload") {
+            path(
+                fill = SolidColor(Color.Black),
+                pathFillType = PathFillType.NonZero
+            ) {
+                // Material Icons — Backup (Apache 2.0)
+                moveTo(19.35f, 10.04f)
+                curveTo(18.67f, 6.59f, 15.64f, 4f, 12f, 4f)
+                curveTo(9.11f, 4f, 6.6f, 5.64f, 5.35f, 8.04f)
+                curveTo(2.34f, 8.36f, 0f, 10.91f, 0f, 14f)
+                curveToRelative(0f, 3.31f, 2.69f, 6f, 6f, 6f)
+                horizontalLineToRelative(13f)
+                curveToRelative(2.76f, 0f, 5f, -2.24f, 5f, -5f)
+                curveToRelative(0f, -2.64f, -2.05f, -4.78f, -4.65f, -4.96f)
+                close()
+                moveTo(14f, 13f)
+                verticalLineToRelative(4f)
+                horizontalLineToRelative(-4f)
+                verticalLineToRelative(-4f)
+                horizontalLineTo(7f)
+                lineToRelative(5f, -5f)
+                lineToRelative(5f, 5f)
+                horizontalLineToRelative(-3f)
+                close()
+            }
+        }
+    }
+
+    /** معادل صوتي — بطاقة البث المباشر */
+    val GraphicEq: ImageVector by lazy {
+        builder("GraphicEq") {
+            path(
+                fill = SolidColor(Color.Black),
+                pathFillType = PathFillType.NonZero
+            ) {
+                // Material Icons — GraphicEq (Apache 2.0)
+                moveTo(7f, 18f)
+                horizontalLineToRelative(2f)
+                verticalLineTo(6f)
+                horizontalLineTo(7f)
+                verticalLineToRelative(12f)
+                close()
+                moveTo(11f, 22f)
+                horizontalLineToRelative(2f)
+                verticalLineTo(2f)
+                horizontalLineToRelative(-2f)
+                verticalLineToRelative(20f)
+                close()
+                moveTo(3f, 14f)
+                horizontalLineToRelative(2f)
+                verticalLineToRelative(-4f)
+                horizontalLineTo(3f)
+                verticalLineToRelative(4f)
+                close()
+                moveTo(15f, 18f)
+                horizontalLineToRelative(2f)
+                verticalLineTo(6f)
+                horizontalLineToRelative(-2f)
+                verticalLineToRelative(12f)
+                close()
+                moveTo(19f, 10f)
+                verticalLineToRelative(4f)
+                horizontalLineToRelative(2f)
+                verticalLineToRelative(-4f)
+                horizontalLineToRelative(-2f)
+                close()
+            }
+        }
+    }
+
+    /** نوتة موسيقية — صفوف المكتبة والتسجيلات */
+    val MusicNote: ImageVector by lazy {
+        builder("MusicNote") {
+            path(
+                fill = SolidColor(Color.Black),
+                pathFillType = PathFillType.NonZero
+            ) {
+                // Material Icons — MusicNote (Apache 2.0)
+                moveTo(12f, 3f)
+                verticalLineToRelative(10.55f)
+                curveToRelative(-0.59f, -0.34f, -1.27f, -0.55f, -2f, -0.55f)
+                curveToRelative(-2.21f, 0f, -4f, 1.79f, -4f, 4f)
+                reflectiveCurveToRelative(1.79f, 4f, 4f, 4f)
+                reflectiveCurveToRelative(4f, -1.79f, 4f, -4f)
+                verticalLineTo(7f)
+                horizontalLineToRelative(4f)
+                verticalLineTo(3f)
+                horizontalLineToRelative(-6f)
+                close()
+            }
+        }
+    }
+
+    /** قائمة موسيقية — بطاقات قوائم التشغيل */
+    val QueueMusic: ImageVector by lazy {
+        builder("QueueMusic") {
+            path(
+                fill = SolidColor(Color.Black),
+                pathFillType = PathFillType.NonZero
+            ) {
+                // Material Icons — QueueMusic (Apache 2.0)
+                moveTo(15f, 6f)
+                horizontalLineTo(3f)
+                verticalLineToRelative(2f)
+                horizontalLineToRelative(12f)
+                verticalLineTo(6f)
+                close()
+                moveTo(15f, 10f)
+                horizontalLineTo(3f)
+                verticalLineToRelative(2f)
+                horizontalLineToRelative(12f)
+                verticalLineToRelative(-2f)
+                close()
+                moveTo(3f, 16f)
+                horizontalLineToRelative(8f)
+                verticalLineToRelative(-2f)
+                horizontalLineTo(3f)
+                verticalLineToRelative(2f)
+                close()
+                moveTo(17f, 6f)
+                verticalLineToRelative(8.18f)
+                curveToRelative(-0.31f, -0.11f, -0.65f, -0.18f, -1f, -0.18f)
+                curveToRelative(-1.66f, 0f, -3f, 1.34f, -3f, 3f)
+                reflectiveCurveToRelative(1.34f, 3f, 3f, 3f)
+                reflectiveCurveToRelative(3f, -1.34f, 3f, -3f)
+                verticalLineTo(8f)
+                horizontalLineToRelative(3f)
+                verticalLineTo(6f)
+                horizontalLineToRelative(-5f)
+                close()
+            }
+        }
+    }
+
+    /** تقويم يوم — بطاقة فقرات اليوم */
+    val Event: ImageVector by lazy {
+        builder("Event") {
+            path(
+                fill = SolidColor(Color.Black),
+                pathFillType = PathFillType.NonZero
+            ) {
+                // Material Icons — Event (Apache 2.0)
+                moveTo(17f, 12f)
+                horizontalLineToRelative(-5f)
+                verticalLineToRelative(5f)
+                horizontalLineToRelative(5f)
+                verticalLineToRelative(-5f)
+                close()
+                moveTo(16f, 1f)
+                verticalLineToRelative(2f)
+                horizontalLineTo(8f)
+                verticalLineTo(1f)
+                horizontalLineTo(6f)
+                verticalLineToRelative(2f)
+                horizontalLineTo(5f)
+                curveToRelative(-1.11f, 0f, -1.99f, 0.9f, -1.99f, 2f)
+                lineTo(3f, 19f)
+                curveToRelative(0f, 1.1f, 0.89f, 2f, 2f, 2f)
+                horizontalLineToRelative(14f)
+                curveToRelative(1.1f, 0f, 2f, -0.9f, 2f, -2f)
+                verticalLineTo(5f)
+                curveToRelative(0f, -1.1f, -0.9f, -2f, -2f, -2f)
+                horizontalLineToRelative(-1f)
+                verticalLineTo(1f)
+                horizontalLineToRelative(-2f)
+                close()
+                moveTo(19f, 19f)
+                horizontalLineTo(5f)
+                verticalLineTo(8f)
+                horizontalLineToRelative(14f)
+                verticalLineToRelative(11f)
+                close()
+            }
+        }
+    }
+
     /** شخص — قسم المستخدمين والأدوار */
     val Person: ImageVector by lazy {
         builder("Person") {

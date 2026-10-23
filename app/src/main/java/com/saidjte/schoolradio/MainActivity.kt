@@ -7,6 +7,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
@@ -16,6 +21,8 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -30,7 +37,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -93,7 +103,10 @@ private fun AppScaffold() {
         bottomBar = {
             Column {
                 PlayerBar(snackbar)
-                NavigationBar {
+                NavigationBar(tonalElevation = 3.dp) {
+                    // عدد التسجيلات — شارة حية على تبويب الأرشيف
+                    val recCount by ServiceLocator.recordingsRepo.observeAll()
+                        .collectAsStateWithLifecycle(initialValue = emptyList())
                     NavigationItem.entries.forEach { item ->
                         NavigationBarItem(
                             selected = currentRoute == item.route,
@@ -104,7 +117,17 @@ private fun AppScaffold() {
                                     restoreState = true
                                 }
                             },
-                            icon = { Icon(item.icon, contentDescription = item.label) },
+                            icon = {
+                                if (item.route == AppRoute.RECORDINGS && recCount.isNotEmpty()) {
+                                    BadgedBox(badge = {
+                                        Badge { Text("${recCount.size}", fontSize = 10.sp) }
+                                    }) {
+                                        Icon(item.icon, contentDescription = item.label)
+                                    }
+                                } else {
+                                    Icon(item.icon, contentDescription = item.label)
+                                }
+                            },
                             label = { Text(item.label) }
                         )
                     }
@@ -113,8 +136,29 @@ private fun AppScaffold() {
         }
     ) { padding ->
         Box(Modifier.padding(padding)) {
-            NavHost(navController = nav, startDestination = AppRoute.DASHBOARD) {
-                composable(AppRoute.DASHBOARD) { DashboardScreen(snackbar) }
+            NavHost(
+                navController = nav,
+                startDestination = AppRoute.DASHBOARD,
+                enterTransition = {
+                    fadeIn(tween(240)) + scaleIn(
+                        initialScale = 0.97f, animationSpec = tween(240)
+                    )
+                },
+                exitTransition = { fadeOut(tween(160)) },
+                popEnterTransition = { fadeIn(tween(240)) },
+                popExitTransition = {
+                    fadeOut(tween(160)) + scaleOut(
+                        targetScale = 0.97f, animationSpec = tween(160)
+                    )
+                }
+            ) {
+                composable(AppRoute.DASHBOARD) {
+                    DashboardScreen(
+                        snackbar = snackbar,
+                        onNavigateToSchedule = { nav.navigateSafely(AppRoute.SCHEDULING) },
+                        onNavigateToLibrary = { nav.navigateSafely(AppRoute.LIBRARY) }
+                    )
+                }
                 composable(AppRoute.LIBRARY) { LibraryScreen(snackbar) }
                 composable(AppRoute.PLAYLISTS) { PlaylistsScreen(snackbar) }
                 composable(AppRoute.RECORDINGS) { RecordingsScreen(snackbar) }
@@ -122,6 +166,15 @@ private fun AppScaffold() {
                 composable(AppRoute.SETTINGS) { SettingsScreen(snackbar) }
             }
         }
+    }
+}
+
+/** تنقّل بلا تكرار أعلى المكدس */
+private fun NavHostController.navigateSafely(route: String) {
+    navigate(route) {
+        popUpTo(AppRoute.DASHBOARD) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
     }
 }
 

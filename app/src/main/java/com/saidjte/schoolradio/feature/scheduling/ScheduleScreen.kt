@@ -38,7 +38,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.saidjte.schoolradio.core.theme.status
 import com.saidjte.schoolradio.core.ui.AppIcons
+import com.saidjte.schoolradio.core.ui.EmptyStateCard
+import com.saidjte.schoolradio.core.ui.ScreenHeader
 import com.saidjte.schoolradio.core.util.ScheduleLogic
 import com.saidjte.schoolradio.data.local.entity.ExecutionStatus
 import com.saidjte.schoolradio.data.local.entity.RadioScheduleEntity
@@ -119,7 +122,12 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
             }
 
             // ===== الجداول =====
-            item { Text("الجداول", style = MaterialTheme.typography.titleLarge) }
+            item {
+                ScreenHeader(
+                    title = "الجداول",
+                    subtitle = "مجموعات فقرات تعمل معاً (طابور الصباح، الاستراحة…)"
+                )
+            }
             items(schedules, key = { it.id }) { s ->
                 Card(Modifier.fillMaxWidth()) {
                     Row(
@@ -163,16 +171,19 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
             }
 
             // ===== الفقرات المجدولة =====
-            item { Text("الفقرات المجدولة", style = MaterialTheme.typography.titleLarge) }
+            item {
+                ScreenHeader(
+                    title = "الفقرات المجدولة",
+                    subtitle = "وقت البدء + الأيام + المحتوى — تنطلق تلقائياً عبر المنبهات الدقيقة"
+                )
+            }
             if (events.isEmpty()) {
                 item {
-                    Card(Modifier.fillMaxWidth()) {
-                        Text(
-                            "لا فقرات بعد — أضف فقرة وحدد وقتها وأيامها وقائمة تشغيلها",
-                            Modifier.padding(16.dp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    EmptyStateCard(
+                        icon = AppIcons.Event,
+                        title = "لا فقرات بعد",
+                        body = "أضف فقرة وحدد وقتها وأيامها وقائمة تشغيلها لتنطلق تلقائياً"
+                    )
                 }
             }
             items(events, key = { it.id }) { e ->
@@ -191,13 +202,14 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             lastExecution?.let {
+                                val st = MaterialTheme.status
                                 Text(
                                     "آخر تنفيذ: ${ExecutionStatus.labelAr(it.status)}" +
                                         (it.note?.let { n -> " • $n" } ?: ""),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = when (it.status) {
-                                        ExecutionStatus.COMPLETED -> androidx.compose.ui.graphics.Color(0xFF2E7D32)
-                                        ExecutionStatus.FAILED -> androidx.compose.ui.graphics.Color(0xFFC62828)
+                                        ExecutionStatus.COMPLETED -> st.success
+                                        ExecutionStatus.FAILED -> st.failed
                                         else -> MaterialTheme.colorScheme.onSurfaceVariant
                                     }
                                 )
@@ -390,7 +402,7 @@ private fun EventEditorDialog(
                     onClear = { singleTrackId = null }
                 )
                 conflictError?.let {
-                    Text(it, color = androidx.compose.ui.graphics.Color(0xFFC62828),
+                    Text(it, color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall)
                 }
                 // اختيار الجدول

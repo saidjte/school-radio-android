@@ -1,5 +1,11 @@
 package com.saidjte.schoolradio.feature.recordings
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,14 +14,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -29,15 +40,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.saidjte.schoolradio.audio.RecordingsPlayer
+import com.saidjte.schoolradio.core.theme.status
 import com.saidjte.schoolradio.core.ui.AppIcons
+import com.saidjte.schoolradio.core.ui.EmptyStateCard
+import com.saidjte.schoolradio.core.ui.ScreenHeader
+import com.saidjte.schoolradio.core.ui.StatusBadge
 import com.saidjte.schoolradio.core.util.RecordingLogic
 import com.saidjte.schoolradio.data.local.entity.RecordingEntity
 import com.saidjte.schoolradio.data.local.entity.UserRole
@@ -48,11 +64,16 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * شاشة أرشيف التسجيلات (v0.3.0):
- *  - قائمة كل التسجيلات (بث حي / فقرة تحضيرية) مع بياناتها وتوقيع مسجّلها
- *  - استماع فوري من الشاشة (ExoPlayer مستقل بلا إشعار نظام)
+ * شاشة أرشيف التسجيلات (v0.4.0):
+ *  - بحث بالعنوان + مرشّح المصدر (الكل / بث مباشر / فقرة تحضيرية)
+ *  - ملخص علوي: العدد والحجم الكلي للأرشيف
+ *  - استماع فوري من الشاشة (ExoPlayer مستقل بلا إشعار نظام) بأزرار دائرية ملوّنة
  *  - تسمية وحذف محميان بالأدوار: معلم أو مشرف فقط
  */
+enum class RecFilter(val labelAr: String) {
+    ALL("الكل"), LIVE("بث مباشر"), MEMO("تحضيرية")
+}
+
 @Composable
 fun RecordingsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
     val locator = ServiceLocator
@@ -64,38 +85,80 @@ fun RecordingsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
     val canManage by locator.session.canManage
         .collectAsStateWithLifecycle(initialValue = true)
 
+    var search by rememberSaveable { mutableStateOf("") }
+    var filter by rememberSaveable { mutableStateOf(RecFilter.ALL) }
     var renameTarget by remember { mutableStateOf<RecordingEntity?>(null) }
     var deleteTarget by remember { mutableStateOf<RecordingEntity?>(null) }
 
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Text("أرشيف التسجيلات", style = MaterialTheme.typography.titleLarge)
-        Text(
-            "تسجيلات البث الحي والفقرات التحضيرية — ${recordings.size} تسجيلاً",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(12.dp))
+    val visible = recordings
+        .filter { rec ->
+            when (filter) {
+                RecFilter.ALL -> true
+                RecFilter.LIVE -> rec.sourceEnum().name == "PTT"
+                RecFilter.MEMO -> rec.sourceEnum().name != "PTT"
+            }
+        }
+        .filter { rec ->
+            search.isBlank() || rec.title.contains(search.trim(), ignoreCase = true)
+        }
+    val totalBytes = recordings.sumOf { it.sizeBytes }
 
-        if (recordings.isEmpty()) {
-            Card(Modifier.fillMaxWidth()) {
-                Column(
-                    Modifier.padding(24.dp).fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text("لا توجد تسجيلات بعد", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "اضغط زر التسجيل في الصفحة الرئيسية أثناء البث المباشر، أو سجّل فقرة تحضيرية",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
+    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
+        ScreenHeader(
+            title = "أرشيف التسجيلات",
+            subtitle = if (recordings.isEmpty()) "لا تسجيلات بعد"
+            else "${recordings.size} تسجيلاً • ${RecordingLogic.formatBytes(totalBytes)}"
+        )
+
+        if (recordings.isNotEmpty()) {
+            // ===== البحث =====
+            OutlinedTextField(
+                value = search,
+                onValueChange = { search = it },
+                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                placeholder = { Text("ابحث في التسجيلات…") },
+                leadingIcon = { Icon(Icons.Filled.Search, null) },
+                trailingIcon = {
+                    if (search.isNotEmpty()) {
+                        IconButton(onClick = { search = "" }) {
+                            Icon(Icons.Filled.Close, "مسح البحث")
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = MaterialTheme.shapes.medium
+            )
+            // ===== مرشّح المصدر =====
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                RecFilter.entries.forEach { f ->
+                    FilterChip(
+                        selected = filter == f,
+                        onClick = { filter = f },
+                        label = { Text(f.labelAr) }
                     )
                 }
             }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        if (recordings.isEmpty()) {
+            EmptyStateCard(
+                icon = AppIcons.LibraryMusic,
+                title = "لا توجد تسجيلات بعد",
+                body = "اضغط زر التسجيل في الصفحة الرئيسية أثناء البث المباشر، أو سجّل فقرة تحضيرية قبل وقت الإذاعة"
+            )
+        } else if (visible.isEmpty()) {
+            EmptyStateCard(
+                icon = AppIcons.LibraryMusic,
+                title = "لا نتائج مطابقة",
+                body = "جرّب كلمة بحث مختلفة أو غيّر المرشّح"
+            )
         } else {
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(recordings, key = { it.id }) { rec ->
+                items(visible, key = { it.id }) { rec ->
                     RecordingRow(
                         recording = rec,
                         playing = playback,
@@ -147,7 +210,7 @@ fun RecordingsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
     }
 }
 
-/** سطر تسجيل واحد: تشغيل + البيانات + شارة المصدر + أدوات محمية بالدور */
+/** سطر تسجيل واحد: زر تشغيل دائري + البيانات + شارة المصدر + أدوات محمية بالدور */
 @Composable
 private fun RecordingRow(
     recording: RecordingEntity,
@@ -157,38 +220,58 @@ private fun RecordingRow(
     onRename: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val st = MaterialTheme.status
     val isCurrent = playing.recordingId == recording.id
+    val isLiveSrc = recording.sourceEnum().name == "PTT"
     val dateText = SimpleDateFormat("EEEE d/M/yyyy — HH:mm", Locale("ar"))
         .format(Date(recording.createdAt))
 
-    Card(Modifier.fillMaxWidth()) {
+    Card(Modifier.fillMaxWidth().animateContentSize()) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onToggle) {
+                FilledTonalIconButton(
+                    onClick = onToggle,
+                    modifier = Modifier.size(46.dp),
+                    colors = androidx.compose.material3.IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = if (isCurrent) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = if (isCurrent) MaterialTheme.colorScheme.onPrimary
+                        else MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                ) {
                     Icon(
                         if (isCurrent && playing.isPlaying) AppIcons.Pause
                         else Icons.Filled.PlayArrow,
-                        contentDescription = "تشغيل/إيقاف",
-                        tint = if (isCurrent) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurface
+                        contentDescription = "تشغيل/إيقاف"
                     )
                 }
-                Column(Modifier.weight(1f)) {
-                    Text(recording.title, style = MaterialTheme.typography.bodyLarge)
+                Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                    Text(
+                        recording.title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
                     Text(
                         "$dateText • ${RecordingLogic.formatElapsed(recording.durationMs)} • " +
                             RecordingLogic.formatBytes(recording.sizeBytes),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        SourceBadge(recording)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        StatusBadgeSource(isLiveSrc)
                         recording.recordedByName?.let { name ->
                             val role = recording.recordedByRole?.let { UserRole.from(it) }
                             Text(
                                 "سجّلها: $name${role?.let { " (${it.labelAr})" } ?: ""}",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -205,40 +288,35 @@ private fun RecordingRow(
                     }
                 }
             }
-            if (isCurrent) {
-                val progress = if (playing.durationMs > 0)
-                    playing.positionMs.toFloat() / playing.durationMs else 0f
-                LinearProgressIndicator(
-                    progress = { progress.coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
-                )
-                Text(
-                    "${RecordingLogic.formatElapsed(playing.positionMs)} / " +
-                        RecordingLogic.formatElapsed(playing.durationMs),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            AnimatedVisibility(
+                visible = isCurrent,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Column {
+                    val progress = if (playing.durationMs > 0)
+                        playing.positionMs.toFloat() / playing.durationMs else 0f
+                    LinearProgressIndicator(
+                        progress = { progress.coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
+                    Text(
+                        "${RecordingLogic.formatElapsed(playing.positionMs)} / " +
+                            RecordingLogic.formatElapsed(playing.durationMs),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
 }
 
-/** شارة المصدر: بث مباشر (أحمر) أو فقرة تحضيرية (أزرق) */
+/** شارة المصدر: بث مباشر (أحمر) أو فقرة تحضيرية (أزرق) — بألوان دلالية متوافقة مع الداكن */
 @Composable
-private fun SourceBadge(recording: RecordingEntity) {
-    val isLive = recording.sourceEnum().name == "PTT"
-    val color = if (isLive) Color(0xFFC62828) else Color(0xFF1565C0)
-    Surface(
-        color = color.copy(alpha = 0.12f),
-        shape = MaterialTheme.shapes.small
-    ) {
-        Text(
-            if (isLive) "بث مباشر" else "فقرة تحضيرية",
-            Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-            color = color,
-            style = MaterialTheme.typography.labelSmall
-        )
-    }
+private fun StatusBadgeSource(isLive: Boolean) {
+    val st = MaterialTheme.status
+    StatusBadge(if (isLive) "بث مباشر" else "فقرة تحضيرية", if (isLive) st.live else st.running)
 }
 
 @Composable

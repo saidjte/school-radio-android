@@ -44,6 +44,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.saidjte.schoolradio.audio.PlaybackConnection
 import com.saidjte.schoolradio.core.ui.AppIcons
+import com.saidjte.schoolradio.core.ui.EmptyStateCard
+import com.saidjte.schoolradio.core.ui.ScreenHeader
 import com.saidjte.schoolradio.data.local.entity.PlaylistEntity
 import com.saidjte.schoolradio.di.ServiceLocator
 import kotlinx.coroutines.flow.first
@@ -84,24 +86,38 @@ fun PlaylistsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                 onBack = { openPlaylistId = null })
         } else {
             Column(Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
-                Text("قوائم التشغيل", style = MaterialTheme.typography.titleLarge)
+                ScreenHeader(
+                    title = "قوائم التشغيل",
+                    subtitle = if (playlists.isEmpty()) "لا قوائم بعد"
+                    else "${playlists.size} قائمة جاهزة للجدولة"
+                )
                 if (playlists.isEmpty()) {
-                    Card(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                        Text(
-                            "لا توجد قوائم بعد — أنشئ قائمة وأضف إليها مقاطع من المكتبة",
-                            Modifier.padding(16.dp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    EmptyStateCard(
+                        icon = AppIcons.QueueMusic,
+                        title = "لا توجد قوائم بعد",
+                        body = "أنشئ قائمة (طابور الصباح، نشيد الأسبوع…) ثم أضف إليها مقاطع من المكتبة"
+                    )
                 }
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     items(playlists, key = { it.id }) { p ->
                         Card(Modifier.fillMaxWidth()) {
                             Row(
                                 Modifier.padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column(Modifier.weight(1f)) {
+                                androidx.compose.material3.Surface(
+                                    shape = androidx.compose.foundation.shape.CircleShape,
+                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                                ) {
+                                    Icon(
+                                        AppIcons.QueueMusic, null,
+                                        Modifier.padding(10.dp),
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                                     Text(p.name, style = MaterialTheme.typography.titleMedium)
                                     Text(
                                         if (p.repeat) "التكرار مفعّل" else "بدون تكرار",

@@ -3,12 +3,23 @@ package com.saidjte.schoolradio.feature.dashboard
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,8 +33,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
@@ -43,15 +54,25 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.saidjte.schoolradio.audio.AudioRoutingManager
+import com.saidjte.schoolradio.core.theme.status
 import com.saidjte.schoolradio.core.ui.AppIcons
+import com.saidjte.schoolradio.core.ui.EmptyStateCard
+import com.saidjte.schoolradio.core.ui.StatusBadge
 import com.saidjte.schoolradio.core.util.ScheduleLogic
 import com.saidjte.schoolradio.data.local.entity.ExecutionStatus
 import com.saidjte.schoolradio.data.local.entity.ScheduledEventEntity
@@ -60,28 +81,52 @@ import com.saidjte.schoolradio.di.ServiceLocator
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
 /**
- * لوحة التحكم الرئيسية: هوية المدرسة، الساعة الحية، حالة المشغل،
- * الفقرة التالية، جدول اليوم مع حالة كل فقرة، وزر البث المباشر الضخم.
+ * لوحة التحكم الرئيسية (v0.4.0 — إعادة تصميم):
+ *  - تحية زمنية باسم المستخدم الحالي ودوره
+ *  - بطاقة بطل متدرجة: اسم المدرسة + ساعة حية بأرقام جدولية
+ *  - شريط إحصاءات اليوم: الفقرات / المكتملة / المتبقية
+ *  - بطاقة «الفقرة التالية» مع عدّاد تنازلي حي بالثانية
+ *  - بطاقة بث مباشر محسّنة: نبضات لمس، حلقة مستوى انسيابية، شارة «مباشر» متحركة
+ *  - حالات فارغة بإجراءات انتقال مباشر (الجدولة/المكتبة)
  */
+
+/** التحية العربية حسب ساعة اليوم */
+private fun greetingFor(hour: Int): String = when (hour) {
+    in 5..11 -> "صباح الخير"
+    in 12..16 -> "نهارك سعيد"
+    in 17..21 -> "مساء الخير"
+    else -> "ليلة موفقة"
+}
+
 @Composable
-fun DashboardScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
+fun DashboardScreen(
+    snackbar: androidx.compose.material3.SnackbarHostState,
+    onNavigateToSchedule: () -> Unit = {},
+    onNavigateToLibrary: () -> Unit = {}
+) {
     val scope = rememberCoroutineScope()
     val locator = ServiceLocator
 
     val settings by locator.settings.settings
         .collectAsStateWithLifecycle(initialValue = AppSettings())
     val playback by locator.playback.state.collectAsStateWithLifecycle()
+    val currentUser by locator.session.currentUser
+        .collectAsStateWithLifecycle(initialValue = null)
 
-    // ساعة حية تتحدث كل ثانية
-    val nowText by produceState("…") {
+    // نبضة زمنية كل ثانية — تغذي الساعة والعدّاد التنازلي معًا
+    val nowTick by produceState(System.currentTimeMillis()) {
         while (true) {
-            value = SimpleDateFormat("EEEE d MMMM yyyy — HH:mm:ss", Locale("ar")).format(Date())
+            value = System.currentTimeMillis()
             delay(1000)
         }
+    }
+    val nowText = remember(nowTick) {
+        SimpleDateFormat("EEEE d MMMM yyyy — HH:mm:ss", Locale("ar")).format(Date(nowTick))
     }
 
     // أحداث اليوم + سجل التنفيذ لتلوين الحالات
@@ -89,17 +134,22 @@ fun DashboardScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
         .collectAsStateWithLifecycle(initialValue = emptyList())
     val executions by locator.schedules.recentExecutions
         .collectAsStateWithLifecycle(initialValue = emptyList())
-    val todayKey = ScheduleLogic.dateKey(System.currentTimeMillis())
-    val minutesNow = ScheduleLogic.minutesOfDay(System.currentTimeMillis())
+    val todayKey = ScheduleLogic.dateKey(nowTick)
+    val minutesNow = ScheduleLogic.minutesOfDay(nowTick)
 
     // حالة الميكروفون والمستوى الحي — من مركز الحالة المشترك (ServiceLocator)
     val mic = locator.mic
     val isLive by locator.micLive.collectAsStateWithLifecycle()
-    val micLevel by locator.micLevel.collectAsStateWithLifecycle()
+    val micLevelRaw by locator.micLevel.collectAsStateWithLifecycle()
     val micError by locator.micMessage.collectAsStateWithLifecycle()
+    val micLevel by animateFloatAsState(
+        targetValue = micLevelRaw.coerceIn(0f, 1f),
+        animationSpec = tween(90),
+        label = "mic-level-smooth"
+    )
     var route by remember { mutableStateOf(AudioRoutingManager.Route.SPEAKER) }
 
-    // حالة التسجيل (v0.3.0) — مؤقّت + وضع + نشاط
+    // حالة التسجيل — مؤقّت + وضع + نشاط
     val recActive by locator.recordings.isRecording.collectAsStateWithLifecycle()
     val recElapsed by locator.recordings.elapsedMs.collectAsStateWithLifecycle()
     val recMode by locator.recordings.mode.collectAsStateWithLifecycle()
@@ -129,45 +179,110 @@ fun DashboardScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
         }
     }
 
+    // إحصاءات اليوم
+    val completedToday = executions.count {
+        it.dateKey == todayKey && it.status == ExecutionStatus.COMPLETED
+    }
+    val remainingToday = todayEvents.count { it.startMinutes > minutesNow }
+    val nextEvent = todayEvents.filter { it.startMinutes > minutesNow }.minByOrNull { it.startMinutes }
+
     LazyColumn(
-        Modifier.fillMaxSize().padding(16.dp),
+        Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // ===== الهوية والساعة =====
+        // ===== التحية الزمنية =====
         item {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
+            Column {
+                Text(
+                    "${greetingFor(Calendar.getInstance().get(Calendar.HOUR_OF_DAY))}" +
+                        (currentUser?.let { "، ${it.name}" } ?: ""),
+                    style = MaterialTheme.typography.headlineSmall
+                )
+                Text(
+                    if (currentUser != null)
+                        "${currentUser!!.roleEnum().labelAr} — جاهز للإذاعة"
+                    else "جاهز للإذاعة",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        // ===== بطاقة البطل: المدرسة + الساعة الحية =====
+        item {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .shadow(elevation = 4.dp, shape = MaterialTheme.shapes.large)
+                    .background(
+                        brush = Brush.linearGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.primary,
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
+                                MaterialTheme.colorScheme.tertiary
+                            )
+                        ),
+                        shape = MaterialTheme.shapes.large
+                    )
+            ) {
+                Column(Modifier.padding(18.dp)) {
                     Text(
                         settings.schoolName,
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = MaterialTheme.colorScheme.primary
+                        style = MaterialTheme.typography.titleLarge,
+                        color = Color.White
                     )
                     Text(
                         "الإذاعة المدرسية — نظام التحكم المحلي",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = Color.White.copy(alpha = 0.85f)
                     )
+                    Spacer(Modifier.height(10.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            Icons.Filled.DateRange, null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            AppIcons.ScheduleClock, null,
+                            tint = Color.White.copy(alpha = 0.9f),
+                            modifier = Modifier.size(18.dp)
                         )
-                        Text("  $nowText", style = MaterialTheme.typography.bodyMedium)
+                        Spacer(Modifier.size(6.dp))
+                        Text(
+                            nowText,
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontSize = 17.sp,
+                                fontFeatureSettings = "tnum"
+                            ),
+                            color = Color.White
+                        )
                     }
                 }
             }
         }
 
+        // ===== شريط إحصاءات اليوم =====
+        if (todayEvents.isNotEmpty()) {
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    StatChip("فقرات اليوم", "${todayEvents.size}", Modifier.weight(1f))
+                    StatChip("أُنجزت", "$completedToday", Modifier.weight(1f), MaterialTheme.status.success)
+                    StatChip("متبقية", "$remainingToday", Modifier.weight(1f), MaterialTheme.colorScheme.primary)
+                }
+            }
+        }
+
+        // ===== بطاقة «الفقرة التالية» مع العدّاد =====
+        nextEvent?.let { next ->
+            item { NextUpCard(next, nowTick, todayKey, executions) }
+        }
+
         // ===== المشغل الحالي =====
-        item {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("قيد التشغيل الآن", style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        playback.currentTitle ?: "لا شيء يعمل حالياً",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    if (playback.hasQueue) {
+        if (playback.hasQueue) {
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("قيد التشغيل الآن", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            playback.currentTitle ?: "لا شيء يعمل حالياً",
+                            style = MaterialTheme.typography.titleMedium
+                        )
                         LinearProgressIndicator(
                             progress = {
                                 if (playback.durationMs > 0)
@@ -188,7 +303,8 @@ fun DashboardScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                             IconButton(onClick = { locator.playback.playPause() }) {
                                 Icon(
                                     if (playback.isPlaying) AppIcons.Pause
-                                    else Icons.Filled.PlayArrow, "تشغيل/إيقاف"
+                                    else Icons.Filled.PlayArrow,
+                                    "تشغيل/إيقاف"
                                 )
                             }
                             IconButton(onClick = { locator.playback.next() }) {
@@ -233,30 +349,144 @@ fun DashboardScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
         }
 
         // ===== جدول اليوم =====
-        item {
-            Text("فقرات اليوم", style = MaterialTheme.typography.titleMedium)
-        }
+        item { Text("فقرات اليوم", style = MaterialTheme.typography.titleMedium) }
         if (todayEvents.isEmpty()) {
             item {
-                Card(Modifier.fillMaxWidth()) {
-                    Text(
-                        "لا توجد فقرات مجدولة لليوم — أنشئها من تبويب الجدولة",
-                        Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                EmptyStateCard(
+                    icon = AppIcons.Event,
+                    title = "لا توجد فقرات مجدولة لليوم",
+                    body = "أنشئ فقرات الصباح من تبويب الجدولة ليعمل النظام تلقائياً في مواعيدها",
+                    ctaLabel = "الذهاب إلى الجدولة",
+                    onCta = onNavigateToSchedule
+                )
             }
         } else {
             items(todayEvents, key = { it.id }) { event ->
                 EventRow(event, executions, todayKey, minutesNow, todayEvents)
             }
         }
+
+        // ===== اقتراح المكتبة عندما تكون فقرات اليوم قليلة =====
+        if (todayEvents.isNotEmpty() && remainingToday == 0) {
+            item {
+                Card(
+                    Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer
+                    )
+                ) {
+                    Row(
+                        Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            AppIcons.MusicNote, null,
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                            Text(
+                                "انتهت فقرات اليوم",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                            Text(
+                                "حضّر فقرات الغد من المكتبة والقوائم",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                        androidx.compose.material3.TextButton(onClick = onNavigateToLibrary) {
+                            Text("المكتبة")
+                        }
+                    }
+                }
+            }
+        }
         item { Spacer(Modifier.height(80.dp)) }
     }
 }
 
-/** سطر فقرة اليوم مع شريحة الحالة (مجدولة/قيد التشغيل/مكتملة/فائتة/فشلت) */
+/** رقاقة إحصاء صغيرة: تسمية + قيمة كبيرة بلون اختياري */
+@Composable
+private fun StatChip(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    valueColor: Color = MaterialTheme.colorScheme.onSurface
+) {
+    Surface(
+        modifier = modifier,
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
+        Column(Modifier.padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                value,
+                style = MaterialTheme.typography.headlineSmall,
+                color = valueColor
+            )
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/**
+ * بطاقة «الفقرة التالية»: عنوانها ووقتها وعدّاد تنازلي حي.
+ * إذا كانت الفقرة قيد التشغيل فعلاً (سجل RUNNING) تتحول إلى شارة «قيد التشغيل».
+ */
+@Composable
+private fun NextUpCard(
+    next: ScheduledEventEntity,
+    nowMs: Long,
+    todayKey: String,
+    executions: List<com.saidjte.schoolradio.data.local.entity.ScheduleExecutionEntity>
+) {
+    val running = executions.any {
+        it.eventId == next.id && it.dateKey == todayKey && it.status == ExecutionStatus.RUNNING
+    }
+    val remainingMs = next.startMinutes * 60_000L - ScheduleLogic.minutesOfDay(nowMs) * 60_000L -
+        (nowMs % 60_000L)
+    val countdown = if (running) "الآن" else "تبدأ بعد ${ScheduleLogic.formatDuration(remainingMs.coerceAtLeast(0))}"
+
+    Surface(
+        Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
+    ) {
+        Row(
+            Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary) {
+                Box(Modifier.padding(10.dp), contentAlignment = Alignment.Center) {
+                    Text(
+                        ScheduleLogic.formatMinutes(next.startMinutes),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                Text("الفقرة التالية", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(next.title, style = MaterialTheme.typography.titleSmall)
+            }
+            Text(
+                countdown,
+                style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"),
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
+
+/** سطر فقرة اليوم مع شريحة الحالة الدلالية وتمييز الفقرة قيد التشغيل */
 @Composable
 private fun EventRow(
     event: ScheduledEventEntity,
@@ -265,27 +495,43 @@ private fun EventRow(
     minutesNow: Int,
     all: List<ScheduledEventEntity>
 ) {
+    val st = MaterialTheme.status
     val execution = executions.firstOrNull {
         it.eventId == event.id && it.dateKey == todayKey
     }
+    val isRunning = execution?.status == ExecutionStatus.RUNNING
     val statusLabel = when {
-        execution?.status == ExecutionStatus.COMPLETED -> "مكتملة" to Color(0xFF2E7D32)
-        execution?.status == ExecutionStatus.RUNNING -> "قيد التشغيل" to Color(0xFF1565C0)
-        execution?.status == ExecutionStatus.FAILED -> "فشلت" to Color(0xFFC62828)
-        execution?.status == ExecutionStatus.MISSED -> "فائتة" to Color(0xFF9E9D24)
-        event.startMinutes < minutesNow -> "لم تعمل" to Color(0xFF9E9D24)
-        else -> "مجدولة" to Color(0xFF00695C)
+        execution?.status == ExecutionStatus.COMPLETED -> "مكتملة" to st.success
+        isRunning -> "قيد التشغيل" to st.running
+        execution?.status == ExecutionStatus.FAILED -> "فشلت" to st.failed
+        execution?.status == ExecutionStatus.MISSED -> "فائتة" to st.warning
+        event.startMinutes < minutesNow -> "لم تعمل" to st.warning
+        else -> "مجدولة" to MaterialTheme.colorScheme.primary
     }
     val next = all.filter { it.startMinutes > event.startMinutes }
         .minByOrNull { it.startMinutes }
 
-    Card(Modifier.fillMaxWidth()) {
+    Card(
+        Modifier.fillMaxWidth().animateContentSize(),
+        border = if (isRunning) BorderStroke(2.dp, st.running.copy(alpha = 0.5f)) else null,
+        colors = if (isRunning) CardDefaults.cardColors(
+            containerColor = st.running.copy(alpha = 0.08f)
+        ) else CardDefaults.cardColors()
+    ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                ScheduleLogic.formatMinutes(event.startMinutes),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Surface(
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+            ) {
+                Text(
+                    ScheduleLogic.formatMinutes(event.startMinutes),
+                    Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontFeatureSettings = "tnum", fontWeight = FontWeight.Bold
+                    ),
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(event.title, style = MaterialTheme.typography.bodyLarge)
                 Text(
@@ -296,25 +542,15 @@ private fun EventRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Surface(
-                color = statusLabel.second.copy(alpha = 0.12f),
-                shape = MaterialTheme.shapes.small
-            ) {
-                Text(
-                    statusLabel.first,
-                    Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    color = statusLabel.second,
-                    style = MaterialTheme.typography.labelSmall
-                )
-            }
+            StatusBadge(statusLabel.first, statusLabel.second)
         }
     }
 }
 
 /**
- * بطاقة البث المباشر: زر ضخم «اضغط للتحدث» بنظام الضغط والاستمرار،
- * حلقة مستوى صوت حية، اختيار مسار الإخراج، مؤشر تفعيل واضح للميكروفون،
- * وزر تسجيل (v0.3.0): يسجّل البث الجاري أو فقرة تحضيرية مستقلة.
+ * بطاقة البث المباشر: زر ضخم «اضغط للتحدث» بنظام الضغط والاستمرار مع نبضات لمس،
+ * حلقة مستوى صوت حية انسيابية، شارة «مباشر» نابضة، اختيار مسار الإخراج،
+ * وزر تسجيل: يسجّل البث الجاري أو فقرة تحضيرية مستقلة.
  */
 @Composable
 private fun LiveBroadcastCard(
@@ -330,6 +566,9 @@ private fun LiveBroadcastCard(
     onTalkEnd: () -> Unit,
     onRecordToggle: () -> Unit
 ) {
+    val st = MaterialTheme.status
+    val haptics = LocalHapticFeedback.current
+
     val pulse = rememberInfiniteTransition(label = "live-pulse")
     val pulseAlpha by pulse.animateFloat(
         initialValue = 0.15f, targetValue = 0.55f,
@@ -340,15 +579,35 @@ private fun LiveBroadcastCard(
     Card(
         Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = if (isLive) Color(0xFFC62828).copy(alpha = 0.08f)
+            containerColor = if (isLive) st.liveContainer
             else MaterialTheme.colorScheme.surface
-        )
+        ),
+        border = if (isLive) BorderStroke(2.dp, st.live.copy(alpha = 0.5f)) else null
     ) {
         Column(
             Modifier.fillMaxWidth().padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("البث المباشر عبر الميكروفون", style = MaterialTheme.typography.titleMedium)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("البث المباشر عبر الميكروفون", style = MaterialTheme.typography.titleMedium)
+                AnimatedVisibility(
+                    visible = isLive,
+                    enter = fadeIn(tween(150)) + expandVertically(tween(150)),
+                    exit = fadeOut(tween(150)) + shrinkVertically(tween(150))
+                ) {
+                    val livePulse = rememberInfiniteTransition(label = "badge-pulse")
+                    val badgeAlpha by livePulse.animateFloat(
+                        initialValue = 1f, targetValue = 0.35f,
+                        animationSpec = infiniteRepeatable(tween(500), RepeatMode.Reverse),
+                        label = "badge-alpha"
+                    )
+                    StatusBadge(
+                        "● مباشر", st.live,
+                        modifier = Modifier.padding(start = 8.dp)
+                            .alpha(badgeAlpha)
+                    )
+                }
+            }
             Text(
                 "اضغط مع الاستمرار للتحدث — حرّر للإنهاء (تُخفَّض الموسيقى تلقائياً)",
                 style = MaterialTheme.typography.bodySmall,
@@ -359,7 +618,7 @@ private fun LiveBroadcastCard(
             Box(Modifier.size(160.dp).padding(16.dp), contentAlignment = Alignment.Center) {
                 val baseRing = MaterialTheme.colorScheme.primary
                 Canvas(Modifier.fillMaxSize()) {
-                    val ringColor = if (isLive) Color(0xFFC62828) else baseRing
+                    val ringColor = if (isLive) st.live else baseRing
                     val alpha = if (isLive) 0.25f + level * 0.75f else pulseAlpha
                     drawCircle(
                         color = ringColor.copy(alpha = alpha),
@@ -374,27 +633,40 @@ private fun LiveBroadcastCard(
                         .pointerInput(isLive) {
                             detectTapGestures(
                                 onPress = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                     if (!isLive) onTalkStart()
-                                    try { awaitRelease() } finally { if (isLive) onTalkEnd() }
+                                    try { awaitRelease() } finally {
+                                        if (isLive) {
+                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            onTalkEnd()
+                                        }
+                                    }
                                 }
                             )
                         },
-                    shape = androidx.compose.foundation.shape.CircleShape,
-                    color = if (isLive) Color(0xFFC62828) else MaterialTheme.colorScheme.primary,
+                    shape = CircleShape,
+                    color = if (isLive) st.live else MaterialTheme.colorScheme.primary,
                     shadowElevation = 6.dp
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            if (isLive) "تُبثّ الآن" else "اضغط\nللتحدث",
-                            color = Color.White,
-                            style = MaterialTheme.typography.titleMedium,
-                            textAlign = TextAlign.Center
-                        )
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                AppIcons.Mic, null,
+                                tint = Color.White.copy(alpha = 0.9f),
+                                modifier = Modifier.size(26.dp)
+                            )
+                            Text(
+                                if (isLive) "تُبثّ الآن" else "اضغط\nللتحدث",
+                                color = Color.White,
+                                style = MaterialTheme.typography.titleSmall,
+                                textAlign = TextAlign.Center
+                            )
+                        }
                     }
                 }
             }
 
-            // ===== زر التسجيل (v0.3.0) =====
+            // ===== زر التسجيل =====
             // أثناء البث: يسجّل البث الحي | بدون بث: يسجّل فقرة تحضيرية مستقلة
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -411,7 +683,7 @@ private fun LiveBroadcastCard(
                         )
                         Canvas(Modifier.size(64.dp)) {
                             drawCircle(
-                                color = Color(0xFFC62828).copy(alpha = recAlpha),
+                                color = st.live.copy(alpha = recAlpha),
                                 radius = size.minDimension / 2f,
                                 style = Stroke(width = 10f)
                             )
@@ -421,11 +693,13 @@ private fun LiveBroadcastCard(
                         modifier = Modifier
                             .size(56.dp)
                             .pointerInput(recActive) {
-                                detectTapGestures { onRecordToggle() }
+                                detectTapGestures {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onRecordToggle()
+                                }
                             },
-                        shape = androidx.compose.foundation.shape.CircleShape,
-                        color = if (recActive) Color(0xFFC62828)
-                        else MaterialTheme.colorScheme.secondary,
+                        shape = CircleShape,
+                        color = if (recActive) st.live else MaterialTheme.colorScheme.secondary,
                         shadowElevation = 4.dp
                     ) {
                         Box(contentAlignment = Alignment.Center) {
@@ -450,7 +724,7 @@ private fun LiveBroadcastCard(
                     if (recActive) {
                         Text(
                             "${ScheduleLogic.formatDuration(recElapsed)} — سيُحفظ تلقائياً في الأرشيف",
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     } else {
@@ -480,7 +754,7 @@ private fun LiveBroadcastCard(
                 }
             }
             error?.let {
-                Text(it, color = Color(0xFFC62828), style = MaterialTheme.typography.bodySmall)
+                Text(it, color = st.failed, style = MaterialTheme.typography.bodySmall)
             }
         }
     }

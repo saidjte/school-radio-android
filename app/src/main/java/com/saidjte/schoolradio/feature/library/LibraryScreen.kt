@@ -9,12 +9,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
@@ -25,10 +27,12 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -45,6 +49,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.saidjte.schoolradio.core.ui.AppIcons
+import com.saidjte.schoolradio.core.ui.EmptyStateCard
+import com.saidjte.schoolradio.core.ui.ScreenHeader
 import com.saidjte.schoolradio.core.util.ScheduleLogic
 import com.saidjte.schoolradio.data.local.entity.AudioTrackEntity
 import com.saidjte.schoolradio.di.ServiceLocator
@@ -108,6 +115,12 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
 
+            ScreenHeader(
+                title = "المكتبة الصوتية",
+                subtitle = if (tracks.isEmpty()) "لا مقاطع بعد"
+                else "${tracks.size} مقطعاً جاهزاً للبرامج"
+            )
+
             // ===== البحث =====
             OutlinedTextField(
                 value = search,
@@ -115,7 +128,15 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                 placeholder = { Text("ابحث باسم المقطع…") },
                 leadingIcon = { Icon(Icons.Filled.Search, null) },
-                singleLine = true
+                trailingIcon = {
+                    if (search.isNotEmpty()) {
+                        IconButton(onClick = { search = "" }) {
+                            Icon(Icons.Filled.Close, "مسح البحث")
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = MaterialTheme.shapes.medium
             )
 
             // ===== شريط التصنيفات =====
@@ -143,13 +164,17 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
             }
 
             if (visible.isEmpty()) {
-                Card(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                    Text(
-                        "لا توجد مقاطع بعد — اضغط زر (+) لاستيراد ملفات MP3/WAV من الجهاز",
-                        Modifier.padding(16.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                EmptyStateCard(
+                    icon = AppIcons.MusicNote,
+                    title = if (tracks.isEmpty()) "المكتبة فارغة" else "لا نتائج مطابقة",
+                    body = if (tracks.isEmpty())
+                        "استورد ملفات MP3/WAV من الجهاز لتجهيز فقرات الإذاعة"
+                    else "جرّب كلمة بحث مختلفة أو اختر تصنيفاً آخر",
+                    ctaLabel = if (tracks.isEmpty()) "استيراد مقاطع" else null,
+                    onCta = if (tracks.isEmpty()) {
+                        { importLauncher.launch(arrayOf("audio/*")) }
+                    } else null
+                )
             } else {
                 LazyColumn(
                     Modifier.fillMaxSize(),
@@ -218,10 +243,21 @@ private fun TrackRow(
 ) {
     Card(Modifier.fillMaxWidth()) {
         Row(
-            Modifier.padding(12.dp),
+            Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(Modifier.weight(1f)) {
+            FilledTonalIconButton(
+                onClick = onPlay,
+                modifier = Modifier.size(44.dp),
+                enabled = track.isAvailable,
+                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            ) {
+                Icon(Icons.Filled.PlayArrow, "تشغيل")
+            }
+            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
                 Text(track.title, style = MaterialTheme.typography.bodyLarge)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (categoryName != null) {
@@ -246,10 +282,6 @@ private fun TrackRow(
                         Icons.Filled.Warning, "أعد ربط الملف",
                         tint = MaterialTheme.colorScheme.secondary
                     )
-                }
-            } else {
-                IconButton(onClick = onPlay) {
-                    Icon(Icons.Filled.PlayArrow, "تشغيل")
                 }
             }
             IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, "تعديل") }
