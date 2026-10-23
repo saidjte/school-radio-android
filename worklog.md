@@ -1,5 +1,54 @@
 # worklog — سجل النشر والدروس المستفادة (school-radio-android)
 
+---
+
+## v0.2.0 — النسخة الاحترافية دون اتصال (2026-10-23)
+
+### خطوات النشر بالترتيب
+
+1. **الترقية**: versionCode 1→2, versionName 0.1.0→0.2.0 في `version.properties` فقط —
+   Gradle وCI وسكربت التحقق يقرؤونها منه (مصدر حقيقة واحد).
+2. **إعادة كتابة كاملة بـ Compose**: 7 commits مرحلية (gradle → data → audio →
+   scheduler → ui+backup → tests) — كل commit يبني باستقلالية.
+3. **الأيقونات**: استخدمنا متجهات مخصصة بدل `material-icons-extended` —
+   وفرنا ~9MB من حجم APK.
+4. **الجدولة**: AlarmManager دقيق (SCHEDULE_EXACT_ALARM + canScheduleExactAlarms()
+   مع تراجع setWindow ±10 دقائق) — WorkManager لا يضمن الثانية المحددة (موثق أعلاه).
+5. **منع التكرار**: قيد تفرد (event_id, date_key) في Room + دالة beginExecution
+   تسمح بإعادة المحاولة بعد FAILED فقط.
+6. **التوقيع**: نفس مفتاح v0.1.0 — بصمة SHA-256 مطابقة (تحققها سكربت التحقق 7/7).
+
+### دروس v0.2.0
+
+- **`material-icons-core` لا يتضمن Pause/SkipNext/SkipPrevious/Repeat/Alarm** —
+  إما icons-extended (+9MB) أو متجهات مخصصة (اخترنا المتجهات، مسارات Material الرسمية Apache 2.0).
+- **Room**: أسماء الأعمدة تتبع أسماء خصائص Kotlin (camelCase) إلا مع `@ColumnInfo` —
+  كنا نكتب استعلامات snake_case فرفضتها KSP؛ الحل: `@ColumnInfo` صريحة في الكيانات.
+- **`ExposedDropdownMenu` عضو في نطاق `ExposedDropdownMenuBoxScope`** — لا يمكن
+  استيراده كدالة عليا ولا استدعاؤه خارج الـ lambda.
+- **قراءة `MaterialTheme.colorScheme` داخل `Canvas {}` ممنوعة** (نطاق غير composable) —
+  التقط اللون قبل الحلقة.
+- **المنطق الصرف أولاً**: `ScheduleLogic` بلا تبعيات أندرويد جعل 12 اختبار وحدة ممكنة
+  وكشف خطأ أقنعة الأيام في الاختبار نفسه (bit0 = الاثنين).
+- **فشل dex عابر**: mergeDexRelease قد يفشل مرة بنفاد الذاكرة — إعادة التشغيل تكفي
+  (gradle.properties: -Xmx3g).
+- **واجهات Android التي تُنسى**: `setSpeakerphoneOn` مهجورة من API 31 →
+  `setCommunicationDevice()` مع `availableCommunicationDevices`.
+- **SAF**: `takePersistableUriPermission` إلزامي بعد كل OPEN_DOCUMENT وإلا مات
+  الوصول بعد إعادة التشغيل؛ لا يمكن تشغيل MediaRecorder وAudioRecord على الميكروفون
+  معاً — البث+التسجيل المتزامن يتطلب خط أنابيب AudioRecord واحد (مرشح لـ v0.3.0).
+
+### قائمة تحقق ما قبل الإصدار (طُبقت حرفياً)
+
+1. ✔ versionCode 2 / versionName 0.2.0 في version.properties
+2. ✔ بناء موقّع بنفس المفتاح (KS_* من البيئة)
+3. ✔ `bash tools/verify_release.sh` — 7/7 (versionCode، المعماريتان فعلياً في lib/، البصمة، التوقيع)
+4. ✔ commits بنمط `v0.2.0:` ثم `feat(scope):` واضحة
+5. ✔ `git archive --format=zip --prefix=school-radio-android/` للحزمة المصدرية
+6. ✔ Release يدوي REST API (POST /releases ثم uploads.github.com) — CI لا ينشئ Release
+7. ✔ فحص الروابط: 200 + 206 إلزامي قبل التسليم
+8. ✔ تحديث README + صفحة المعاينة (docs/index.html) بعد الإصدار
+
 توثيق كل خطوة في نشر هذا التطبيق، والدرس المستفاد من كل خطأ — حتى لا نكرره.
 
 ---
