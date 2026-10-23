@@ -27,7 +27,8 @@ class BackupRepository(
     private val settings: SettingsStore
 ) {
     companion object {
-        const val FORMAT_VERSION = 1
+        const val FORMAT_VERSION = 2   // v2 (v0.3.0): أُضيف users + recordings + currentUserId
+        const val MIN_SUPPORTED_VERSION = 1
         const val BACKUP_MIME = "application/json"
         const val BACKUP_EXT = ".schoolradio.json"
     }
@@ -37,7 +38,7 @@ class BackupRepository(
         runCatching {
             val root = JSONObject()
             root.put("format_version", FORMAT_VERSION)
-            root.put("app_version", "0.2.0")
+            root.put("app_version", "0.3.0")
             root.put("exported_at", System.currentTimeMillis())
 
             val categories = JSONArray()
@@ -86,6 +87,25 @@ class BackupRepository(
             }
             root.put("events", events)
 
+            // ===== v2: المستخدمون + أرشيف التسجيلات =====
+            val users = JSONArray()
+            db.userDao().observeAll().first().forEach { u ->
+                users.put(JSONObject().put("id", u.id).put("name", u.name).put("role", u.role))
+            }
+            root.put("users", users)
+
+            val recordings = JSONArray()
+            db.recordingDao().observeAll().first().forEach { r ->
+                recordings.put(JSONObject()
+                    .put("title", r.title).put("filePath", r.filePath)
+                    .put("durationMs", r.durationMs).put("sizeBytes", r.sizeBytes)
+                    .put("source", r.source)
+                    .put("recordedByName", r.recordedByName ?: JSONObject.NULL)
+                    .put("recordedByRole", r.recordedByRole ?: JSONObject.NULL)
+                    .put("createdAt", r.createdAt))
+            }
+            root.put("recordings", recordings)
+
             root.put("settings", JSONObject().apply {
                 val s = settings.settings.first()
                 put("schoolName", s.schoolName)
@@ -94,6 +114,7 @@ class BackupRepository(
                 put("duckVolume", s.duckVolume.toDouble())
                 put("duckEnabled", s.duckEnabled)
                 put("notificationsEnabled", s.notificationsEnabled)
+                put("currentUserId", s.currentUserId ?: JSONObject.NULL)
             })
 
             context.contentResolver.openOutputStream(uri)?.use { os ->
@@ -114,9 +135,9 @@ class BackupRepository(
             } ?: throw IllegalStateException("تعذر قراءة ملف النسخة")
 
             val root = JSONObject(text)
-            // ---- التحقق من السلامة قبل أي تعديل ----
+            // ---- التحقق من السلامة قبل أي تعديل (نقبل v1 و v2) ----
             val version = root.optInt("format_version", -1)
-            if (version != FORMAT_VERSION) {
+            if (version < MIN_SUPPORTED_VERSION || version > FORMAT_VERSION) {
                 throw IllegalArgumentException("إصدار النسخة غير مدعوم (format_version=$version)")
             }
             for (key in listOf("categories", "tracks", "playlists", "schedules", "events", "settings")) {
@@ -225,6 +246,62 @@ class BackupRepository(
                 }
             }
 
+            // ---- v2: استيراد المستخدمين والأدوار (نسخ v1 تجاهلها بأمان) ----
+            val userIdMap = HashMap<Long, Long>()
+            if (root.has("users")) {
+                root.getJSONArray("users").let { arr ->
+                    for (i in 0 until arr.length()) {
+                        val o = arr.getJSONObject(i)
+                        val newId = db.userDao().insert(
+                            com.saidjte.schoolradio.data.local.entity.UserEntity(
+                                name = o.getString("name"),
+                                role = o.getString("role")
+                            )
+                        )
+                        if (newId != -1L) userIdMap[o.getLong("id")] = newId
+                    }
+                }
+            }
+            if (userIdMap.isEmpty()) {
+                // نسخة قديمة أو قائمة فارغة: أعد زرع المشرف الافتراضي
+                if (db.userDao().count() == 0) {
+                    val id = db.userDao().insert(
+                        com.saidjte.schoolradio.data.local.entity.UserEntity(
+                            name = com.saidjte.schoolradio.data.repository.SessionRepository.DEFAULT_ADMIN_NAME,
+                            role = com.saidjte.schoolradio.data.local.entity.UserRole.ADMIN.name
+                        )
+                    )
+                    if (id != -1L) userIdMap[-1L] = id
+                    settings.setCurrentUserId(id)
+                }
+            }
+
+            // ---- v2: استيراد بيانات أرشيف التسجيلات (الملفات نفسها لا تُنسخ في النسخة) ----
+            var missingRecordingFiles = 0
+            if (root.has("recordings")) {
+                root.getJSONArray("recordings").let { arr ->
+                    for (i in 0 until arr.length()) {
+                        val o = arr.getJSONObject(i)
+                        val path = o.getString("filePath")
+                        if (!java.io.File(path).exists()) missingRecordingFiles++
+                        db.recordingDao().insert(
+                            com.saidjte.schoolradio.data.local.entity.RecordingEntity(
+                                title = o.getString("title"),
+                                filePath = path,
+                                durationMs = o.getLong("durationMs"),
+                                sizeBytes = o.getLong("sizeBytes"),
+                                source = o.optString("source", "PTT"),
+                                recordedByName = if (o.isNull("recordedByName")) null
+                                else o.getString("recordedByName"),
+                                recordedByRole = if (o.isNull("recordedByRole")) null
+                                else o.getString("recordedByRole"),
+                                createdAt = o.getLong("createdAt")
+                            )
+                        )
+                    }
+                }
+            }
+
             // ---- استيراد الإعدادات ----
             root.getJSONObject("settings").let { so ->
                 settings.setSchoolName(so.getString("schoolName"))
@@ -235,10 +312,21 @@ class BackupRepository(
                 settings.setNotificationsEnabled(so.getBoolean("notificationsEnabled"))
             }
 
+            // المستخدم الحالي: اربط المعرف القديم بالجديد إن وُجد
+            val savedUserId = if (root.getJSONObject("settings").isNull("currentUserId")) null
+            else root.getJSONObject("settings").optLong("currentUserId", -1L)
+            settings.setCurrentUserId(
+                savedUserId?.let { userIdMap[it] }
+                    ?: userIdMap.values.firstOrNull()
+            )
+
             val msg = buildString {
                 append("استُعيدت ${trackIdMap.size} مقطعاً")
                 if (unavailableCount > 0) {
                     append("، منها $unavailableCount غير متاح حالياً (أعد ربطه من المكتبة)")
+                }
+                if (missingRecordingFiles > 0) {
+                    append(". تنبيه: $missingRecordingFiles تسجيلاً بلا ملفاتها على هذا الجهاز")
                 }
                 append(". وجرى حفظ نسخة أمان من بياناتك السابقة قبل الاستبدال.")
             }
