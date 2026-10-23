@@ -16,6 +16,8 @@ class SchoolRadioApp : Application() {
         ServiceLocator.init(this)
         ServiceLocator.appScope.launch {
             runCatching {
+                // v0.3.0: زرع المشرف الافتراضي عند أول تشغيل (بعد تثبيت نظيف فقط)
+                ServiceLocator.session.ensureDefaultUser()
                 ServiceLocator.library.ensureDefaultCategories()
                 ServiceLocator.library.refreshAvailability()
                 // عند بدء العملية: أعد ضبط المنبهات (يغطي أيضًا الحالة بعد القتل القسري)

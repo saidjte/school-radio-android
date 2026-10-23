@@ -31,6 +31,8 @@ class MicrophoneController(
     private val routing: AudioRoutingManager,
     private val onDuck: (duck: Boolean) -> Unit,
     private val onLevel: (level: Float) -> Unit = {},
+    /** ★ v0.3.0: نقطة تفريغ دفعات PCM — بوابتها يعمل التسجيل المتزامن مع البث (خط أنابيب واحد) */
+    private val onPcm: (pcm: ShortArray, count: Int) -> Unit = { _, _ -> },
     private val onStateChanged: (isLive: Boolean, error: String?) -> Unit = { _, _ -> }
 ) {
     companion object {
@@ -144,7 +146,7 @@ class MicrophoneController(
         return null
     }
 
-    /** حلقة التمرير: قراءة ← كتابة فورية ← حساب مستوى RMS للمؤشر البصري */
+    /** حلقة التمرير: قراءة ← كتابة فورية ← تفريغ للتسجيل ← حساب مستوى RMS للمؤشر البصري */
     private fun passthroughLoop() {
         // دفعة 10ms = 480 عينة عند 48kHz — أصغر دفعة عملية لتأخير منخفض
         val chunk = ShortArray(SAMPLE_RATE / 100)
@@ -154,6 +156,8 @@ class MicrophoneController(
             } catch (_: Exception) { break }
             if (n > 0) {
                 audioTrack?.write(chunk, 0, n)
+                // نفس الدفعة تذهب للتسجيل المتزامن (كلفة استدعاء واحد — لا تأخير عملي)
+                onPcm(chunk, n)
                 onLevel(rms(chunk, n))
             }
         }

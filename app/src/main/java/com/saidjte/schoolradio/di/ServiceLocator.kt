@@ -4,11 +4,15 @@ import android.content.Context
 import com.saidjte.schoolradio.audio.AudioRoutingManager
 import com.saidjte.schoolradio.audio.MicrophoneController
 import com.saidjte.schoolradio.audio.PlaybackConnection
+import com.saidjte.schoolradio.audio.RecordingManager
+import com.saidjte.schoolradio.audio.RecordingsPlayer
 import com.saidjte.schoolradio.data.backup.BackupRepository
 import com.saidjte.schoolradio.data.local.AppDatabase
 import com.saidjte.schoolradio.data.repository.LibraryRepository
 import com.saidjte.schoolradio.data.repository.PlaylistRepository
+import com.saidjte.schoolradio.data.repository.RecordingRepository
 import com.saidjte.schoolradio.data.repository.ScheduleRepository
+import com.saidjte.schoolradio.data.repository.SessionRepository
 import com.saidjte.schoolradio.data.settings.SettingsStore
 import com.saidjte.schoolradio.scheduler.SchedulerManager
 import kotlinx.coroutines.CoroutineScope
@@ -46,12 +50,21 @@ object ServiceLocator {
         private set
     lateinit var backup: BackupRepository
         private set
+    lateinit var recordingsRepo: RecordingRepository
+        private set
+    lateinit var session: SessionRepository
+        private set
     lateinit var routing: AudioRoutingManager
         private set
     lateinit var playback: PlaybackConnection
         private set
     lateinit var scheduler: SchedulerManager
         private set
+    lateinit var recordings: RecordingManager
+        private set
+
+    // مشغل تسجيلات الأرشيف (ExoPlayer مستقل عن مشغل المكتبة الخلفي)
+    val recordingsPlayer: RecordingsPlayer by lazy { RecordingsPlayer(appContext) }
 
     // ===== حالة البث المباشر المشتركة مع الواجهة =====
     private val _micLevel = MutableStateFlow(0f)
@@ -65,7 +78,7 @@ object ServiceLocator {
 
     private var volumeBeforeDuck: Float? = null
 
-    /** متحكم البث المباشر — الخفض التلقائي موصول هنا مركزياً */
+    /** متحكم البث المباشر — الخفض التلقائي موصول هنا مركزياً، ودفعة PCM موصولة بالتسجيل */
     val mic: MicrophoneController by lazy {
         MicrophoneController(
             context = appContext,
@@ -88,10 +101,16 @@ object ServiceLocator {
                 }
             },
             onLevel = { level -> _micLevel.value = level },
+            // ★ نقطة الربط v0.3.0: كل دفعة PCM من حلقة البث تُغذّي التسجيل (خط أنابيب واحد)
+            onPcm = { pcm, n -> recordings.feedLivePcm(pcm, n) },
             onStateChanged = { isLive, message ->
                 _micLive.value = isLive
                 _micMessage.value = message
-                if (!isLive) _micLevel.value = 0f
+                if (!isLive) {
+                    _micLevel.value = 0f
+                    // انتهى البث والتسجيل يعمل؟ أوقف واحفظ فوراً (لا ملفات تالفة)
+                    recordings.onLiveBroadcastStopped()
+                }
             }
         )
     }
@@ -115,9 +134,18 @@ object ServiceLocator {
             playlists = PlaylistRepository(db)
             schedules = ScheduleRepository(db)
             backup = BackupRepository(appContext, db, settings)
+            recordingsRepo = RecordingRepository(db.recordingDao())
+            session = SessionRepository(settings, db.userDao())
             routing = AudioRoutingManager(appContext)
             playback = PlaybackConnection(appContext)
             scheduler = SchedulerManager(appContext)
+            // التسجيل يقرأ المستخدم الحالي عند الحفظ، وحالة البث لمنع التسجيل بلا بث
+            recordings = RecordingManager(
+                appContext,
+                recordingsRepo,
+                currentUserProvider = { session.currentUser.first() },
+                isLiveProvider = { _micLive.value }
+            )
             initialized = true
         }
     }
