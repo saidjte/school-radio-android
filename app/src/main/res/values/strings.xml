@@ -1,37 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">الإذاعة المدرسية</string>
-
-    <!-- التبويبات -->
-    <string name="tab_home">الرئيسية</string>
-    <string name="tab_schedule">الجدول الأسبوعي</string>
-    <string name="tab_about">حول التطبيق</string>
-
-    <!-- الرئيسية -->
-    <string name="home_title">فقرات الإذاعة</string>
-    <string name="empty_segments">لا توجد تسجيلات منشورة بعد.\nستظهر الفقرات هنا فور نشرها من طرف إدارة الإذاعة.</string>
-    <string name="live_button">تشغيل البث المباشر</string>
-
-    <!-- الجدول -->
-    <string name="schedule_title">برنامج الإذاعة لهذا الأسبوع</string>
-    <string name="empty_schedule">لم يُنشر جدول هذا الأسبوع بعد.</string>
-
-    <!-- المشغل -->
-    <string name="player_close_desc">إيقاف وإخفاء المشغل</string>
-    <string name="player_toggle_desc">تشغيل / إيقاف مؤقت</string>
-
-    <!-- حول التطبيق -->
-    <string name="about_subtitle">تطبيق الإذاعة المدرسية — فقرات وجدول وبث\nKotlin • Android</string>
-    <string name="version_line">الإصدار %1$s</string>
-    <string name="check_update">تحقق من التحديثات</string>
-    <string name="checking">جارٍ التحقق…</string>
-    <string name="up_to_date_title">التطبيق محدَّث</string>
-    <string name="up_to_date_msg">أنت تستعمل أحدث إصدار متوفر (%1$s).</string>
-    <string name="update_available">يتوفر إصدار جديد %1$s</string>
-    <string name="update_msg">سيُحمَّل ملف APK من صفحة إصدارات GitHub.\nملاحظة: اسمح بتثبيت التطبيقات من المصدر عند أول تثبيت، وسيُحدَّث التطبيق فوق نسخته الحالية دون فقدان أي بيانات (نفس مفتاح التوقيع).</string>
-    <string name="download_update">تحميل التحديث</string>
-    <string name="view_notes">مشاهدة الإصدار</string>
-    <string name="btn_releases">كل الإصدارات على GitHub</string>
-    <string name="btn_repo">صفحة المشروع</string>
-    <string name="about_footer">صُنع بشغف لخدمة الأنشطة المدرسية — فرع main يتم تحديثه باستمرار</string>
+    <string name="nav_dashboard">الرئيسية</string>
+    <string name="nav_library">المكتبة</string>
+    <string name="nav_playlists">القوائم</string>
+    <string name="nav_scheduling">الجدولة</string>
+    <string name="nav_settings">الإعدادات</string>
 </resources>

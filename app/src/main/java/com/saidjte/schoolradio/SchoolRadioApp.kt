@@ -1,0 +1,28 @@
+package com.saidjte.schoolradio
+
+import android.app.Application
+import com.saidjte.schoolradio.di.ServiceLocator
+import kotlinx.coroutines.launch
+
+/**
+ * فئة التطبيق: تهيئة الحاقن الاعتمادي + زرع التصنيفات الافتراضية +
+ * فحص توفر الملفات المستوردة + إعادة ضبط المنبهات عند بدء العملية.
+ * كل ذلك محلي 100% — لا يلمس الشبكة إطلاقاً.
+ */
+class SchoolRadioApp : Application() {
+
+    override fun onCreate() {
+        super.onCreate()
+        ServiceLocator.init(this)
+        ServiceLocator.appScope.launch {
+            runCatching {
+                ServiceLocator.library.ensureDefaultCategories()
+                ServiceLocator.library.refreshAvailability()
+                // عند بدء العملية: أعد ضبط المنبهات (يغطي أيضًا الحالة بعد القتل القسري)
+                val enabled = ServiceLocator.schedules.enabledSchedules().map { it.id }.toSet()
+                val events = ServiceLocator.schedules.allEvents().filter { it.scheduleId in enabled }
+                ServiceLocator.scheduler.rescheduleAll(events)
+            }
+        }
+    }
+}
