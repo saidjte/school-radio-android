@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#00695C</color>
+    <color name="primary_dark">#004D40</color>
+    <color name="primary_light">#4DB6AC</color>
+    <color name="accent">#C62828</color>
+    <color name="background">#F6F9F8</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="on_primary">#FFFFFF</color>
+    <color name="text_primary">#1C2B2A</color>
+    <color name="text_secondary">#5A6B6A</color>
+    <color name="chip_bg">#E0F2F1</color>
+    <color name="player_bar">#004D40</color>
+</resources>

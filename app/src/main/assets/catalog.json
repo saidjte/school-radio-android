@@ -1,0 +1,53 @@
+{
+  "school": "الثانوية الإعدادية — الإذاعة المدرسية",
+  "catalog_version": 1,
+  "segments": [
+    {
+      "id": "quran_01",
+      "title": "قرآن كريم — سورة الفاتحة",
+      "description": "افتتاحية الإذاعة الصباحية بتلاوة سورة الفاتحة",
+      "category": "قرآن كريم",
+      "duration_sec": 8,
+      "audio": "asset:///audio/demo_quran.wav",
+      "order": 1
+    },
+    {
+      "id": "hadith_01",
+      "title": "حديث وكلمة",
+      "description": "حديث نبوي شريف مع كلمة تربوية قصيرة",
+      "category": "تربية وإرشاد",
+      "duration_sec": 8,
+      "audio": "asset:///audio/demo_hadith.wav",
+      "order": 2
+    },
+    {
+      "id": "nation_01",
+      "title": "وطنيات — كلمة في عيد الاستقلال",
+      "description": "كلمة وطنية بمناسبة الأعياد الوطنية",
+      "category": "وطنيات",
+      "duration_sec": 8,
+      "audio": "asset:///audio/demo_watan.wav",
+      "order": 3
+    },
+    {
+      "id": "news_01",
+      "title": "إعلانات إدارية",
+      "description": "آخر إعلانات الإدارة وبرامج الأنشطة",
+      "category": "إعلانات",
+      "duration_sec": 8,
+      "audio": "asset:///audio/demo_news.wav",
+      "order": 4
+    }
+  ],
+  "schedule": [
+    { "day": "الاثنين", "time": "09:45", "title": "نص الإذاعة الصباحية", "presenter": "فريق الإذاعة — القسم الأول" },
+    { "day": "الثلاثاء", "time": "09:45", "title": "إذاعة القرآن الكريم", "presenter": "النادي الثقافي" },
+    { "day": "الأربعاء", "time": "09:45", "title": "كلمة في التربية الوطنية", "presenter": "أساتذة التربية الوطنية" },
+    { "day": "الخميس", "time": "09:45", "title": "إذاعة رياضية وأنشطة", "presenter": "نادي الرياضة" }
+  ],
+  "live": {
+    "enabled": false,
+    "title": "البث المباشر — الإذاعة المدرسية",
+    "url": ""
+  }
+}
