@@ -190,4 +190,106 @@ object AppIcons {
             }
         }
     }
+
+    /** نقطة تسجيل (دائرة ممتلئة) — زر REC */
+    val Record: ImageVector by lazy {
+        builder("Record") {
+            path(
+                fill = SolidColor(Color.Black),
+                pathFillType = PathFillType.NonZero
+            ) {
+                // Material Icons — FiberManualRecord (Apache 2.0)
+                moveTo(12f, 6f)
+                curveToRelative(-3.31f, 0f, -6f, 2.69f, -6f, 6f)
+                reflectiveCurveToRelative(2.69f, 6f, 6f, 6f)
+                reflectiveCurveToRelative(6f, -2.69f, 6f, -6f)
+                reflectiveCurveToRelative(-2.69f, -6f, -6f, -6f)
+                close()
+            }
+        }
+    }
+
+    /** إيقاف (مربع) — إنهاء التسجيل */
+    val Stop: ImageVector by lazy {
+        builder("Stop") {
+            path(
+                fill = SolidColor(Color.Black),
+                pathFillType = PathFillType.NonZero
+            ) {
+                // Material Icons — Stop
+                moveTo(6f, 6f)
+                horizontalLineToRelative(12f)
+                verticalLineToRelative(12f)
+                horizontalLineTo(6f)
+                close()
+            }
+        }
+    }
+
+    /** موسيقى المكتبة — تبويب التسجيلات */
+    val LibraryMusic: ImageVector by lazy {
+        builder("LibraryMusic") {
+            path(
+                fill = SolidColor(Color.Black),
+                pathFillType = PathFillType.NonZero
+            ) {
+                // Material Icons — LibraryMusic
+                moveTo(20f, 2f)
+                horizontalLineTo(8f)
+                curveToRelative(-1.1f, 0f, -2f, 0.9f, -2f, 2f)
+                verticalLineToRelative(12f)
+                curveToRelative(0f, 1.1f, 0.9f, 2f, 2f, 2f)
+                horizontalLineToRelative(12f)
+                curveToRelative(1.1f, 0f, 2f, -0.9f, 2f, -2f)
+                verticalLineTo(4f)
+                curveToRelative(0f, -1.1f, -0.9f, -2f, -2f, -2f)
+                close()
+                moveTo(18f, 7f)
+                horizontalLineToRelative(-3f)
+                verticalLineToRelative(5.5f)
+                curveToRelative(0f, 1.38f, -1.12f, 2.5f, -2.5f, 2.5f)
+                reflectiveCurveTo(10f, 13.88f, 10f, 12.5f)
+                reflectiveCurveToRelative(1.12f, -2.5f, 2.5f, -2.5f)
+                curveToRelative(0.57f, 0f, 1.08f, 0.19f, 1.5f, 0.51f)
+                verticalLineTo(5f)
+                horizontalLineToRelative(4f)
+                verticalLineToRelative(2f)
+                close()
+                moveTo(4f, 6f)
+                horizontalLineTo(2f)
+                verticalLineToRelative(14f)
+                curveToRelative(0f, 1.1f, 0.9f, 2f, 2f, 2f)
+                horizontalLineToRelative(14f)
+                verticalLineToRelative(-2f)
+                horizontalLineTo(4f)
+                verticalLineTo(6f)
+                close()
+            }
+        }
+    }
+
+    /** شخص — قسم المستخدمين والأدوار */
+    val Person: ImageVector by lazy {
+        builder("Person") {
+            path(
+                fill = SolidColor(Color.Black),
+                pathFillType = PathFillType.NonZero
+            ) {
+                // Material Icons — Person
+                moveTo(12f, 12f)
+                curveToRelative(2.21f, 0f, 4f, -1.79f, 4f, -4f)
+                reflectiveCurveToRelative(-1.79f, -4f, -4f, -4f)
+                reflectiveCurveToRelative(-4f, 1.79f, -4f, 4f)
+                reflectiveCurveToRelative(1.79f, 4f, 4f, 4f)
+                close()
+                moveTo(12f, 14f)
+                curveToRelative(-2.67f, 0f, -8f, 1.34f, -8f, 4f)
+                verticalLineToRelative(2f)
+                horizontalLineToRelative(16f)
+                verticalLineToRelative(-2f)
+                curveToRelative(0f, -2.66f, -5.33f, -4f, -8f, -4f)
+                close()
+            }
+        }
+    }
 }
