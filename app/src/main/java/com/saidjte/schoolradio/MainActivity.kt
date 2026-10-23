@@ -36,12 +36,14 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.saidjte.schoolradio.core.theme.SchoolRadioTheme
+import com.saidjte.schoolradio.core.ui.AppIcons
 import com.saidjte.schoolradio.data.settings.AppSettings
 import com.saidjte.schoolradio.di.ServiceLocator
 import com.saidjte.schoolradio.feature.dashboard.DashboardScreen
 import com.saidjte.schoolradio.feature.library.LibraryScreen
 import com.saidjte.schoolradio.feature.player.PlayerBar
 import com.saidjte.schoolradio.feature.playlists.PlaylistsScreen
+import com.saidjte.schoolradio.feature.recordings.RecordingsScreen
 import com.saidjte.schoolradio.feature.scheduling.ScheduleScreen
 import com.saidjte.schoolradio.feature.settings.SettingsScreen
 
@@ -115,6 +117,7 @@ private fun AppScaffold() {
                 composable(AppRoute.DASHBOARD) { DashboardScreen(snackbar) }
                 composable(AppRoute.LIBRARY) { LibraryScreen(snackbar) }
                 composable(AppRoute.PLAYLISTS) { PlaylistsScreen(snackbar) }
+                composable(AppRoute.RECORDINGS) { RecordingsScreen(snackbar) }
                 composable(AppRoute.SCHEDULING) { ScheduleScreen(snackbar) }
                 composable(AppRoute.SETTINGS) { SettingsScreen(snackbar) }
             }
@@ -126,6 +129,7 @@ object AppRoute {
     const val DASHBOARD = "dashboard"
     const val LIBRARY = "library"
     const val PLAYLISTS = "playlists"
+    const val RECORDINGS = "recordings"
     const val SCHEDULING = "scheduling"
     const val SETTINGS = "settings"
 }
@@ -138,6 +142,7 @@ enum class NavigationItem(
     HOME(AppRoute.DASHBOARD, "الرئيسية", Icons.Filled.Home),
     LIBRARY(AppRoute.LIBRARY, "المكتبة", Icons.Filled.PlayArrow),
     PLAYLISTS(AppRoute.PLAYLISTS, "القوائم", Icons.Filled.List),
+    RECORDINGS(AppRoute.RECORDINGS, "التسجيلات", AppIcons.LibraryMusic),
     SCHEDULE(AppRoute.SCHEDULING, "الجدولة", Icons.Filled.DateRange),
     SETTINGS(AppRoute.SETTINGS, "الإعدادات", Icons.Filled.Settings),
 }

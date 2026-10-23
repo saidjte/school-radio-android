@@ -62,14 +62,23 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
     var editingEvent by remember { mutableStateOf<EventEditorState?>(null) }
     var renamingSchedule by remember { mutableStateOf<RadioScheduleEntity?>(null) }
 
+    // بوابة الأدوار (v0.3.0): تعديل الجدولة = معلم أو مشرف فقط
+    val canManage by locator.session.canManage.collectAsStateWithLifecycle(initialValue = true)
+    val requireManage: (() -> Unit) -> Unit = { action ->
+        if (canManage) action()
+        else scope.launch { snackbar.showSnackbar("يلزم دور معلم أو مشرف لتعديل الجدولة") }
+    }
+
     Scaffold(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = {
-                    if (schedules.isEmpty()) {
-                        scope.launch { snackbar.showSnackbar("أنشئ جدولاً أولاً ثم أضف إليه فقرات") }
-                    } else {
-                        editingEvent = EventEditorState(scheduleId = schedules.first().id)
+                    requireManage {
+                        if (schedules.isEmpty()) {
+                            scope.launch { snackbar.showSnackbar("أنشئ جدولاً أولاً ثم أضف إليه فقرات") }
+                        } else {
+                            editingEvent = EventEditorState(scheduleId = schedules.first().id)
+                        }
                     }
                 }
             ) {
@@ -138,13 +147,15 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                 }
                             }
                         )
-                        IconButton(onClick = { renamingSchedule = s }) {
+                        IconButton(onClick = { requireManage { renamingSchedule = s } }) {
                             Icon(Icons.Filled.Edit, "تعديل الاسم")
                         }
                         IconButton(onClick = {
-                            scope.launch {
-                                locator.schedules.deleteSchedule(s.id)
-                                locator.rearmScheduleAlarms()
+                            requireManage {
+                                scope.launch {
+                                    locator.schedules.deleteSchedule(s.id)
+                                    locator.rearmScheduleAlarms()
+                                }
                             }
                         }) { Icon(Icons.Filled.Delete, "حذف الجدول") }
                     }
@@ -192,14 +203,16 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                 )
                             }
                         }
-                        IconButton(onClick = { editingEvent = EventEditorState.from(e) }) {
+                        IconButton(onClick = { requireManage { editingEvent = EventEditorState.from(e) } }) {
                             Icon(Icons.Filled.Edit, "تعديل الفقرة")
                         }
                         IconButton(onClick = {
-                            scope.launch {
-                                locator.scheduler.cancelAlarm(e.id)
-                                locator.schedules.deleteEvent(e.id)
-                                locator.rearmScheduleAlarms()
+                            requireManage {
+                                scope.launch {
+                                    locator.scheduler.cancelAlarm(e.id)
+                                    locator.schedules.deleteEvent(e.id)
+                                    locator.rearmScheduleAlarms()
+                                }
                             }
                         }) { Icon(Icons.Filled.Delete, "حذف الفقرة") }
                     }

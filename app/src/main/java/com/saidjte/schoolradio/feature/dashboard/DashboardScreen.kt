@@ -99,6 +99,11 @@ fun DashboardScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
     val micError by locator.micMessage.collectAsStateWithLifecycle()
     var route by remember { mutableStateOf(AudioRoutingManager.Route.SPEAKER) }
 
+    // حالة التسجيل (v0.3.0) — مؤقّت + وضع + نشاط
+    val recActive by locator.recordings.isRecording.collectAsStateWithLifecycle()
+    val recElapsed by locator.recordings.elapsedMs.collectAsStateWithLifecycle()
+    val recMode by locator.recordings.mode.collectAsStateWithLifecycle()
+
     val micPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -108,6 +113,19 @@ fun DashboardScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
             } else {
                 snackbar.showSnackbar("بدون صلاحية الميكروفون لا يمكن البث المباشر")
             }
+        }
+    }
+
+    /** بدء التسجيل (بث حي إن كان البث نشطاً وإلا فقرة تحضيرية) بصلاحية الميكروفون */
+    fun startRecordingOrMemo() {
+        if (!mic.hasPermission()) {
+            micPermission.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        scope.launch {
+            val err = if (isLive) locator.recordings.startLiveRecording()
+            else locator.recordings.startMemoRecording()
+            err?.let { snackbar.showSnackbar(it) }
         }
     }
 
@@ -182,13 +200,16 @@ fun DashboardScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
             }
         }
 
-        // ===== زر البث المباشر الضخم =====
+        // ===== زر البث المباشر الضخم + زر التسجيل =====
         item {
             LiveBroadcastCard(
                 isLive = isLive,
                 level = micLevel,
                 route = route,
                 error = micError,
+                recActive = recActive,
+                recElapsed = recElapsed,
+                recMode = recMode,
                 onRouteChange = { route = it },
                 onTalkStart = {
                     if (mic.hasPermission()) {
@@ -199,7 +220,15 @@ fun DashboardScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                         micPermission.launch(Manifest.permission.RECORD_AUDIO)
                     }
                 },
-                onTalkEnd = { mic.stop() }
+                onTalkEnd = { mic.stop() },
+                onRecordToggle = {
+                    if (recActive) {
+                        locator.recordings.stopRecording()
+                        scope.launch { snackbar.showSnackbar("حُفظ التسجيل في أرشيف التسجيلات") }
+                    } else {
+                        startRecordingOrMemo()
+                    }
+                }
             )
         }
 
@@ -284,7 +313,8 @@ private fun EventRow(
 
 /**
  * بطاقة البث المباشر: زر ضخم «اضغط للتحدث» بنظام الضغط والاستمرار،
- * حلقة مستوى صوت حية، اختيار مسار الإخراج، ومؤشر تفعيل واضح للميكروفون.
+ * حلقة مستوى صوت حية، اختيار مسار الإخراج، مؤشر تفعيل واضح للميكروفون،
+ * وزر تسجيل (v0.3.0): يسجّل البث الجاري أو فقرة تحضيرية مستقلة.
  */
 @Composable
 private fun LiveBroadcastCard(
@@ -292,9 +322,13 @@ private fun LiveBroadcastCard(
     level: Float,
     route: AudioRoutingManager.Route,
     error: String?,
+    recActive: Boolean,
+    recElapsed: Long,
+    recMode: com.saidjte.schoolradio.data.local.entity.RecordingSource?,
     onRouteChange: (AudioRoutingManager.Route) -> Unit,
     onTalkStart: () -> Unit,
-    onTalkEnd: () -> Unit
+    onTalkEnd: () -> Unit,
+    onRecordToggle: () -> Unit
 ) {
     val pulse = rememberInfiniteTransition(label = "live-pulse")
     val pulseAlpha by pulse.animateFloat(
@@ -355,6 +389,76 @@ private fun LiveBroadcastCard(
                             color = Color.White,
                             style = MaterialTheme.typography.titleMedium,
                             textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+
+            // ===== زر التسجيل (v0.3.0) =====
+            // أثناء البث: يسجّل البث الحي | بدون بث: يسجّل فقرة تحضيرية مستقلة
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    // هالة نابضة حمراء أثناء التسجيل — مؤشر بصري لا يُخطئه أحد
+                    if (recActive) {
+                        val recPulse = rememberInfiniteTransition(label = "rec-pulse")
+                        val recAlpha by recPulse.animateFloat(
+                            initialValue = 0.2f, targetValue = 0.7f,
+                            animationSpec = infiniteRepeatable(tween(500), RepeatMode.Reverse),
+                            label = "rec-alpha"
+                        )
+                        Canvas(Modifier.size(64.dp)) {
+                            drawCircle(
+                                color = Color(0xFFC62828).copy(alpha = recAlpha),
+                                radius = size.minDimension / 2f,
+                                style = Stroke(width = 10f)
+                            )
+                        }
+                    }
+                    Surface(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .pointerInput(recActive) {
+                                detectTapGestures { onRecordToggle() }
+                            },
+                        shape = androidx.compose.foundation.shape.CircleShape,
+                        color = if (recActive) Color(0xFFC62828)
+                        else MaterialTheme.colorScheme.secondary,
+                        shadowElevation = 4.dp
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                if (recActive) AppIcons.Stop else AppIcons.Record,
+                                contentDescription = if (recActive) "إيقاف التسجيل" else "بدء التسجيل",
+                                tint = Color.White
+                            )
+                        }
+                    }
+                }
+                Column {
+                    Text(
+                        when {
+                            recActive && recMode?.name == "PTT" -> "تُسجَّل الفقرة الآن"
+                            recActive -> "تسجيل فقرة تحضيرية…"
+                            isLive -> "سجّل البث الحي الآن"
+                            else -> "تسجيل فقرة تحضيرية"
+                        },
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    if (recActive) {
+                        Text(
+                            "${ScheduleLogic.formatDuration(recElapsed)} — سيُحفظ تلقائياً في الأرشيف",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text(
+                            if (isLive) "AAC ‏128kbps — حفظ فوري عند الإيقاف"
+                            else "بلا بث للمكبرات — تحضير قبل الإذاعة",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }

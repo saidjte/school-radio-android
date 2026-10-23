@@ -11,10 +11,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -173,6 +175,9 @@ fun SettingsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
             }
         }
 
+        // ===== المستخدمون والأدوار (v0.3.0) =====
+        UsersAndRolesCard(snackbar)
+
         // ===== النسخ الاحتياطي =====
         Card {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -232,4 +237,167 @@ fun SettingsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
             }
         }
     }
+}
+
+/**
+ * بطاقة المستخدمين والأدوار (v0.3.0):
+ *  - عرض المستخدم الحالي ودوره + قائمة المستخدمين مع التبديل بالنقر
+ *  - إضافة/حذف مستخدم = مشرف فقط (تُخفى الأزرار عن غيره)
+ *  - الأدوار: مشرف > معلم (يدير الجدولة والتسجيلات) > طالب (بث وتحضير)
+ */
+@Composable
+private fun UsersAndRolesCard(snackbar: androidx.compose.material3.SnackbarHostState) {
+    val locator = ServiceLocator
+    val scope = rememberCoroutineScope()
+
+    val currentUser by locator.session.currentUser
+        .collectAsStateWithLifecycle(initialValue = null)
+    val users by locator.session.observeUsers()
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val canManageUsers by locator.session.canManageUsers
+        .collectAsStateWithLifecycle(initialValue = true)
+
+    var showDialog by remember { mutableStateOf(false) }
+
+    Card {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    com.saidjte.schoolradio.core.ui.AppIcons.Person,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    "  المستخدمون والأدوار",
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
+            Text(
+                "الطالب: بث وتسجيل وتحضير — المعلم: + الجدولة وإدارة التسجيلات — المشرف: + إدارة المستخدمين",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            // صفوف المستخدمين: النقر يبدّل المستخدم الحالي
+            users.forEach { user ->
+                val isCurrent = user.id == currentUser?.id
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    com.saidjte.schoolradio.core.ui.AppIcons.Person.let {
+                        Icon(
+                            it, contentDescription = null,
+                            tint = if (isCurrent) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Text(
+                        "${user.name} — ${user.roleEnum().labelAr}",
+                        Modifier.weight(1f).padding(start = 8.dp),
+                        style = if (isCurrent) MaterialTheme.typography.titleSmall
+                        else MaterialTheme.typography.bodyMedium
+                    )
+                    if (isCurrent) {
+                        Text(
+                            "الحالي",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    } else {
+                        TextButton(onClick = {
+                            scope.launch {
+                                locator.session.switchUser(user.id)
+                                snackbar.showSnackbar(
+                                    "الحساب الحالي: ${user.name} (${user.roleEnum().labelAr})"
+                                )
+                            }
+                        }) { Text("تبديل") }
+                        if (canManageUsers) {
+                            TextButton(onClick = {
+                                scope.launch {
+                                    locator.session.deleteUser(user)
+                                        .onSuccess { snackbar.showSnackbar("حُذف المستخدم") }
+                                        .onFailure { snackbar.showSnackbar(it.message ?: "تعذر الحذف") }
+                                }
+                            }) { Text("حذف", color = MaterialTheme.colorScheme.error) }
+                        }
+                    }
+                }
+            }
+
+            if (canManageUsers) {
+                Button(onClick = { showDialog = true }) { Text("إضافة مستخدم") }
+            } else {
+                Text(
+                    "إدارة المستخدمين متاحة للمشرف فقط — الحساب الحالي: " +
+                        "${currentUser?.name ?: "—"} (${currentUser?.roleEnum()?.labelAr ?: "—"})",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+
+    if (showDialog) {
+        AddUserDialog(
+            onDismiss = { showDialog = false },
+            onConfirm = { name, role ->
+                scope.launch {
+                    locator.session.addUser(name, role)
+                        .onSuccess {
+                            snackbar.showSnackbar("أُضيف ${name.trim()} (${role.labelAr})")
+                            showDialog = false
+                        }
+                        .onFailure { snackbar.showSnackbar(it.message ?: "تعذر الإضافة") }
+                }
+            }
+        )
+    }
+}
+
+/** حوار إضافة مستخدم: اسم + اختيار الدور (طلاب/معلمون/مشرف) */
+@Composable
+private fun AddUserDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String, com.saidjte.schoolradio.data.local.entity.UserRole) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var role by remember {
+        mutableStateOf(com.saidjte.schoolradio.data.local.entity.UserRole.STUDENT)
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("إضافة مستخدم") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("الاسم") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    com.saidjte.schoolradio.data.local.entity.UserRole.entries.forEach { r ->
+                        FilterChip(
+                            selected = role == r,
+                            onClick = { role = r },
+                            label = { Text(r.labelAr) }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(name, role) },
+                enabled = name.isNotBlank()
+            ) { Text("إضافة") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
+    )
 }
