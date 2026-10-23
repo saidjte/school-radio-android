@@ -1,0 +1,78 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  buildApk:
+    name: Build signed APK (arm64-v8a + armeabi-v7a)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # apksigner/aapt2 أدوات جافا — نثبّت JDK أولاً
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android SDK components (platform 35 + build-tools 35.0.0)
+        run: |
+          set -e
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-35" "build-tools;35.0.0" "platform-tools" >/dev/null
+          echo "BT=$ANDROID_HOME/build-tools/35.0.0" >> "$GITHUB_ENV"
+
+      - name: Read version (version.properties = مصدر الحقيقة الوحيد)
+        id: ver
+        run: |
+          set -e
+          V=$(grep '^versionName=' version.properties | cut -d= -f2 | tr -d '[:space:]')
+          C=$(grep '^versionCode=' version.properties | cut -d= -f2 | tr -d '[:space:]')
+          echo "name=$V" >> "$GITHUB_OUTPUT"
+          echo "code=$C" >> "$GITHUB_OUTPUT"
+          echo "versionName=$V versionCode=$C"
+
+      - name: Decode release keystore from secrets
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_FILE }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS_NAME }}
+          KS_ALIAS_PASS: ${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }}
+        run: |
+          set -e
+          if [ -z "$KS_B64" ]; then
+            echo "::error::أسرار التوقيع غير مضبوطة (ANDROID_KEYSTORE_FILE …)"
+            exit 1
+          fi
+          printf '%s' "$KS_B64" | base64 -d > /tmp/school-radio.keystore
+          echo "KS_PATH=/tmp/school-radio.keystore" >> "$GITHUB_ENV"
+          echo "KS_PASS=$KS_PASS" >> "$GITHUB_ENV"
+          echo "KS_ALIAS=$KS_ALIAS" >> "$GITHUB_ENV"
+          echo "KS_ALIAS_PASS=$KS_ALIAS_PASS" >> "$GITHUB_ENV"
+
+      # Gradle يبني APK موقّعاً بنفس مفتاح الإصدارات السابقة (versionCode/versionName من version.properties)
+      - name: Build signed release APK
+        run: |
+          set -eo pipefail
+          chmod +x ./gradlew
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Verify APK (versionCode / ABIs / signature fingerprint)
+        run: |
+          set -eo pipefail
+          APK="app/build/outputs/apk/release/SchoolRadio_v${{ steps.ver.outputs.name }}.apk"
+          ls -la app/build/outputs/apk/release/
+          bash tools/verify_release.sh "$APK"
+
+      - name: Upload APK artifact (فقط Artifact — لا Release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: SchoolRadio-APK-v${{ steps.ver.outputs.name }}
+          path: app/build/outputs/apk/release/SchoolRadio_v${{ steps.ver.outputs.name }}.apk
+          if-no-files-found: error
