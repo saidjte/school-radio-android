@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -23,7 +24,8 @@ data class AppSettings(
     val duckEnabled: Boolean = true,      // تفعيل الخفض التلقائي
     val notificationsEnabled: Boolean = true,
     val startOfBroadcast: Int = 8 * 60,   // بداية يوم الإذاعة بالدقائق (تسبيك الحسابات)
-    val lastBackupUri: String? = null
+    val lastBackupUri: String? = null,
+    val currentUserId: Long? = null        // المستخدم الحالي (الأدوار v0.3.0)
 )
 
 /**
@@ -41,7 +43,11 @@ class SettingsStore(private val context: Context) {
         val NOTIFICATIONS = booleanPreferencesKey("notifications")
         val START_OF_DAY = intPreferencesKey("start_of_broadcast")
         val LAST_BACKUP = stringPreferencesKey("last_backup_uri")
+        val CURRENT_USER = longPreferencesKey("current_user_id")
     }
+
+    /** معرف المستخدم الحالي (لتوليفه مع جدول users في SessionRepository) */
+    val currentUserId: Flow<Long?> = context.dataStore.data.map { it[Keys.CURRENT_USER] }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { p ->
         AppSettings(
@@ -64,5 +70,9 @@ class SettingsStore(private val context: Context) {
     suspend fun setNotificationsEnabled(v: Boolean) = context.dataStore.edit { it[Keys.NOTIFICATIONS] = v }
     suspend fun setLastBackupUri(v: String?) = context.dataStore.edit {
         if (v == null) it.remove(Keys.LAST_BACKUP) else it[Keys.LAST_BACKUP] = v
+    }
+
+    suspend fun setCurrentUserId(v: Long?) = context.dataStore.edit {
+        if (v == null) it.remove(Keys.CURRENT_USER) else it[Keys.CURRENT_USER] = v
     }
 }
