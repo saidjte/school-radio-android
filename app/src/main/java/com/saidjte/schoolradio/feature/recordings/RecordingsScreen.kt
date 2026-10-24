@@ -32,6 +32,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -49,7 +50,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.saidjte.schoolradio.audio.RecordingsPlayer
 import com.saidjte.schoolradio.core.theme.status
@@ -201,7 +204,13 @@ fun RecordingsScreen(
                 body = "جرّب كلمة بحث مختلفة أو غيّر المرشّح"
             )
         } else {
+            // v0.9.0: المشغل السفلي المثبّت — شريط قائمة بكامل الارتفاع المتبقي
+            val currentRec = remember(
+                playback.recordingId, recordings
+            ) { recordings.firstOrNull { it.id == playback.recordingId } }
+
             LazyColumn(
+                Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(visible, key = { it.id }) { rec ->
@@ -233,7 +242,23 @@ fun RecordingsScreen(
                         }
                     )
                 }
-                item { Spacer(Modifier.height(80.dp)) }
+                item { Spacer(Modifier.height(12.dp)) }
+            }
+
+            // ===== v0.9.0: مشغل التسجيلات المثبّت — تقديم ±15ث + سرعة + تقدم كامل =====
+            if (currentRec != null) {
+                RecordingsMiniPlayer(
+                    state = playback,
+                    title = currentRec.title,
+                    onToggle = { togglePreview(currentRec) },
+                    onStop = {
+                        locator.recordingsPlayer.stopAll()
+                        locator.coordinator.previewFinished()
+                    },
+                    onSeek = { ms -> locator.recordingsPlayer.seekTo(ms) },
+                    onSkip = { delta -> locator.recordingsPlayer.skipBy(delta) },
+                    onSpeed = { speed -> locator.recordingsPlayer.setSpeed(speed) }
+                )
             }
         }
     }
@@ -272,6 +297,108 @@ fun RecordingsScreen(
                 TextButton(onClick = { deleteTarget = null }) { Text("إلغاء") }
             }
         )
+    }
+}
+
+/**
+ * v0.9.0: مشغل التسجيلات المثبّت أسفل الأرشيف — أداة احترافية كاملة:
+ * تشغيل/إيقاف، شريط تقدم تفاعلي، قفزات ±15 ثانية، وسرعات تشغيل (0.75× حتى 2×).
+ * يظهر فقط عند وجود تسجيل مختار ويبقى ثابتاً أثناء تمرير القائمة.
+ */
+@Composable
+private fun RecordingsMiniPlayer(
+    state: RecordingsPlayer.State,
+    title: String,
+    onToggle: () -> Unit,
+    onStop: () -> Unit,
+    onSeek: (Long) -> Unit,
+    onSkip: (Long) -> Unit,
+    onSpeed: (Float) -> Unit
+) {
+    val isPlaying = state.isPlaying
+    Surface(
+        Modifier.fillMaxWidth().padding(top = 8.dp),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        shadowElevation = 8.dp
+    ) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                FilledTonalIconButton(
+                    onClick = onToggle,
+                    modifier = Modifier.size(44.dp),
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) {
+                    Icon(
+                        if (isPlaying) AppIcons.Pause else Icons.Filled.PlayArrow,
+                        "تشغيل/إيقاف مؤقت"
+                    )
+                }
+                Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        "${RecordingLogic.formatElapsed(state.positionMs)} / " +
+                            RecordingLogic.formatElapsed(state.durationMs),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                IconButton(onClick = onStop) {
+                    Icon(
+                        AppIcons.Stop, "إيقاف كامل",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+
+            Slider(
+                value = if (state.durationMs > 0)
+                    (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f,
+                onValueChange = { ratio -> onSeek((ratio * state.durationMs).toLong()) },
+                enabled = state.durationMs > 0,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                // قفزة للخلف 15 ثانية
+                FilledTonalIconButton(
+                    onClick = { onSkip(-15_000L) },
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Text("-15ث", fontSize = 11.sp)
+                }
+                // قفزة للأمام 15 ثانية
+                FilledTonalIconButton(
+                    onClick = { onSkip(15_000L) },
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Text("+15ث", fontSize = 11.sp)
+                }
+                Spacer(Modifier.weight(1f))
+                // سرعات التشغيل
+                listOf(0.75f, 1f, 1.5f, 2f).forEach { s ->
+                    FilterChip(
+                        selected = kotlin.math.abs(state.speed - s) < 0.02f,
+                        onClick = { onSpeed(s) },
+                        label = {
+                            Text("${if (s == 1f) "1" else String.format(java.util.Locale.US, "%.2f", s).trimEnd('0', '.')}×",
+                                fontSize = 11.sp)
+                        }
+                    )
+                }
+            }
+        }
     }
 }
 

@@ -36,6 +36,10 @@ class PlaybackService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true) // إيقاف مؤقت عند فك السماعة تلقائياً
             .build()
 
+        // v0.9.0: ربط سلسلة المؤثرات (معادل الصوت/الباص/المحيطي/مقياس VU)
+        // بجلسة هذا المشغل — الاستوديو يتحكم بها مركزياً عبر AudioEffects
+        com.saidjte.schoolradio.di.ServiceLocator.attachAudioEffects(player.audioSessionId)
+
         mediaSession = MediaSession.Builder(this, player).build()
     }
 

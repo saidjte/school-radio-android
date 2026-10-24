@@ -1,6 +1,7 @@
 package com.saidjte.schoolradio.di
 
 import android.content.Context
+import com.saidjte.schoolradio.audio.AudioEffects
 import com.saidjte.schoolradio.audio.AudioRoutingManager
 import com.saidjte.schoolradio.audio.MicrophoneController
 import com.saidjte.schoolradio.audio.PlaybackConnection
@@ -15,6 +16,7 @@ import com.saidjte.schoolradio.data.repository.PlaylistRepository
 import com.saidjte.schoolradio.data.repository.RecordingRepository
 import com.saidjte.schoolradio.data.repository.ScheduleRepository
 import com.saidjte.schoolradio.data.repository.SessionRepository
+import com.saidjte.schoolradio.data.scripts.ScriptRepository
 import com.saidjte.schoolradio.data.settings.SettingsStore
 import com.saidjte.schoolradio.scheduler.SchedulerManager
 import kotlinx.coroutines.CoroutineScope
@@ -76,9 +78,15 @@ object ServiceLocator {
     lateinit var recordings: RecordingManager
         private set
 
+    // v0.9.0: مستودع السكربتات الإذاعية (الإعلانات والنصوص)
+    lateinit var scripts: ScriptRepository
+        private set
+
     // مشغل تسجيلات الأرشيف (ExoPlayer مستقل عن مشغل المكتبة الخلفي)
     val recordingsPlayer: RecordingsPlayer by lazy {
         RecordingsPlayer(appContext).also { p ->
+            // v0.9.0: معاينة التسجيلات تدخل سلسلة المؤثرات المشتركة (معادل الصوت يعمل عليها أيضاً)
+            attachAudioEffects(p.audioSessionId)
             // v0.8.0: نهاية المعاينة طبيعياً → الحَكَم يستأنف ما كان يعمل قبله
             p.onEnded = { coordinator.previewFinished() }
         }
@@ -103,6 +111,44 @@ object ServiceLocator {
     private val _micLevel = MutableStateFlow(0f)
     val micLevel: StateFlow<Float> = _micLevel.asStateFlow()
 
+    // ===== v0.9.0: مستوى الموسيقى الحي (VU من Visualizer عبر AudioEffects) =====
+    private val _mediaLevel = MutableStateFlow(0f)
+    val mediaLevel: StateFlow<Float> = _mediaLevel.asStateFlow()
+
+    // ===== v0.9.0: مؤثرات الصوت — استرجاع الإعدادات المحفوظة مرة واحدة فقط =====
+    private var effectsRestored = false
+    private var pendingRestore: AudioEffects.RestoreData? = null
+    @Volatile private var pendingMicGain = 1f
+
+    /**
+     * v0.9.0: ربط جلسة صوتية جديدة بمحرك المؤثرات المشترك —
+     * يُستدعى من PlaybackService ومن RecordingsPlayer فور إنشاء المشغلين.
+     * أول استدعاء ناجح يطبّق الإعدادات المحفوظة (معادل/باص/محيطي).
+     */
+    fun attachAudioEffects(sessionId: Int) {
+        AudioEffects.attach(sessionId, pendingRestore)
+        if (AudioEffects.state.value.available && !effectsRestored) {
+            effectsRestored = true
+            appScope.launch {
+                val s = settings.settings.first()
+                val restore = AudioEffects.RestoreData(
+                    enabled = s.eqEnabled,
+                    presetId = s.eqPresetId,
+                    gains = s.eqGains,
+                    bass = s.bassStrength,
+                    virt = s.virtStrength
+                )
+                pendingRestore = restore
+                AudioEffects.restore(restore)
+            }
+        }
+    }
+
+    /** فك جلسة انتهى مشغلها (تحرير مؤثرات نظيف) */
+    fun detachAudioEffects(sessionId: Int) {
+        AudioEffects.detach(sessionId)
+    }
+
     // ===== شاشة العرض على الهواء (v0.5.0) =====
     private val _onAir = MutableStateFlow<OnAirInfo?>(null)
     val onAir: StateFlow<OnAirInfo?> = _onAir.asStateFlow()
@@ -115,6 +161,17 @@ object ServiceLocator {
     val pendingScheduleDraft: StateFlow<ScheduledEventEntity?> = _pendingScheduleDraft.asStateFlow()
 
     fun setPendingScheduleDraft(draft: ScheduledEventEntity?) { _pendingScheduleDraft.value = draft }
+
+    // ===== v0.9.0: السكربت المفتوح حالياً في قارئ Teleprompter =====
+    // (الكائنات لا تُمرر عبر مسارات التنقل — تُحمل هنا ثم يُفتح المسار)
+    private val _teleprompterScript =
+        MutableStateFlow<com.saidjte.schoolradio.data.scripts.ScriptItem?>(null)
+    val teleprompterScript: StateFlow<com.saidjte.schoolradio.data.scripts.ScriptItem?> =
+        _teleprompterScript.asStateFlow()
+
+    fun setTeleprompterScript(script: com.saidjte.schoolradio.data.scripts.ScriptItem?) {
+        _teleprompterScript.value = script
+    }
 
     private val _micLive = MutableStateFlow(false)
     val micLive: StateFlow<Boolean> = _micLive.asStateFlow()
@@ -162,7 +219,7 @@ object ServiceLocator {
                     recordings.onLiveBroadcastStopped()
                 }
             }
-        )
+        ).also { it.setMicGain(pendingMicGain) }
     }
 
     /** إعادة ضبط منبهات كل الأحداث المفعلة — تُستدعى بعد أي تعديل في الجدولة */
@@ -237,6 +294,10 @@ object ServiceLocator {
             routing = AudioRoutingManager(appContext)
             playback = PlaybackConnection(appContext)
             scheduler = SchedulerManager(appContext)
+            // v0.9.0: السكربتات الإذاعية — تخزين JSON محلي في مسار التطبيق
+            scripts = ScriptRepository(appContext.filesDir, appScope)
+            // v0.9.0: مضخّة مستوى الموسيقى من محرك المؤثرات إلى حالة الواجهة
+            AudioEffects.onMediaLevel = { level -> _mediaLevel.value = level }
             // التسجيل يقرأ المستخدم الحالي عند الحفظ، وحالة البث لمنع التسجيل بلا بث
             recordings = RecordingManager(
                 appContext,
@@ -244,6 +305,28 @@ object ServiceLocator {
                 currentUserProvider = { session.currentUser.first() },
                 isLiveProvider = { _micLive.value }
             )
+            // v0.9.0: تحميل إعدادات الاستوديو المحفوظة مسبقاً (كسب الميك + مستوى الموسيقى)
+            // + استرجاع المؤثرات فور توفر أول جلسة صوتية
+            appScope.launch {
+                runCatching {
+                    val s = settings.settings.first()
+                    pendingMicGain = s.micGain
+                    mic.setMicGain(s.micGain)
+                    playback.applyStartupVolume(s.defaultVolume)
+                    val restore = AudioEffects.RestoreData(
+                        enabled = s.eqEnabled,
+                        presetId = s.eqPresetId,
+                        gains = s.eqGains,
+                        bass = s.bassStrength,
+                        virt = s.virtStrength
+                    )
+                    pendingRestore = restore
+                    if (AudioEffects.state.value.available && !effectsRestored) {
+                        effectsRestored = true
+                        AudioEffects.restore(restore)
+                    }
+                }
+            }
             initialized = true
         }
     }

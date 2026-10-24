@@ -22,7 +22,6 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -62,7 +61,10 @@ import com.saidjte.schoolradio.feature.player.PlayerBar
 import com.saidjte.schoolradio.feature.playlists.PlaylistsScreen
 import com.saidjte.schoolradio.feature.recordings.RecordingsScreen
 import com.saidjte.schoolradio.feature.scheduling.ScheduleScreen
+import com.saidjte.schoolradio.feature.scripts.ScriptsScreen
+import com.saidjte.schoolradio.feature.scripts.TeleprompterScreen
 import com.saidjte.schoolradio.feature.settings.SettingsScreen
+import com.saidjte.schoolradio.feature.studio.StudioScreen
 
 class MainActivity : ComponentActivity() {
 
@@ -108,8 +110,8 @@ private fun AppScaffold() {
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
-            // شاشة العرض على الهواء تحتاج كل المساحة — بلا شريط سفلي
-            if (currentRoute != AppRoute.ON_AIR) {
+            // شاشة العرض على الهواء وقارئ السكربت تحتاجان كل المساحة — بلا شريط سفلي
+            if (currentRoute != AppRoute.ON_AIR && currentRoute != AppRoute.TELEPROMPTER) {
             Column {
                 PlayerBar(
                     snackbar,
@@ -156,7 +158,7 @@ private fun AppScaffold() {
                                         item.label,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
-                                        fontSize = 10.sp
+                                        fontSize = 9.5.sp
                                     )
                                 }
                             )
@@ -189,9 +191,13 @@ private fun AppScaffold() {
                         snackbar = snackbar,
                         onNavigateToSchedule = { nav.navigateSafely(AppRoute.SCHEDULING) },
                         onNavigateToLibrary = { nav.navigateSafely(AppRoute.LIBRARY) },
-                        onOpenOnAir = { nav.navigateSafely(AppRoute.ON_AIR) }
+                        onOpenOnAir = { nav.navigateSafely(AppRoute.ON_AIR) },
+                        onOpenSettings = { nav.navigateSafely(AppRoute.SETTINGS) },
+                        onOpenStudio = { nav.navigateSafely(AppRoute.STUDIO) },
+                        onOpenScripts = { nav.navigateSafely(AppRoute.SCRIPTS) }
                     )
                 }
+                composable(AppRoute.STUDIO) { StudioScreen(snackbar) }
                 composable(AppRoute.LIBRARY) { LibraryScreen(snackbar) }
                 composable(AppRoute.PLAYLISTS) { PlaylistsScreen(snackbar) }
                 composable(AppRoute.RECORDINGS) {
@@ -201,8 +207,25 @@ private fun AppScaffold() {
                     )
                 }
                 composable(AppRoute.SCHEDULING) { ScheduleScreen(snackbar) }
+                composable(AppRoute.SCRIPTS) {
+                    ScriptsScreen(
+                        snackbar,
+                        onRead = { script ->
+                            ServiceLocator.setTeleprompterScript(script)
+                            nav.navigate(AppRoute.TELEPROMPTER)
+                        }
+                    )
+                }
                 composable(AppRoute.SETTINGS) { SettingsScreen(snackbar) }
                 composable(AppRoute.ON_AIR) { OnAirScreen(onExit = { nav.popBackStack() }) }
+                composable(AppRoute.TELEPROMPTER) {
+                    // السكربت الحالي يُمرر عبر ServiceLocator (الكائنات لا تمر بمسارات التنقل)
+                    val script by ServiceLocator.teleprompterScript
+                        .collectAsStateWithLifecycle()
+                    script?.let { s ->
+                        TeleprompterScreen(script = s, onExit = { nav.popBackStack() })
+                    }
+                }
             }
         }
     }
@@ -219,12 +242,15 @@ private fun NavHostController.navigateSafely(route: String) {
 
 object AppRoute {
     const val DASHBOARD = "dashboard"
+    const val STUDIO = "studio"
     const val LIBRARY = "library"
     const val PLAYLISTS = "playlists"
     const val RECORDINGS = "recordings"
     const val SCHEDULING = "scheduling"
+    const val SCRIPTS = "scripts"
     const val SETTINGS = "settings"
     const val ON_AIR = "on_air"
+    const val TELEPROMPTER = "teleprompter"
 }
 
 enum class NavigationItem(
@@ -233,9 +259,10 @@ enum class NavigationItem(
     val icon: androidx.compose.ui.graphics.vector.ImageVector
 ) {
     HOME(AppRoute.DASHBOARD, "الرئيسية", Icons.Filled.Home),
+    STUDIO(AppRoute.STUDIO, "الاستوديو", AppIcons.Tune),
     LIBRARY(AppRoute.LIBRARY, "المكتبة", Icons.Filled.PlayArrow),
     PLAYLISTS(AppRoute.PLAYLISTS, "القوائم", Icons.Filled.List),
     RECORDINGS(AppRoute.RECORDINGS, "التسجيلات", AppIcons.LibraryMusic),
     SCHEDULE(AppRoute.SCHEDULING, "الجدولة", Icons.Filled.DateRange),
-    SETTINGS(AppRoute.SETTINGS, "الإعدادات", Icons.Filled.Settings),
+    SCRIPTS(AppRoute.SCRIPTS, "السكربتات", AppIcons.Article),
 }

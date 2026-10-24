@@ -59,6 +59,15 @@ class PlaybackConnection(private val context: Context) {
     private var controller: MediaController? = null
     private var positionPollJob: kotlinx.coroutines.Job? = null
 
+    /** v0.9.0: مستوى صوت مرغوب قبل جاهزية المتحكم — يُطبق فور الاتصال */
+    @Volatile private var pendingVolume: Float? = null
+
+    /** ضبط مستوى صوت البداية المحفوظ — يعمل ولو لم تكن خدمة الوسائط جاهزة بعد */
+    fun applyStartupVolume(v: Float) {
+        val c = controller
+        if (c != null) c.volume = v.coerceIn(0f, 1f) else pendingVolume = v
+    }
+
     /** يبني المتحكم — استدعِه مرة من Application/أول شاشة */
     fun connect() {
         if (controller != null) return
@@ -68,6 +77,9 @@ class PlaybackConnection(private val context: Context) {
             try {
                 val c = future.get()
                 controller = c
+                // v0.9.0: طبّق مستوى الصوت المحفوظ فور الجاهزية (قبل أي تشغيل)
+                pendingVolume?.let { c.volume = it.coerceIn(0f, 1f) }
+                pendingVolume = null
                 c.addListener(listener)
                 startPolling()
                 pushState()

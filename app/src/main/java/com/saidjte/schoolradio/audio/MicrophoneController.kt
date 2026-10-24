@@ -70,6 +70,22 @@ class MicrophoneController(
     private val _phase = MutableStateFlow(MicPhase.IDLE)
     val phase: StateFlow<MicPhase> = _phase.asStateFlow()
 
+    /**
+     * v0.9.0 — كسب الميكروفون (فيدر قناة الميك في الميكسر):
+     * 0.0 = كتم، 1.0 = طبيعي، حتى 2.0 = تضخيم لصوت خافت.
+     * يُطبّق على دفعات PCM في حلقة التمرير مع منع التشبع (لا لفّ موجة).
+     */
+    private val _micGain = MutableStateFlow(1f)
+    val micGain: StateFlow<Float> = _micGain.asStateFlow()
+
+    @Volatile private var gainFactor = 1f
+
+    fun setMicGain(value: Float) {
+        val v = value.coerceIn(0f, 2f)
+        gainFactor = v
+        _micGain.value = v
+    }
+
     /** هل البث يعمل فعلاً (إخراج صوت جارٍ)؟ — نفس الدلالة السابقة للتوافق */
     val isLive: Boolean get() = _phase.value == MicPhase.LIVE
 
@@ -254,10 +270,19 @@ class MicrophoneController(
                 if (gain < 1f) gain = (gain + fadeInStep).coerceAtMost(1f)
                 if (fadingOut) gain = (gain - fadeOutStep).coerceAtLeast(0f)
 
-                // تطبيق عامل التلاشي على الدفعة (نفس الدفعة تُكتب وتُسجَّل — اتساق تام)
-                for (i in 0 until n) chunk[i] = (chunk[i] * gain).toInt().toShort()
+                // v0.9.0: كسب الميكروفون (فيدر الميكسر) × تلاشي الدخول/الخروج
+                // مع منع التشبع: قيمة كسب > 1 بدون تحديد النطاق تلفّ الموجة فتصدر تشويه رقمي
+                val g = gain * gainFactor
+                for (i in 0 until n) {
+                    val s = chunk[i] * g
+                    chunk[i] = when {
+                        s > Short.MAX_VALUE -> Short.MAX_VALUE
+                        s < Short.MIN_VALUE -> Short.MIN_VALUE
+                        else -> s.toInt().toShort()
+                    }
+                }
 
-                if (n > 0 && gain > 0f) {
+                if (n > 0 && g > 0f) {
                     audioTrack?.write(chunk, 0, n)
                     // نفس الدفعة تذهب للتسجيل المتزامن (كلفة استدعاء واحد — لا تأخير عملي)
                     onPcm(chunk, n)

@@ -19,6 +19,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -119,7 +120,10 @@ fun DashboardScreen(
     snackbar: androidx.compose.material3.SnackbarHostState,
     onNavigateToSchedule: () -> Unit = {},
     onNavigateToLibrary: () -> Unit = {},
-    onOpenOnAir: () -> Unit = {}
+    onOpenOnAir: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
+    onOpenStudio: () -> Unit = {},
+    onOpenScripts: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     val locator = ServiceLocator
@@ -282,6 +286,18 @@ fun DashboardScreen(
                         }
                     }
                 }
+                // v0.9.0: زر الإعدادات في ركن بطاقة البطل — الإعدادات خرجت من شريط التنقل
+                IconButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp)
+                ) {
+                    Icon(
+                        Icons.Filled.Settings, "الإعدادات",
+                        tint = Color.White
+                    )
+                }
             }
         }
 
@@ -387,6 +403,29 @@ fun DashboardScreen(
                     }
                 }
             )
+        }
+
+        // ===== v0.9.0: إجراءات سريعة — الاستوديو والسكربتات =====
+        item {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                QuickActionCard(
+                    icon = AppIcons.Tune,
+                    title = "الاستوديو",
+                    subtitle = "ميكسر + معادل صوت",
+                    modifier = Modifier.weight(1f),
+                    onClick = onOpenStudio
+                )
+                QuickActionCard(
+                    icon = AppIcons.Article,
+                    title = "السكربتات",
+                    subtitle = "نصوص المذيع",
+                    modifier = Modifier.weight(1f),
+                    onClick = onOpenScripts
+                )
+            }
         }
 
         // ===== جدول اليوم =====
@@ -951,6 +990,58 @@ private fun LiveBroadcastCard(
             error?.let {
                 Text(it, color = st.failed, style = MaterialTheme.typography.bodySmall)
             }
+        }
+    }
+}
+
+/**
+ * v0.9.0: بطاقة إجراء سريع مضغوطة — بوابة بطاقة إلى الاستوديو/السكربتات
+ * من الصفحة الرئيسية مباشرة.
+ */
+@Composable
+private fun QuickActionCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    androidx.compose.material3.Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+        )
+    ) {
+        Row(
+            Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier
+                    .size(42.dp)
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(MaterialTheme.gradients.heroSoft.diagonalBrush()),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+            }
+            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                Text(title, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
+            Icon(
+                AppIcons.SkipNext, null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp)
+            )
         }
     }
 }

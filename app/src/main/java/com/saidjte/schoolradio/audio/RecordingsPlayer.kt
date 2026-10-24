@@ -28,11 +28,16 @@ class RecordingsPlayer(context: Context) {
         val recordingId: Long? = null,   // التسجيل المختار حالياً
         val isPlaying: Boolean = false,
         val positionMs: Long = 0,
-        val durationMs: Long = 0
+        val durationMs: Long = 0,
+        /** v0.9.0: سرعة التشغيل الحالية (0.5..2.0) — تبقى بين المقاطع حتى تغييرها */
+        val speed: Float = 1f
     )
 
     private val player: ExoPlayer = ExoPlayer.Builder(context.applicationContext).build()
     private val handler = Handler(Looper.getMainLooper())
+
+    /** v0.9.0: معرف الجلسة الصوتية — يوصلها ServiceLocator بمحرك المؤثرات المشترك */
+    val audioSessionId: Int get() = player.audioSessionId
 
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
@@ -45,7 +50,7 @@ class RecordingsPlayer(context: Context) {
                 durationMs = if (p.duration > 0) p.duration else _state.value.durationMs,
                 isPlaying = p.isPlaying
             )
-            if (p.isPlaying) handler.postDelayed(this, 500)
+            if (p.isPlaying) handler.postDelayed(this, 250)
         }
     }
 
@@ -95,15 +100,31 @@ class RecordingsPlayer(context: Context) {
         if (player.isPlaying) startPolling()
     }
 
+    /** v0.9.0: تقديم/ترجيع نسبي (±15 ثانية مثلاً) — أزرار مشغل الاحتراف */
+    fun skipBy(deltaMs: Long) {
+        seekTo(player.currentPosition + deltaMs)
+    }
+
+    /**
+     * v0.9.0: سرعة التشغيل (0.5..2.0) — لمراجعة النصوص بسرعة أو تفحّم التفاصيل.
+     * سرعة ExoPlayer تبقى معينة عبر تغيير المقطع حتى تعديلها صراحة.
+     */
+    fun setSpeed(speed: Float) {
+        val s = speed.coerceIn(0.5f, 2.0f)
+        player.setPlaybackSpeed(s)
+        _state.value = _state.value.copy(speed = s)
+    }
+
     /** إيقاف كامل — يُستدعى من الحَكَم فقط (بدء قائمة رئيسية أو بث مباشر) */
     fun stopAll() {
         player.stop()
-        _state.value = State()
+        _state.value = State(speed = _state.value.speed)
     }
 
     /** تحرير الموارد — مع دورة حياة العملية (singleton في ServiceLocator) */
     fun release() {
         handler.removeCallbacksAndMessages(null)
+        com.saidjte.schoolradio.di.ServiceLocator.detachAudioEffects(player.audioSessionId)
         player.release()
     }
 

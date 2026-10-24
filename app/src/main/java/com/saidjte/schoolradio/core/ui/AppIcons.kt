@@ -776,4 +776,102 @@ object AppIcons {
             }
         }
     }
+
+    /**
+     * أيقونة «ضبط/ميكسر» (Material Icons: tune — Apache 2.0):
+     * صفوف منزلقات أفقية — رمز شاشة الاستوديو.
+     */
+    val Tune: ImageVector by lazy {
+        builder("Tune") {
+            path(fill = SolidColor(Color.Black), pathFillType = PathFillType.NonZero) {
+                moveTo(3f, 17f)
+                verticalLineToRelative(2f)
+                horizontalLineToRelative(6f)
+                verticalLineToRelative(-2f)
+                horizontalLineTo(3f)
+                close()
+                moveTo(3f, 5f)
+                verticalLineToRelative(2f)
+                horizontalLineToRelative(10f)
+                verticalLineTo(5f)
+                horizontalLineTo(3f)
+                close()
+                moveTo(13f, 21f)
+                verticalLineToRelative(-2f)
+                horizontalLineToRelative(8f)
+                verticalLineToRelative(-2f)
+                horizontalLineToRelative(-8f)
+                verticalLineToRelative(-2f)
+                horizontalLineToRelative(-2f)
+                verticalLineToRelative(6f)
+                horizontalLineTo(13f)
+                close()
+                moveTo(7f, 9f)
+                verticalLineToRelative(2f)
+                horizontalLineTo(3f)
+                verticalLineToRelative(2f)
+                horizontalLineToRelative(4f)
+                verticalLineToRelative(2f)
+                horizontalLineToRelative(2f)
+                verticalLineTo(9f)
+                horizontalLineTo(7f)
+                close()
+                moveTo(21f, 13f)
+                verticalLineToRelative(-2f)
+                horizontalLineTo(11f)
+                verticalLineToRelative(2f)
+                horizontalLineTo(21f)
+                close()
+                moveTo(15f, 9f)
+                horizontalLineToRelative(2f)
+                verticalLineTo(7f)
+                horizontalLineToRelative(4f)
+                verticalLineTo(5f)
+                horizontalLineToRelative(-4f)
+                verticalLineTo(3f)
+                horizontalLineToRelative(-2f)
+                verticalLineTo(9f)
+                close()
+            }
+        }
+    }
+
+    /**
+     * أيقونة «سكربت/مستند نصي» (Material Icons: article — Apache 2.0):
+     * ورقة بأسطر نص — رمز شاشة السكربتات.
+     */
+    val Article: ImageVector by lazy {
+        builder("Article") {
+            path(fill = SolidColor(Color.Black), pathFillType = PathFillType.NonZero) {
+                moveTo(19f, 3f)
+                horizontalLineTo(5f)
+                curveTo(3.9f, 3f, 3f, 3.9f, 3f, 5f)
+                verticalLineToRelative(14f)
+                curveToRelative(0f, 1.1f, 0.9f, 2f, 2f, 2f)
+                horizontalLineToRelative(14f)
+                curveToRelative(1.1f, 0f, 2f, -0.9f, 2f, -2f)
+                verticalLineTo(5f)
+                curveTo(21f, 3.9f, 20.1f, 3f, 19f, 3f)
+                close()
+                moveTo(14f, 17f)
+                horizontalLineTo(7f)
+                verticalLineToRelative(-2f)
+                horizontalLineToRelative(7f)
+                verticalLineTo(17f)
+                close()
+                moveTo(17f, 13f)
+                horizontalLineTo(7f)
+                verticalLineToRelative(-2f)
+                horizontalLineToRelative(10f)
+                verticalLineTo(13f)
+                close()
+                moveTo(17f, 9f)
+                horizontalLineTo(7f)
+                verticalLineTo(7f)
+                horizontalLineToRelative(10f)
+                verticalLineTo(9f)
+                close()
+            }
+        }
+    }
 }

@@ -25,7 +25,14 @@ data class AppSettings(
     val notificationsEnabled: Boolean = true,
     val startOfBroadcast: Int = 8 * 60,   // بداية يوم الإذاعة بالدقائق (تسبيك الحسابات)
     val lastBackupUri: String? = null,
-    val currentUserId: Long? = null        // المستخدم الحالي (الأدوار v0.3.0)
+    val currentUserId: Long? = null,       // المستخدم الحالي (الأدوار v0.3.0)
+    // ===== v0.9.0: الاستوديو الاحترافي (ميكسر + معادل صوت) =====
+    val eqEnabled: Boolean = true,         // معادل الصوت مفعّل (شرائح مسطحة افتراضياً = صوت شفاف)
+    val eqPresetId: Int = -1,              // -1 = ضبط مخصص بالشرائح
+    val eqGains: String = "",              // كسب الشرائح بالديسيبل مفصولاً بـ | (مثل "0.0|1.5|-2.0")
+    val bassStrength: Float = 0f,          // تعزيز الباص 0..1
+    val virtStrength: Float = 0f,          // المؤثر المحيطي 0..1
+    val micGain: Float = 1.0f              // كسب الميكروفون 0..2 (فيدر الميكسر)
 )
 
 /**
@@ -44,6 +51,13 @@ class SettingsStore(private val context: Context) {
         val START_OF_DAY = intPreferencesKey("start_of_broadcast")
         val LAST_BACKUP = stringPreferencesKey("last_backup_uri")
         val CURRENT_USER = longPreferencesKey("current_user_id")
+        // v0.9.0
+        val EQ_ENABLED = booleanPreferencesKey("eq_enabled")
+        val EQ_PRESET = intPreferencesKey("eq_preset_id")
+        val EQ_GAINS = stringPreferencesKey("eq_gains")
+        val BASS_STRENGTH = floatPreferencesKey("bass_strength")
+        val VIRT_STRENGTH = floatPreferencesKey("virt_strength")
+        val MIC_GAIN = floatPreferencesKey("mic_gain")
     }
 
     /** معرف المستخدم الحالي (لتوليفه مع جدول users في SessionRepository) */
@@ -58,7 +72,14 @@ class SettingsStore(private val context: Context) {
             duckEnabled = p[Keys.DUCK_ENABLED] ?: true,
             notificationsEnabled = p[Keys.NOTIFICATIONS] ?: true,
             startOfBroadcast = p[Keys.START_OF_DAY] ?: (8 * 60),
-            lastBackupUri = p[Keys.LAST_BACKUP]
+            lastBackupUri = p[Keys.LAST_BACKUP],
+            // v0.9.0
+            eqEnabled = p[Keys.EQ_ENABLED] ?: true,
+            eqPresetId = p[Keys.EQ_PRESET] ?: -1,
+            eqGains = p[Keys.EQ_GAINS] ?: "",
+            bassStrength = p[Keys.BASS_STRENGTH] ?: 0f,
+            virtStrength = p[Keys.VIRT_STRENGTH] ?: 0f,
+            micGain = p[Keys.MIC_GAIN] ?: 1.0f
         )
     }
 
@@ -75,4 +96,16 @@ class SettingsStore(private val context: Context) {
     suspend fun setCurrentUserId(v: Long?) = context.dataStore.edit {
         if (v == null) it.remove(Keys.CURRENT_USER) else it[Keys.CURRENT_USER] = v
     }
+
+    // ===== v0.9.0: الاستوديو الاحترافي =====
+    suspend fun setEqEnabled(v: Boolean) = context.dataStore.edit { it[Keys.EQ_ENABLED] = v }
+
+    suspend fun setEqConfig(presetId: Int, gains: String) = context.dataStore.edit {
+        it[Keys.EQ_PRESET] = presetId
+        it[Keys.EQ_GAINS] = gains
+    }
+
+    suspend fun setBassStrength(v: Float) = context.dataStore.edit { it[Keys.BASS_STRENGTH] = v }
+    suspend fun setVirtStrength(v: Float) = context.dataStore.edit { it[Keys.VIRT_STRENGTH] = v }
+    suspend fun setMicGain(v: Float) = context.dataStore.edit { it[Keys.MIC_GAIN] = v.coerceIn(0f, 2f) }
 }
