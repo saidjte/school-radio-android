@@ -8,6 +8,7 @@ import com.saidjte.schoolradio.audio.RecordingManager
 import com.saidjte.schoolradio.audio.RecordingsPlayer
 import com.saidjte.schoolradio.data.backup.BackupRepository
 import com.saidjte.schoolradio.data.local.AppDatabase
+import com.saidjte.schoolradio.data.local.entity.ScheduledEventEntity
 import com.saidjte.schoolradio.data.repository.LibraryRepository
 import com.saidjte.schoolradio.data.repository.PlaylistRepository
 import com.saidjte.schoolradio.data.repository.RecordingRepository
@@ -23,6 +24,17 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+
+/**
+ * معلومات الفقرة المعروضة حالياً على شاشة «على الهواء» (v0.5.0).
+ * يضبطها AlarmReceiver لحظة إطلاق فقرة مجدولة، ويعرضها OnAirScreen بالصورة والنص.
+ */
+data class OnAirInfo(
+    val eventId: Long,
+    val eventTitle: String,
+    val noteText: String? = null,
+    val imagePath: String? = null
+)
 
 /**
  * حاقن اعتمادي يدوي بسيط (ServiceLocator).
@@ -69,6 +81,19 @@ object ServiceLocator {
     // ===== حالة البث المباشر المشتركة مع الواجهة =====
     private val _micLevel = MutableStateFlow(0f)
     val micLevel: StateFlow<Float> = _micLevel.asStateFlow()
+
+    // ===== شاشة العرض على الهواء (v0.5.0) =====
+    private val _onAir = MutableStateFlow<OnAirInfo?>(null)
+    val onAir: StateFlow<OnAirInfo?> = _onAir.asStateFlow()
+
+    /** يُستدعى من AlarmReceiver لحظة إطلاق فقرة مجدولة، ومن الإيقاف اليدوي للمسح */
+    fun setOnAir(info: OnAirInfo?) { _onAir.value = info }
+
+    // ===== مسودة فقرة جديدة قادمة من شاشة التسجيلات (زر «جدولة» السريع) =====
+    private val _pendingScheduleDraft = MutableStateFlow<ScheduledEventEntity?>(null)
+    val pendingScheduleDraft: StateFlow<ScheduledEventEntity?> = _pendingScheduleDraft.asStateFlow()
+
+    fun setPendingScheduleDraft(draft: ScheduledEventEntity?) { _pendingScheduleDraft.value = draft }
 
     private val _micLive = MutableStateFlow(false)
     val micLive: StateFlow<Boolean> = _micLive.asStateFlow()

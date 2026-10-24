@@ -135,6 +135,8 @@ class PlaybackConnection(private val context: Context) {
     fun playQueue(items: List<QueueItem>, startIndex: Int = 0, repeatAll: Boolean = false) {
         val c = controller ?: return
         if (items.isEmpty()) return
+        // تشغيل يدوي من الواجهة — ليس فقرة مجدولة، نمسح معلومات العرض على الهواء
+        com.saidjte.schoolradio.di.ServiceLocator.setOnAir(null)
         _state.value = _state.value.copy(errorMessage = null)
         c.setMediaItems(items.map { it.toMediaItem() }, startIndex, 0)
         c.repeatMode = if (repeatAll) Player.REPEAT_MODE_ALL else Player.REPEAT_MODE_OFF
@@ -153,6 +155,7 @@ class PlaybackConnection(private val context: Context) {
     fun stopAll() {
         controller?.stop()
         controller?.clearMediaItems()
+        com.saidjte.schoolradio.di.ServiceLocator.setOnAir(null)
         _state.value = PlaybackUiState()
     }
 

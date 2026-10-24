@@ -75,7 +75,10 @@ enum class RecFilter(val labelAr: String) {
 }
 
 @Composable
-fun RecordingsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
+fun RecordingsScreen(
+    snackbar: androidx.compose.material3.SnackbarHostState,
+    onScheduleClick: () -> Unit = {}
+) {
     val locator = ServiceLocator
     val scope = rememberCoroutineScope()
 
@@ -165,7 +168,20 @@ fun RecordingsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                         canManage = canManage,
                         onToggle = { locator.recordingsPlayer.toggle(rec) },
                         onRename = { renameTarget = rec },
-                        onDelete = { deleteTarget = rec }
+                        onDelete = { deleteTarget = rec },
+                        // v0.5.0: جدولة سريعة — مسودة فقرة بهذا التسجيل ثم الانتقال للجدولة
+                        onSchedule = {
+                            ServiceLocator.setPendingScheduleDraft(
+                                com.saidjte.schoolradio.data.local.entity.ScheduledEventEntity(
+                                    scheduleId = -1L,
+                                    startMinutes = 480, // 08:00 — يعدّلها المستخدم من المحرر
+                                    weekDaysMask = 0b0111110,
+                                    title = rec.title,
+                                    recordingId = rec.id
+                                )
+                            )
+                            onScheduleClick()
+                        }
                     )
                 }
                 item { Spacer(Modifier.height(80.dp)) }
@@ -210,7 +226,7 @@ fun RecordingsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
     }
 }
 
-/** سطر تسجيل واحد: زر تشغيل دائري + البيانات + شارة المصدر + أدوات محمية بالدور */
+/** سطر تسجيل واحد: زر تشغيل دائري + البيانات + شارة المصدر + أدوات محمية بالدور + جدولة سريعة */
 @Composable
 private fun RecordingRow(
     recording: RecordingEntity,
@@ -218,7 +234,8 @@ private fun RecordingRow(
     canManage: Boolean,
     onToggle: () -> Unit,
     onRename: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onSchedule: () -> Unit = {}
 ) {
     val st = MaterialTheme.status
     val isCurrent = playing.recordingId == recording.id
@@ -275,6 +292,9 @@ private fun RecordingRow(
                             )
                         }
                     }
+                }
+                IconButton(onClick = onSchedule) {
+                    Icon(AppIcons.Event, "جدولة هذا التسجيل")
                 }
                 if (canManage) {
                     IconButton(onClick = onRename) {

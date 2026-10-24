@@ -20,8 +20,10 @@ data class RadioScheduleEntity(
 )
 
 /**
- * فقرة مجدولة داخل جدول: تُشغّل قائمة تشغيل (أو مقطعاً واحداً) في وقت محدد
- * في أيام أسبوع محددة (بتشفير bitmask: البت i يعني اليوم (i+1)، الاثنين=1 ... الأحد=64).
+ * فقرة مجدولة داخل جدول: تُشغّل قائمة تشغيل أو مقطعاً من المكتبة أو **تسجيلاً من الأرشيف**
+ * في وقت محدد في أيام أسبوع محددة (بتشفير bitmask: البت i يعني اليوم (i+1)، الاثنين=1 ... الأحد=64).
+ *
+ * v0.5.0: أضيفت حقول العرض البصري (note_text + image_path) لتظهر على شاشة «على الهواء».
  */
 @Entity(
     tableName = "scheduled_events",
@@ -37,9 +39,15 @@ data class RadioScheduleEntity(
             parentColumns = ["id"],
             childColumns = ["playlist_id"],
             onDelete = ForeignKey.SET_NULL
+        ),
+        ForeignKey(
+            entity = RecordingEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["recording_id"],
+            onDelete = ForeignKey.SET_NULL
         )
     ],
-    indices = [Index("schedule_id"), Index("playlist_id"), Index("start_minutes")]
+    indices = [Index("schedule_id"), Index("playlist_id"), Index("start_minutes"), Index("recording_id")]
 )
 data class ScheduledEventEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -49,10 +57,16 @@ data class ScheduledEventEntity(
     /** أيام التشغيل: bitmask — الاثنين=1، الثلاثاء=2، ... الأحد=64 */
     @ColumnInfo(name = "week_days_mask") val weekDaysMask: Int,
     val title: String,
-    /** قائمة التشغيل المرتبطة (أو null إن أُسند مقطع واحد فقط) */
+    /** قائمة التشغيل المرتبطة (أو null إن أُسند مقطع/تسجيل واحد) */
     @ColumnInfo(name = "playlist_id") val playlistId: Long? = null,
-    /** مقطع واحد مباشر عند عدم وجود قائمة */
-    @ColumnInfo(name = "single_track_id") val singleTrackId: Long? = null
+    /** مقطع واحد من المكتبة عند عدم وجود قائمة */
+    @ColumnInfo(name = "single_track_id") val singleTrackId: Long? = null,
+    /** v0.5.0: تسجيل واحد من أرشيف التسجيلات (يُفضّل على القائمة عند فقرة مُسجّلة كاملة) */
+    @ColumnInfo(name = "recording_id") val recordingId: Long? = null,
+    /** v0.5.0: نص إرشادي/إعلاني يُعرض على شاشة «على الهواء» أثناء تشغيل الفقرة */
+    @ColumnInfo(name = "note_text") val noteText: String? = null,
+    /** v0.5.0: مسار مطلق لصورة الفقرة داخل ملفات التطبيق (filesDir/event_images) */
+    @ColumnInfo(name = "image_path") val imagePath: String? = null
 ) {
     /** هل الحدث مجدول في اليوم المحدد؟ (dayOfWeek بمعيار ISO: الاثنين=1..الأحد=7) */
     fun runsOn(dayOfWeekIso: Int): Boolean {

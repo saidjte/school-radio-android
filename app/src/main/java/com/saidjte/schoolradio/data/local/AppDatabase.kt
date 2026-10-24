@@ -25,6 +25,8 @@ import com.saidjte.schoolradio.data.local.entity.UserEntity
 /**
  * قاعدة البيانات المحلية الوحيدة للتطبيق (تعمل دون إنترنت تماماً).
  * الإصدار 2 = v0.3.0: أُضيف جدولا «users» (الأدوار) و«recordings» (الأرشيف الصوتي).
+ * الإصدار 3 = v0.5.0: حقول الفقرة الموسعة (recording_id + note_text + image_path)
+ *   لتشغيل التسجيلات ضمن الفقرات ودعم صور/نصوص شاشة العرض.
  * عند أي تعديل مستقبلي: زد الإصدار واكتب Migration() صريحاً (لا fallback في الإنتاج)
  * — بيانات المدارس الحقيقية (مكتبة + جداول + أرشيف) لا يجوز فقدانها أبداً.
  */
@@ -40,7 +42,7 @@ import com.saidjte.schoolradio.data.local.entity.UserEntity
         UserEntity::class,
         RecordingEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -90,6 +92,30 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * ترحيل 2 → 3 (v0.4.0 → v0.5.0): ثلاثة أعمدة على scheduled_events + فهرس.
+         * ADD COLUMN مع REFERENCES يبقى آمناً هنا لأن القيمة الافتراضية NULL
+         * ولا تُكتب صفوف أثناء الترحيل — لا مساس بأي بيانات قائمة.
+         * SQL هنا يجب أن يطابق حرفياً ما يولّده Room من الكيانات (يُفحص مخطط app/schemas/3.json).
+         */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // تسجيل من أرشيف التسجيلات كمحتوى للفقرة (يبقى سليماً إذا حُذف التسجيل)
+                db.execSQL(
+                    "ALTER TABLE `scheduled_events` ADD COLUMN `recording_id` INTEGER " +
+                        "REFERENCES `recordings`(`id`) ON DELETE SET NULL"
+                )
+                // نص الفقرة المعروض على شاشة العرض
+                db.execSQL("ALTER TABLE `scheduled_events` ADD COLUMN `note_text` TEXT")
+                // صورة الفقرة المعروضة على شاشة العرض (مسار مطلق داخل ملفات التطبيق)
+                db.execSQL("ALTER TABLE `scheduled_events` ADD COLUMN `image_path` TEXT")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_scheduled_events_recording_id` " +
+                        "ON `scheduled_events` (`recording_id`)"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -97,7 +123,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "school-radio.db"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build().also { INSTANCE = it }
             }
     }

@@ -581,4 +581,36 @@ object AppIcons {
             }
         }
     }
+
+    /** شاشة عرض — فتح شاشة «على الهواء» (v0.5.0) */
+    val Display: ImageVector by lazy {
+        builder("Display") {
+            path(
+                fill = SolidColor(Color.Black),
+                pathFillType = PathFillType.NonZero
+            ) {
+                // Material Icons — Tv (Apache 2.0)
+                moveTo(21f, 3f)
+                horizontalLineTo(3f)
+                curveTo(1.9f, 3f, 1f, 3.9f, 1f, 5f)
+                verticalLineTo(17f)
+                curveTo(1f, 18.1f, 1.9f, 19f, 3f, 19f)
+                horizontalLineTo(8f)
+                verticalLineTo(21f)
+                horizontalLineTo(16f)
+                verticalLineTo(19f)
+                horizontalLineTo(21f)
+                curveTo(22.1f, 19f, 23f, 18.1f, 23f, 17f)
+                verticalLineTo(5f)
+                curveTo(23f, 3.9f, 22.1f, 3f, 21f, 3f)
+                close()
+                moveTo(21f, 17f)
+                horizontalLineTo(3f)
+                verticalLineTo(5f)
+                horizontalLineTo(21f)
+                verticalLineTo(17f)
+                close()
+            }
+        }
+    }
 }

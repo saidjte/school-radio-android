@@ -10,7 +10,8 @@
 
 | الإصدار | APK (اسم موحّد) | الحزمة المصدرية |
 |---------|----------------|-----------------|
-| **v0.4.0** (الحالية) | [SchoolRadio_v0.4.0.apk](https://github.com/saidjte/school-radio-android/releases/download/v0.4.0/SchoolRadio_v0.4.0.apk) | [SchoolRadio_Source_v0.4.0.zip](https://github.com/saidjte/school-radio-android/releases/download/v0.4.0/SchoolRadio_Source_v0.4.0.zip) |
+| **v0.5.0** (الحالية) | [SchoolRadio_v0.5.0.apk](https://github.com/saidjte/school-radio-android/releases/download/v0.5.0/SchoolRadio_v0.5.0.apk) | [SchoolRadio_Source_v0.5.0.zip](https://github.com/saidjte/school-radio-android/releases/download/v0.5.0/SchoolRadio_Source_v0.5.0.zip) |
+| v0.4.0 | [SchoolRadio_v0.4.0.apk](https://github.com/saidjte/school-radio-android/releases/download/v0.4.0/SchoolRadio_v0.4.0.apk) | [SchoolRadio_Source_v0.4.0.zip](https://github.com/saidjte/school-radio-android/releases/download/v0.4.0/SchoolRadio_Source_v0.4.0.zip) |
 | v0.3.0 | [SchoolRadio_v0.3.0.apk](https://github.com/saidjte/school-radio-android/releases/download/v0.3.0/SchoolRadio_v0.3.0.apk) | [SchoolRadio_Source_v0.3.0.zip](https://github.com/saidjte/school-radio-android/releases/download/v0.3.0/SchoolRadio_Source_v0.3.0.zip) |
 | v0.2.0 | [SchoolRadio_v0.2.0.apk](https://github.com/saidjte/school-radio-android/releases/download/v0.2.0/SchoolRadio_v0.2.0.apk) | [SchoolRadio_Source_v0.2.0.zip](https://github.com/saidjte/school-radio-android/releases/download/v0.2.0/SchoolRadio_Source_v0.2.0.zip) |
 | v0.1.0 | [SchoolRadio_v0.1.0.apk](https://github.com/saidjte/school-radio-android/releases/download/v0.1.0/SchoolRadio_v0.1.0.apk) | [SchoolRadio_Source_v0.1.0.zip](https://github.com/saidjte/school-radio-android/releases/download/v0.1.0/SchoolRadio_Source_v0.1.0.zip) |
@@ -20,6 +21,28 @@
   (تطبيق Kotlin خالص دون مكتبات native، وفلتر `abiFilters` مثبّت في إعداد البناء)
 - التوقيع: نفس المفتاح في كل الإصدارات — بصمة SHA-256 في [docs/SIGNING.md](docs/SIGNING.md) —
   لذلك يُثبَّت التحديث الجديد فوق النسخة القديمة مباشرة دون حذف ودون فقدان البيانات.
+
+## المزايا (v0.5.0 — إذاعة مُجدولة بالتسجيلات + صور ونصوص الفقرات)
+
+- **تشغيل التسجيلات ضمن الفقرات المجدولة**: محتوى الفقرة أصبح ثلاثياً —
+  قائمة تشغيل، أو مقطع من المكتبة، أو **تسجيلاً من أرشيف التسجيلات** (v0.3.0+)
+  — مع تحقق من وجود الملف عند الإطلاق ورسائل فشل عربية دقيقة
+- **زر جدولة سريع في أرشيف التسجيلات**: أيقونة تقويم على كل تسجيل تفتح
+  محرر الفقرة معبّأً مسبقاً (العنوان + التسجيل)، ويُنشئ جدولاً تلقائياً إن لم يوجد
+- **صور ونصوص للفقرات**: لكل فقرة نص إرشادي وصورة (Photo Picker بلا صلاحيات،
+  نسخة مضغوطة ≤1440px داخل ملفات التطبيق) تُعرض في شاشة «على الهواء»
+  وفي بطاقات الفقرات (الجدولة + الرئيسية)
+- **شاشة العرض «على الهواء»**: ملء الشاشة بخلفية داكنة — صورة الفقرة الجارية
+  + نصها بخط كبير للعرض من بعيد + شريط تقدم + أزرار تحكم + ساعة كبيرة في
+  وضع الانتظار، مع إبقاء الشاشة مضاءة (keepScreenOn) — تصلح لربط الجهاز
+  بشاشة العرض/البروجكتور، وتُفتح من شريط المشغل أو الرئيسية
+- **إصلاح الطريق المسدود في الجدولة**: زر «فقرة مجدولة» كان يعرض تنبيهاً
+  «أنشئ جدولاً أولاً» دون أي وسيلة لإنشاء جدول — الآن يفتح حوار إنشاء الجدول
+  مباشرة ثم محرر الفقرة تلقائياً، مع زر «جدول جديد» دائم في ترويسة الجداول
+- **إصلاح التفاف تسميات التنقل السفلي**: «التسجيلات» كانت تلتف على سطرين
+  فوق أيقونتها في الشاشات الضيقة — أصبحت بسطر واحد بخط مصغّر
+- **نسخ احتياطي v3**: تصدير/استيراد الحقول الجديدة مع إعادة ربط التسجيلات
+  بمعرفاتها الجديدة (متوافق مع نسخ v1/v2)
 
 ## المزايا (v0.4.0 — تحسين تجربة المستخدم UI/UX)
 

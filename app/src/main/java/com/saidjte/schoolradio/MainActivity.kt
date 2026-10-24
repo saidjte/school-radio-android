@@ -36,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -51,6 +52,7 @@ import com.saidjte.schoolradio.data.settings.AppSettings
 import com.saidjte.schoolradio.di.ServiceLocator
 import com.saidjte.schoolradio.feature.dashboard.DashboardScreen
 import com.saidjte.schoolradio.feature.library.LibraryScreen
+import com.saidjte.schoolradio.feature.onair.OnAirScreen
 import com.saidjte.schoolradio.feature.player.PlayerBar
 import com.saidjte.schoolradio.feature.playlists.PlaylistsScreen
 import com.saidjte.schoolradio.feature.recordings.RecordingsScreen
@@ -101,8 +103,13 @@ private fun AppScaffold() {
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
+            // شاشة العرض على الهواء تحتاج كل المساحة — بلا شريط سفلي
+            if (currentRoute != AppRoute.ON_AIR) {
             Column {
-                PlayerBar(snackbar)
+                PlayerBar(
+                    snackbar,
+                    onOpenOnAir = { nav.navigateSafely(AppRoute.ON_AIR) }
+                )
                 NavigationBar(tonalElevation = 3.dp) {
                     // عدد التسجيلات — شارة حية على تبويب الأرشيف
                     val recCount by ServiceLocator.recordingsRepo.observeAll()
@@ -128,9 +135,19 @@ private fun AppScaffold() {
                                     Icon(item.icon, contentDescription = item.label)
                                 }
                             },
-                            label = { Text(item.label) }
+                            // إصلاح v0.5.0: سطر واحد بخط مصغّر — لم تعد التسميات
+                            // (التسجيلات…) تلتف على سطرين فوق أيقونتها في الشاشات الضيقة
+                            label = {
+                                Text(
+                                    item.label,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    fontSize = 10.sp
+                                )
+                            }
                         )
                     }
+                }
                 }
             }
         }
@@ -156,14 +173,21 @@ private fun AppScaffold() {
                     DashboardScreen(
                         snackbar = snackbar,
                         onNavigateToSchedule = { nav.navigateSafely(AppRoute.SCHEDULING) },
-                        onNavigateToLibrary = { nav.navigateSafely(AppRoute.LIBRARY) }
+                        onNavigateToLibrary = { nav.navigateSafely(AppRoute.LIBRARY) },
+                        onOpenOnAir = { nav.navigateSafely(AppRoute.ON_AIR) }
                     )
                 }
                 composable(AppRoute.LIBRARY) { LibraryScreen(snackbar) }
                 composable(AppRoute.PLAYLISTS) { PlaylistsScreen(snackbar) }
-                composable(AppRoute.RECORDINGS) { RecordingsScreen(snackbar) }
+                composable(AppRoute.RECORDINGS) {
+                    RecordingsScreen(
+                        snackbar,
+                        onScheduleClick = { nav.navigateSafely(AppRoute.SCHEDULING) }
+                    )
+                }
                 composable(AppRoute.SCHEDULING) { ScheduleScreen(snackbar) }
                 composable(AppRoute.SETTINGS) { SettingsScreen(snackbar) }
+                composable(AppRoute.ON_AIR) { OnAirScreen(onExit = { nav.popBackStack() }) }
             }
         }
     }
@@ -185,6 +209,7 @@ object AppRoute {
     const val RECORDINGS = "recordings"
     const val SCHEDULING = "scheduling"
     const val SETTINGS = "settings"
+    const val ON_AIR = "on_air"
 }
 
 enum class NavigationItem(

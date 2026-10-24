@@ -1,5 +1,8 @@
 package com.saidjte.schoolradio.feature.scheduling
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -7,8 +10,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -29,6 +35,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,22 +43,31 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.saidjte.schoolradio.core.theme.status
 import com.saidjte.schoolradio.core.ui.AppIcons
 import com.saidjte.schoolradio.core.ui.EmptyStateCard
 import com.saidjte.schoolradio.core.ui.ScreenHeader
+import com.saidjte.schoolradio.core.ui.SegmentImage
+import com.saidjte.schoolradio.core.util.EventContentAr
 import com.saidjte.schoolradio.core.util.ScheduleLogic
+import com.saidjte.schoolradio.core.util.SegmentImageStore
 import com.saidjte.schoolradio.data.local.entity.ExecutionStatus
+import com.saidjte.schoolradio.data.local.entity.RecordingEntity
 import com.saidjte.schoolradio.data.local.entity.RadioScheduleEntity
 import com.saidjte.schoolradio.data.local.entity.ScheduledEventEntity
 import com.saidjte.schoolradio.di.ServiceLocator
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
  * الجدولة: جداول متعددة (طابور الصباح/الاستراحة…)، أحداث بأيام أسبوعية
- * وربط بقوائم تشغيل، حالة التنفيذ لكل فقرة، وطلب صلاحية المنبهات الدقيقة.
+ * وربط بقائمة تشغيل أو مقطع أو **تسجيل من الأرشيف** (v0.5.0)،
+ * نص/صورة للفقرة تُعرض على شاشة «على الهواء»، حالة التنفيذ لكل فقرة،
+ * وطلب صلاحية المنبهات الدقيقة.
  */
 @Composable
 fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
@@ -61,6 +77,10 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
     val schedules by locator.schedules.schedules.collectAsStateWithLifecycle(initialValue = emptyList())
     val events by locator.schedules.events.collectAsStateWithLifecycle(initialValue = emptyList())
     val executions by locator.schedules.recentExecutions.collectAsStateWithLifecycle(initialValue = emptyList())
+    val playlists by locator.playlists.playlists.collectAsStateWithLifecycle(initialValue = emptyList())
+    val tracks by locator.library.tracks.collectAsStateWithLifecycle(initialValue = emptyList())
+    val recordings by locator.recordingsRepo.observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
+
     var creatingSchedule by remember { mutableStateOf(false) }
     var editingEvent by remember { mutableStateOf<EventEditorState?>(null) }
     var renamingSchedule by remember { mutableStateOf<RadioScheduleEntity?>(null) }
@@ -72,16 +92,32 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
         else scope.launch { snackbar.showSnackbar("يلزم دور معلم أو مشرف لتعديل الجدولة") }
     }
 
+    // ===== التقاط مسودة «جدولة تسجيل» القادمة من شاشة التسجيلات (v0.5.0) =====
+    LaunchedEffect(Unit) {
+        val draft = locator.pendingScheduleDraft.value ?: return@LaunchedEffect
+        locator.setPendingScheduleDraft(null)
+        val current = locator.schedules.schedules.first()
+        val scheduleId = if (current.isEmpty()) {
+            // لا جداول بعد؟ نُنشئ الجدول الصباحي تلقائياً حتى لا يعلق المستخدم
+            locator.schedules.createSchedule("البرنامج الصباحي")
+        } else current.first().id
+        editingEvent = EventEditorState(
+            scheduleId = scheduleId,
+            title = draft.title,
+            weekDaysMask = draft.weekDaysMask,
+            recordingId = draft.recordingId
+        )
+    }
+
     Scaffold(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = {
                     requireManage {
-                        if (schedules.isEmpty()) {
-                            scope.launch { snackbar.showSnackbar("أنشئ جدولاً أولاً ثم أضف إليه فقرات") }
-                        } else {
-                            editingEvent = EventEditorState(scheduleId = schedules.first().id)
-                        }
+                        // إصلاح v0.5.0: لا طريق مسدود — بلا جداول نفتح حوار إنشاء جدول
+                        // مباشرة، وبعد حفظه يُفتح محرر الفقرة فوراً
+                        if (schedules.isEmpty()) creatingSchedule = true
+                        else editingEvent = EventEditorState(scheduleId = schedules.first().id)
                     }
                 }
             ) {
@@ -123,10 +159,17 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
 
             // ===== الجداول =====
             item {
-                ScreenHeader(
-                    title = "الجداول",
-                    subtitle = "مجموعات فقرات تعمل معاً (طابور الصباح، الاستراحة…)"
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ScreenHeader(
+                        title = "الجداول",
+                        subtitle = "مجموعات فقرات تعمل معاً (طابور الصباح، الاستراحة…)",
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = { requireManage { creatingSchedule = true } }) {
+                        Icon(Icons.Filled.Add, null)
+                        Text(" جدول جديد")
+                    }
+                }
             }
             items(schedules, key = { it.id }) { s ->
                 Card(Modifier.fillMaxWidth()) {
@@ -161,6 +204,9 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                         IconButton(onClick = {
                             requireManage {
                                 scope.launch {
+                                    // تنظيف صور فقرات الجدول قبل حذفها (لا صور يتيمة)
+                                    events.filter { it.scheduleId == s.id }
+                                        .forEach { SegmentImageStore.delete(it.imagePath) }
                                     locator.schedules.deleteSchedule(s.id)
                                     locator.rearmScheduleAlarms()
                                 }
@@ -181,16 +227,30 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                 item {
                     EmptyStateCard(
                         icon = AppIcons.Event,
-                        title = "لا فقرات بعد",
-                        body = "أضف فقرة وحدد وقتها وأيامها وقائمة تشغيلها لتنطلق تلقائياً"
+                        title = if (schedules.isEmpty()) "ابدأ بجدول ثم أضف فقراته" else "لا فقرات بعد",
+                        body = "اضغط «فقرة مجدولة» أدناه — إذا لم يوجد جدول سيُطلب منك اسمه أولاً،" +
+                            " ثم حدّد وقت الفقرة وأيامها ومحتواها (قائمة/مقطع/تسجيل) لتنطلق تلقائياً"
                     )
                 }
             }
             items(events, key = { it.id }) { e ->
                 val scheduleName = schedules.firstOrNull { it.id == e.scheduleId }?.name ?: "—"
                 val lastExecution = executions.firstOrNull { it.eventId == e.id }
+                val contentLabel = EventContentAr.label(
+                    playlistName = e.playlistId?.let { pid -> playlists.firstOrNull { it.id == pid }?.name },
+                    trackTitle = e.singleTrackId?.let { tid -> tracks.firstOrNull { it.id == tid }?.title },
+                    recordingTitle = e.recordingId?.let { rid -> recordings.firstOrNull { it.id == rid }?.title }
+                )
                 Card(Modifier.fillMaxWidth()) {
                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (e.imagePath != null) {
+                            SegmentImage(
+                                e.imagePath,
+                                Modifier.size(52.dp),
+                                contentDescription = "صورة الفقرة"
+                            )
+                            Spacer(Modifier.padding(start = 10.dp))
+                        }
                         Column(Modifier.weight(1f)) {
                             Text(
                                 "${ScheduleLogic.formatMinutes(e.startMinutes)} — ${e.title}",
@@ -201,6 +261,24 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            Text(
+                                contentLabel,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (EventContentAr.hasContent(e.playlistId, e.singleTrackId, e.recordingId))
+                                    MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.error,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (!e.noteText.isNullOrBlank()) {
+                                Text(
+                                    e.noteText,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                             lastExecution?.let {
                                 val st = MaterialTheme.status
                                 Text(
@@ -222,6 +300,7 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                             requireManage {
                                 scope.launch {
                                     locator.scheduler.cancelAlarm(e.id)
+                                    SegmentImageStore.delete(e.imagePath)
                                     locator.schedules.deleteEvent(e.id)
                                     locator.rearmScheduleAlarms()
                                 }
@@ -240,6 +319,7 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
             initial = state,
             schedules = schedules,
             events = events,
+            recordings = recordings,
             onDismiss = { editingEvent = null },
             onSave = { event ->
                 scope.launch {
@@ -267,15 +347,16 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
         }
     }
 
-    // حوار إنشاء جدول
+    // حوار إنشاء جدول — بعد الحفظ يُفتح محرر الفقرة مباشرة (إصلاح v0.5.0)
     if (creatingSchedule) {
         TextDialog(
             title = "جدول جديد", label = "اسم الجدول (مثل: طابور الصباح)",
             onDismiss = { creatingSchedule = false }
         ) { name ->
             scope.launch {
-                locator.schedules.createSchedule(name)
-                snackbar.showSnackbar("أُنشئ الجدول «$name»")
+                val id = locator.schedules.createSchedule(name)
+                snackbar.showSnackbar("أُنشئ الجدول «$name» — أضف الآن فقراته")
+                editingEvent = EventEditorState(scheduleId = id)
             }
             creatingSchedule = false
         }
@@ -290,17 +371,23 @@ data class EventEditorState(
     val timeText: String = "09:45",
     val weekDaysMask: Int = 0b0111110, // الاثنين..الجمعة افتراضياً
     val playlistId: Long? = null,
-    val singleTrackId: Long? = null
+    val singleTrackId: Long? = null,
+    val recordingId: Long? = null,
+    val noteText: String? = null,
+    val imagePath: String? = null
 ) {
     companion object {
         fun from(e: ScheduledEventEntity) = EventEditorState(
-            originalId = e.id,
+            originalId = e.id.takeIf { it > 0 },
             scheduleId = e.scheduleId,
             title = e.title,
             timeText = ScheduleLogic.formatMinutes(e.startMinutes),
             weekDaysMask = e.weekDaysMask,
             playlistId = e.playlistId,
-            singleTrackId = e.singleTrackId
+            singleTrackId = e.singleTrackId,
+            recordingId = e.recordingId,
+            noteText = e.noteText,
+            imagePath = e.imagePath
         )
     }
 }
@@ -318,28 +405,50 @@ private fun EventEditorDialog(
     initial: EventEditorState,
     schedules: List<RadioScheduleEntity>,
     events: List<ScheduledEventEntity>,
+    recordings: List<RecordingEntity>,
     onDismiss: () -> Unit,
     onSave: (ScheduledEventEntity) -> Unit
 ) {
     val locator = ServiceLocator
+    val context = LocalContext.current
+    val imageScope = rememberCoroutineScope()
     var scheduleId by remember { mutableStateOf(initial.scheduleId) }
     var title by remember { mutableStateOf(initial.title) }
     var timeText by remember { mutableStateOf(initial.timeText) }
     var mask by remember { mutableStateOf(initial.weekDaysMask) }
     var playlistId by remember { mutableStateOf(initial.playlistId) }
     var singleTrackId by remember { mutableStateOf(initial.singleTrackId) }
+    var recordingId by remember { mutableStateOf(initial.recordingId) }
+    var noteText by remember { mutableStateOf(initial.noteText ?: "") }
+    var imagePath by remember { mutableStateOf(initial.imagePath) }
     var conflictError by remember { mutableStateOf<String?>(null) }
 
     val playlists by locator.playlists.playlists.collectAsStateWithLifecycle(initialValue = emptyList())
     val tracks by locator.library.tracks.collectAsStateWithLifecycle(initialValue = emptyList())
-    val playlistsFlat = playlists
-    val tracksFlat = tracks
+
+    // اختيار صورة الفقرة عبر Photo Picker (بلا صلاحيات تخزين) + نسخة مضغوطة داخل التطبيق
+    val imagePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            imageScope.launch {
+                val saved = SegmentImageStore.saveFrom(context, uri)
+                if (saved != null) {
+                    SegmentImageStore.delete(imagePath)
+                    imagePath = saved
+                }
+            }
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (initial.originalId == null) "فقرة مجدولة جديدة" else "تعديل الفقرة") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 OutlinedTextField(
                     value = title, onValueChange = { title = it },
                     label = { Text("عنوان الفقرة") }, singleLine = true
@@ -377,30 +486,75 @@ private fun EventEditorDialog(
                     }
                 }
 
-                Text("المحتوى", style = MaterialTheme.typography.labelLarge)
+                Text("المحتوى الصوتي", style = MaterialTheme.typography.labelLarge)
                 Text(
-                    "قائمة تشغيل أو مقطع واحد (اختر واحداً)",
+                    "اختر واحداً من الثلاثة: قائمة تشغيل، أو مقطع من المكتبة، أو تسجيلاً من الأرشيف",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 SimpleDropdownRow(
-                    label = "قائمة التشغيل",
-                    selected = playlistsFlat.firstOrNull { it.id == playlistId }?.name ?: "بلا",
-                    options = playlistsFlat.map { it.id to it.name },
+                    label = "قائمة تشغيل",
+                    selected = playlists.firstOrNull { it.id == playlistId }?.name ?: "بلا",
+                    options = playlists.map { it.id to it.name },
                     onPick = {
-                        playlistId = it; singleTrackId = null
+                        playlistId = it; singleTrackId = null; recordingId = null
                     },
                     onClear = { playlistId = null }
                 )
                 SimpleDropdownRow(
-                    label = "مقطع واحد",
-                    selected = tracksFlat.firstOrNull { it.id == singleTrackId }?.title ?: "بلا",
-                    options = tracksFlat.map { it.id to it.title },
+                    label = "مقطع من المكتبة",
+                    selected = tracks.firstOrNull { it.id == singleTrackId }?.title ?: "بلا",
+                    options = tracks.map { it.id to it.title },
                     onPick = {
-                        singleTrackId = it; playlistId = null
+                        singleTrackId = it; playlistId = null; recordingId = null
                     },
                     onClear = { singleTrackId = null }
                 )
+                SimpleDropdownRow(
+                    label = "تسجيل من الأرشيف",
+                    selected = recordings.firstOrNull { it.id == recordingId }?.title ?: "بلا",
+                    options = recordings.map { it.id to it.title },
+                    onPick = {
+                        recordingId = it; playlistId = null; singleTrackId = null
+                    },
+                    onClear = { recordingId = null }
+                )
+
+                // ===== نص الفقرة (يظهر على شاشة العرض على الهواء) =====
+                OutlinedTextField(
+                    value = noteText, onValueChange = { noteText = it },
+                    label = { Text("نص الفقرة (يظهر على شاشة العرض)") },
+                    placeholder = { Text("مثال: استمعوا إلى كلمة اليوم مع زميلنا…") },
+                    minLines = 2,
+                    maxLines = 4
+                )
+
+                // ===== صورة الفقرة =====
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (imagePath != null) {
+                        SegmentImage(imagePath, Modifier.size(64.dp), contentDescription = "صورة الفقرة")
+                    }
+                    Column {
+                        TextButton(onClick = {
+                            imagePicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        }) {
+                            Icon(Icons.Filled.Add, null)
+                            Text(if (imagePath == null) " إضافة صورة" else " تغيير الصورة")
+                        }
+                        if (imagePath != null) {
+                            TextButton(onClick = {
+                                SegmentImageStore.delete(imagePath)
+                                imagePath = null
+                            }) { Text("إزالة الصورة") }
+                        }
+                    }
+                }
+
                 conflictError?.let {
                     Text(it, color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall)
@@ -430,6 +584,10 @@ private fun EventEditorDialog(
                         if (conflict) {
                             conflictError = "توجد فقرة أخرى في نفس الوقت والأيام المحددة — عدّل الوقت أو الأيام"
                         } else {
+                            // استُبدلت صورة قديمة؟ نحذف ملفها من القرص (لا ملفات يتيمة)
+                            if (initial.imagePath != null && initial.imagePath != imagePath) {
+                                SegmentImageStore.delete(initial.imagePath)
+                            }
                             onSave(
                                 ScheduledEventEntity(
                                     id = initial.originalId ?: 0,
@@ -438,7 +596,10 @@ private fun EventEditorDialog(
                                     weekDaysMask = mask,
                                     title = title.trim(),
                                     playlistId = playlistId,
-                                    singleTrackId = singleTrackId
+                                    singleTrackId = singleTrackId,
+                                    recordingId = recordingId,
+                                    noteText = noteText.trim().takeIf { it.isNotBlank() },
+                                    imagePath = imagePath
                                 )
                             )
                         }

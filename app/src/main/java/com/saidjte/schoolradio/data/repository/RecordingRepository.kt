@@ -11,6 +11,9 @@ class RecordingRepository(private val dao: com.saidjte.schoolradio.data.local.da
 
     fun observeAll(): Flow<List<RecordingEntity>> = dao.observeAll()
 
+    /** جلب تسجيل واحد بالمعرّف — يستخدمه المجدول عند إطلاق فقرة مرتبطة بتسجيل (v0.5.0) */
+    suspend fun byId(id: Long): RecordingEntity? = dao.byId(id)
+
     suspend fun insert(recording: RecordingEntity): Long = dao.insert(recording)
 
     suspend fun rename(id: Long, title: String) = dao.rename(id, title)

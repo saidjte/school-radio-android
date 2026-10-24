@@ -107,7 +107,8 @@ private fun greetingFor(hour: Int): String = when (hour) {
 fun DashboardScreen(
     snackbar: androidx.compose.material3.SnackbarHostState,
     onNavigateToSchedule: () -> Unit = {},
-    onNavigateToLibrary: () -> Unit = {}
+    onNavigateToLibrary: () -> Unit = {},
+    onOpenOnAir: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     val locator = ServiceLocator
@@ -297,6 +298,9 @@ fun DashboardScreen(
                                 style = MaterialTheme.typography.bodySmall
                             )
                             Spacer(Modifier.weight(1f))
+                            IconButton(onClick = onOpenOnAir) {
+                                Icon(AppIcons.Display, "شاشة العرض على الهواء")
+                            }
                             IconButton(onClick = { locator.playback.previous() }) {
                                 Icon(AppIcons.SkipPrevious, "السابق")
                             }
@@ -349,7 +353,19 @@ fun DashboardScreen(
         }
 
         // ===== جدول اليوم =====
-        item { Text("فقرات اليوم", style = MaterialTheme.typography.titleMedium) }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "فقرات اليوم",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f)
+                )
+                androidx.compose.material3.TextButton(onClick = onOpenOnAir) {
+                    Icon(AppIcons.Display, null)
+                    Text(" شاشة العرض")
+                }
+            }
+        }
         if (todayEvents.isEmpty()) {
             item {
                 EmptyStateCard(
@@ -472,10 +488,27 @@ private fun NextUpCard(
                     )
                 }
             }
+            if (next.imagePath != null) {
+                Spacer(Modifier.padding(horizontal = 5.dp))
+                com.saidjte.schoolradio.core.ui.SegmentImage(
+                    next.imagePath,
+                    Modifier.size(44.dp),
+                    contentDescription = "صورة الفقرة"
+                )
+            }
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text("الفقرة التالية", style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(next.title, style = MaterialTheme.typography.titleSmall)
+                if (!next.noteText.isNullOrBlank()) {
+                    Text(
+                        next.noteText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                }
             }
             Text(
                 countdown,
@@ -534,6 +567,15 @@ private fun EventRow(
             }
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(event.title, style = MaterialTheme.typography.bodyLarge)
+                if (!event.noteText.isNullOrBlank()) {
+                    Text(
+                        event.noteText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                }
                 Text(
                     next?.let {
                         "الفقرة التالية: ${it.title} في ${ScheduleLogic.formatMinutes(it.startMinutes)}"
@@ -541,6 +583,14 @@ private fun EventRow(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+            if (event.imagePath != null) {
+                com.saidjte.schoolradio.core.ui.SegmentImage(
+                    event.imagePath,
+                    Modifier.size(44.dp),
+                    contentDescription = "صورة الفقرة"
+                )
+                Spacer(Modifier.padding(start = 6.dp))
             }
             StatusBadge(statusLabel.first, statusLabel.second)
         }

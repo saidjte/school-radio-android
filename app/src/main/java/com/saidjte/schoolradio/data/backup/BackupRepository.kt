@@ -27,7 +27,7 @@ class BackupRepository(
     private val settings: SettingsStore
 ) {
     companion object {
-        const val FORMAT_VERSION = 2   // v2 (v0.3.0): أُضيف users + recordings + currentUserId
+        const val FORMAT_VERSION = 3   // v3 (v0.5.0): recordingId + noteText + imagePath للفقرات + recId للتسجيلات
         const val MIN_SUPPORTED_VERSION = 1
         const val BACKUP_MIME = "application/json"
         const val BACKUP_EXT = ".schoolradio.json"
@@ -38,7 +38,7 @@ class BackupRepository(
         runCatching {
             val root = JSONObject()
             root.put("format_version", FORMAT_VERSION)
-            root.put("app_version", "0.3.0")
+            root.put("app_version", "0.5.0")
             root.put("exported_at", System.currentTimeMillis())
 
             val categories = JSONArray()
@@ -83,7 +83,11 @@ class BackupRepository(
                     .put("startMinutes", e.startMinutes).put("weekDaysMask", e.weekDaysMask)
                     .put("title", e.title)
                     .put("playlistId", e.playlistId ?: JSONObject.NULL)
-                    .put("singleTrackId", e.singleTrackId ?: JSONObject.NULL))
+                    .put("singleTrackId", e.singleTrackId ?: JSONObject.NULL)
+                    // v3: تشغيل التسجيلات ضمن الفقرات + نص/صورة شاشة العرض
+                    .put("recordingId", e.recordingId ?: JSONObject.NULL)
+                    .put("noteText", e.noteText ?: JSONObject.NULL)
+                    .put("imagePath", e.imagePath ?: JSONObject.NULL))
             }
             root.put("events", events)
 
@@ -97,6 +101,7 @@ class BackupRepository(
             val recordings = JSONArray()
             db.recordingDao().observeAll().first().forEach { r ->
                 recordings.put(JSONObject()
+                    .put("recId", r.id) // v3: لإعادة ربط recordingId في الفقرات بعد الاستعادة
                     .put("title", r.title).put("filePath", r.filePath)
                     .put("durationMs", r.durationMs).put("sizeBytes", r.sizeBytes)
                     .put("source", r.source)
@@ -228,6 +233,36 @@ class BackupRepository(
                     schedIdMap[o.getLong("id")] = sid
                 }
             }
+            // ---- v3: استيراد التسجيلات *قبل* الفقرات (FK recording_id + إعادة الربط) ----
+            var missingRecordingFiles = 0
+            val recIdMap = HashMap<Long, Long>()
+            if (root.has("recordings")) {
+                root.getJSONArray("recordings").let { arr ->
+                    for (i in 0 until arr.length()) {
+                        val o = arr.getJSONObject(i)
+                        val path = o.getString("filePath")
+                        if (!java.io.File(path).exists()) missingRecordingFiles++
+                        val newRecId = db.recordingDao().insert(
+                            com.saidjte.schoolradio.data.local.entity.RecordingEntity(
+                                title = o.getString("title"),
+                                filePath = path,
+                                durationMs = o.getLong("durationMs"),
+                                sizeBytes = o.getLong("sizeBytes"),
+                                source = o.optString("source", "PTT"),
+                                recordedByName = if (o.isNull("recordedByName")) null
+                                else o.getString("recordedByName"),
+                                recordedByRole = if (o.isNull("recordedByRole")) null
+                                else o.getString("recordedByRole"),
+                                createdAt = o.getLong("createdAt")
+                            )
+                        )
+                        if (newRecId != -1L && o.has("recId")) {
+                            recIdMap[o.getLong("recId")] = newRecId
+                        }
+                    }
+                }
+            }
+
             root.getJSONArray("events").let { arr ->
                 for (i in 0 until arr.length()) {
                     val o = arr.getJSONObject(i)
@@ -240,7 +275,12 @@ class BackupRepository(
                             title = o.getString("title"),
                             playlistId = if (o.isNull("playlistId")) null else o.getLong("playlistId"),
                             singleTrackId = if (o.isNull("singleTrackId")) null
-                            else trackIdMap[o.getLong("singleTrackId")]
+                            else trackIdMap[o.getLong("singleTrackId")],
+                            // v3: إعادة ربط التسجيل بالمعرف الجديد (نسخ ≤v2 بلا حقل تسجيل)
+                            recordingId = if (o.isNull("recordingId")) null
+                            else recIdMap[o.getLong("recordingId")],
+                            noteText = if (o.isNull("noteText")) null else o.optString("noteText"),
+                            imagePath = if (o.isNull("imagePath")) null else o.optString("imagePath")
                         )
                     )
                 }
@@ -273,32 +313,6 @@ class BackupRepository(
                     )
                     if (id != -1L) userIdMap[-1L] = id
                     settings.setCurrentUserId(id)
-                }
-            }
-
-            // ---- v2: استيراد بيانات أرشيف التسجيلات (الملفات نفسها لا تُنسخ في النسخة) ----
-            var missingRecordingFiles = 0
-            if (root.has("recordings")) {
-                root.getJSONArray("recordings").let { arr ->
-                    for (i in 0 until arr.length()) {
-                        val o = arr.getJSONObject(i)
-                        val path = o.getString("filePath")
-                        if (!java.io.File(path).exists()) missingRecordingFiles++
-                        db.recordingDao().insert(
-                            com.saidjte.schoolradio.data.local.entity.RecordingEntity(
-                                title = o.getString("title"),
-                                filePath = path,
-                                durationMs = o.getLong("durationMs"),
-                                sizeBytes = o.getLong("sizeBytes"),
-                                source = o.optString("source", "PTT"),
-                                recordedByName = if (o.isNull("recordedByName")) null
-                                else o.getString("recordedByName"),
-                                recordedByRole = if (o.isNull("recordedByRole")) null
-                                else o.getString("recordedByRole"),
-                                createdAt = o.getLong("createdAt")
-                            )
-                        )
-                    }
                 }
             }
 

@@ -49,9 +49,13 @@ import com.saidjte.schoolradio.di.ServiceLocator
  * كارت بزوايا دائرية وارتفاع نغمي فوق شريط التنقل، عنوان مقصوص بسطر واحد،
  * أيقونات تقدّم/تراجع معكوسة للاتجاه العربي، وانتقال متحرك بين أيقونتي التشغيل.
  * النقر يفتح المشغل الموسع (شريط تقدم تفاعلي + قائمة الانتظار).
+ * v0.5.0: زر شاشة العرض «على الهواء».
  */
 @Composable
-fun PlayerBar(snackbar: androidx.compose.material3.SnackbarHostState) {
+fun PlayerBar(
+    snackbar: androidx.compose.material3.SnackbarHostState,
+    onOpenOnAir: (() -> Unit)? = null
+) {
     val playback = ServiceLocator.playback
     val state by playback.state.collectAsStateWithLifecycle()
 
@@ -109,6 +113,11 @@ fun PlayerBar(snackbar: androidx.compose.material3.SnackbarHostState) {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+                if (onOpenOnAir != null) {
+                    IconButton(onClick = onOpenOnAir) {
+                        Icon(AppIcons.Display, "شاشة العرض على الهواء")
+                    }
                 }
                 IconButton(onClick = { playback.previous() }) {
                     MirroredIcon(AppIcons.SkipPrevious, "السابق")

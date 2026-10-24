@@ -12,6 +12,7 @@ import com.saidjte.schoolradio.audio.PlaybackConnection
 import com.saidjte.schoolradio.audio.PlaybackService
 import com.saidjte.schoolradio.core.util.ScheduleLogic
 import com.saidjte.schoolradio.data.local.entity.ExecutionStatus
+import com.saidjte.schoolradio.di.OnAirInfo
 import com.saidjte.schoolradio.di.ServiceLocator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,9 +25,11 @@ import kotlinx.coroutines.withContext
  *
  * تسلسل الأمان عند الإطلاق:
  *  1) beginExecution (قيد تفرد event+day) — يمنع تشغيل الفقرة نفسها مرتين.
- *  2) تجميع قائمة المقاطع (قائمة تشغيل أو مقطع مفرد) واستبعاد غير المتاح.
+ *  2) تجميع قائمة المقاطع (قائمة تشغيل / مقطع مفرد / **تسجيل من الأرشيف v0.5.0**)
+ *     واستبعاد غير المتاح.
  *  3) الإطلاق عبر MediaController على الخدمة (بنفس مشغل الواجهة — لا مشغل ثانٍ).
- *  4) مراقبة نهاية القائمة لتوثيق COMPLETED أو FAILED مع ملاحظة عربية.
+ *  4) مراقبة نهاية القائمة لتوثيق COMPLETED أو FAILED مع ملاحظة عربية،
+ *     وضبط معلومات «على الهواء» (نص + صورة) لشاشة العرض.
  */
 class AlarmReceiver : BroadcastReceiver() {
 
@@ -61,16 +64,35 @@ class AlarmReceiver : BroadcastReceiver() {
         if (!locator.schedules.beginExecution(eventId, dateKey)) return
 
         // ===== 2) تجميع قائمة المقاطع =====
+        var failNote: String? = null
         val queue: List<PlaybackConnection.QueueItem> = when {
             event.playlistId != null ->
                 locator.playlists.resolvedTracks(event.playlistId).map {
                     PlaybackConnection.QueueItem(it.uri, it.title, it.id)
                 }
+            event.recordingId != null -> {
+                // v0.5.0: تسجيل من أرشيف التسجيلات — نتحقق من وجود الملف على القرص أولاً
+                val rec = locator.recordingsRepo.byId(event.recordingId)
+                when {
+                    rec == null -> {
+                        failNote = "التسجيل المرتبط بهذه الفقرة لم يعد موجوداً في الأرشيف"
+                        emptyList()
+                    }
+                    !java.io.File(rec.filePath).exists() -> {
+                        failNote = "ملف التسجيل «${rec.title}» غير موجود على الجهاز"
+                        emptyList()
+                    }
+                    else -> listOf(PlaybackConnection.QueueItem(rec.filePath, rec.title, rec.id))
+                }
+            }
             event.singleTrackId != null -> {
                 val t = locator.library.trackById(event.singleTrackId)
                 if (t != null && t.isAvailable) {
                     listOf(PlaybackConnection.QueueItem(t.uri, t.title, t.id))
-                } else emptyList()
+                } else {
+                    failNote = "المقطع المرتبط بهذه الفقرة غير متاح — أعد ربطه من المكتبة"
+                    emptyList()
+                }
             }
             else -> emptyList()
         }
@@ -78,7 +100,7 @@ class AlarmReceiver : BroadcastReceiver() {
         if (queue.isEmpty()) {
             locator.schedules.markStatus(
                 eventId, dateKey, ExecutionStatus.FAILED,
-                "لا توجد مقاطع متاحة في القائمة المرتبطة بهذه الفقرة"
+                failNote ?: "لا توجد مقاطع متاحة في القائمة المرتبطة بهذه الفقرة"
             )
             return
         }
@@ -94,6 +116,15 @@ class AlarmReceiver : BroadcastReceiver() {
                     controller.repeatMode = Player.REPEAT_MODE_OFF
                     controller.prepare()
                     controller.play()
+                    // v0.5.0: ضبط معلومات شاشة العرض على الهواء (صورة/نص الفقرة)
+                    ServiceLocator.setOnAir(
+                        OnAirInfo(
+                            eventId = event.id,
+                            eventTitle = event.title,
+                            noteText = event.noteText,
+                            imagePath = event.imagePath
+                        )
+                    )
                     watchCompletion(controller, eventId, dateKey)
                 } catch (e: Exception) {
                     CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
