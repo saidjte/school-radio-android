@@ -90,16 +90,21 @@ android {
 
 dependencies {
     // ===== Jetpack Compose (عبر BOM لتوافق الإصدارات تلقائياً) =====
-    val composeBom = platform("androidx.compose:compose-bom:2024.10.00")
+    // v0.7.0: ترقية BOM إلى 2025.03.01 (ui/foundation 1.7.8 + material3 1.3.1)
+    val composeBom = platform("androidx.compose:compose-bom:2025.03.01")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
-    implementation("androidx.activity:activity-compose:1.9.2")
-    implementation("androidx.navigation:navigation-compose:2.8.2")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
+    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.navigation:navigation-compose:2.8.5")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+
+    // ===== Coil (v0.7.0) — أفضل مكتبة صور لأندرويد: تحميل غير متزامن + كاش ذاكرة
+    // + تلاشي ناعم — تستخدم لصور الفقرات من مسارات محلية (يعمل Offline بالكامل)
+    implementation("io.coil-kt:coil-compose:2.7.0")
 
     // ===== Room (التخزين المحلي) =====
     implementation("androidx.room:room-runtime:2.6.1")
@@ -110,8 +115,9 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
     // ===== Media3 / ExoPlayer + جلسة الوسائط (التشغيل في الخلفية) =====
-    implementation("androidx.media3:media3-exoplayer:1.4.1")
-    implementation("androidx.media3:media3-session:1.4.1")
+    // v0.7.0: ترقية إلى 1.5.1 — تحسينات مشغل وثبات أعلى
+    implementation("androidx.media3:media3-exoplayer:1.5.1")
+    implementation("androidx.media3:media3-session:1.5.1")
 
     // ===== Coroutines =====
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")

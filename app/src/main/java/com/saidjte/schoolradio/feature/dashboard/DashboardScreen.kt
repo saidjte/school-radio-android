@@ -36,6 +36,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Card
@@ -66,16 +67,21 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.saidjte.schoolradio.audio.AudioRoutingManager
+import com.saidjte.schoolradio.core.theme.gradients
 import com.saidjte.schoolradio.core.theme.status
 import com.saidjte.schoolradio.core.ui.AppIcons
 import com.saidjte.schoolradio.core.ui.EmptyStateCard
 import com.saidjte.schoolradio.core.ui.StatusBadge
+import com.saidjte.schoolradio.core.ui.diagonalBrush
+import com.saidjte.schoolradio.core.ui.driftingGradient
 import com.saidjte.schoolradio.core.util.AppFormat
 import com.saidjte.schoolradio.core.util.ScheduleLogic
 import com.saidjte.schoolradio.data.local.entity.ExecutionStatus
@@ -194,45 +200,49 @@ fun DashboardScreen(
         Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // ===== التحية الزمنية =====
-        item {
-            Column {
-                Text(
-                    "${greetingFor(Calendar.getInstance().get(Calendar.HOUR_OF_DAY))}" +
-                        (currentUser?.let { "، ${it.name}" } ?: ""),
-                    style = MaterialTheme.typography.headlineSmall
-                )
-                Text(
-                    if (currentUser != null)
-                        "${currentUser!!.roleEnum().labelAr} — جاهز للإذاعة"
-                    else "جاهز للإذاعة",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        // ===== بطاقة البطل: المدرسة + الساعة الحية =====
+        // ===== بطاقة البطل: تحية + المدرسة + الساعة الحية (v0.7.0 — تدرج حي) =====
         item {
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .shadow(elevation = 4.dp, shape = MaterialTheme.shapes.large)
-                    .background(
-                        brush = Brush.linearGradient(
-                            listOf(
-                                MaterialTheme.colorScheme.primary,
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
-                                MaterialTheme.colorScheme.tertiary
-                            )
-                        ),
-                        shape = MaterialTheme.shapes.large
+                    .shadow(
+                        elevation = 10.dp, shape = MaterialTheme.shapes.extraLarge,
+                        spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
                     )
+                    .clip(MaterialTheme.shapes.extraLarge)
+                    .driftingGradient(MaterialTheme.gradients.hero)
             ) {
-                Column(Modifier.padding(18.dp)) {
+                // حلقات زخرفية شفافة تمنح عمقاً بلا تكلفة
+                Canvas(Modifier.matchParentSize()) {
+                    drawCircle(
+                        Color.White.copy(alpha = 0.08f),
+                        radius = size.height * 0.8f,
+                        center = Offset(size.width * 0.94f, -size.height * 0.15f)
+                    )
+                    drawCircle(
+                        Color.White.copy(alpha = 0.06f),
+                        radius = size.height * 0.55f,
+                        center = Offset(size.width * 0.04f, size.height * 1.02f)
+                    )
+                }
+                Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                    // شريحة التحية الزمنية باسم المستخدم
+                    Surface(
+                        color = Color.White.copy(alpha = 0.17f),
+                        shape = RoundedCornerShape(50)
+                    ) {
+                        Text(
+                            "${greetingFor(Calendar.getInstance().get(Calendar.HOUR_OF_DAY))}" +
+                                (currentUser?.let { "، ${it.name}" } ?: ""),
+                            Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color.White
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
                     Text(
                         settings.schoolName,
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.headlineSmall,
                         color = Color.White
                     )
                     Text(
@@ -240,22 +250,30 @@ fun DashboardScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.85f)
                     )
-                    Spacer(Modifier.height(10.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            AppIcons.ScheduleClock, null,
-                            tint = Color.White.copy(alpha = 0.9f),
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(Modifier.size(6.dp))
-                        Text(
-                            nowText,
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontSize = 17.sp,
-                                fontFeatureSettings = "tnum"
-                            ),
-                            color = Color.White
-                        )
+                    Spacer(Modifier.height(14.dp))
+                    // حبة الساعة الحية بأرقام جدولية
+                    Surface(
+                        color = Color.White.copy(alpha = 0.17f),
+                        shape = RoundedCornerShape(50)
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                AppIcons.ScheduleClock, null,
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.size(8.dp))
+                            Text(
+                                nowText,
+                                style = MaterialTheme.typography.titleSmall.copy(
+                                    fontSize = 15.sp, fontFeatureSettings = "tnum"
+                                ),
+                                color = Color.White
+                            )
+                        }
                     }
                 }
             }
@@ -265,9 +283,20 @@ fun DashboardScreen(
         if (todayEvents.isNotEmpty()) {
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    StatChip("فقرات اليوم", "${todayEvents.size}", Modifier.weight(1f))
-                    StatChip("أُنجزت", "$completedToday", Modifier.weight(1f), MaterialTheme.status.success)
-                    StatChip("متبقية", "$remainingToday", Modifier.weight(1f), MaterialTheme.colorScheme.primary)
+                    StatChip(
+                        "فقرات اليوم", "${todayEvents.size}", Modifier.weight(1f),
+                        icon = AppIcons.Event
+                    )
+                    StatChip(
+                        "أُنجزت", "$completedToday", Modifier.weight(1f),
+                        valueColor = MaterialTheme.status.success,
+                        icon = AppIcons.CheckCircle
+                    )
+                    StatChip(
+                        "متبقية", "$remainingToday", Modifier.weight(1f),
+                        valueColor = MaterialTheme.colorScheme.primary,
+                        icon = AppIcons.ScheduleClock
+                    )
                 }
             }
         }
@@ -425,20 +454,35 @@ fun DashboardScreen(
     }
 }
 
-/** رقاقة إحصاء صغيرة: تسمية + قيمة كبيرة بلون اختياري */
+/** بطاقة إحصاء (v0.7.0): أيقونة في قرص ملون + قيمة كبيرة + تسمية */
 @Composable
 private fun StatChip(
     label: String,
     value: String,
     modifier: Modifier = Modifier,
-    valueColor: Color = MaterialTheme.colorScheme.onSurface
+    valueColor: Color = MaterialTheme.colorScheme.onSurface,
+    icon: ImageVector? = null
 ) {
     Surface(
         modifier = modifier,
         shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerLow
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shadowElevation = 1.dp
     ) {
-        Column(Modifier.padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            Modifier.fillMaxWidth().padding(vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            if (icon != null) {
+                Surface(shape = CircleShape, color = valueColor.copy(alpha = 0.13f)) {
+                    Icon(
+                        icon, null,
+                        tint = valueColor,
+                        modifier = Modifier.padding(7.dp).size(17.dp)
+                    )
+                }
+                Spacer(Modifier.height(7.dp))
+            }
             Text(
                 value,
                 style = MaterialTheme.typography.headlineSmall,
@@ -475,17 +519,24 @@ private fun NextUpCard(
         Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+        shadowElevation = 2.dp
     ) {
         Row(
             Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary) {
-                Box(Modifier.padding(10.dp), contentAlignment = Alignment.Center) {
+            // قرص الوقت — تدرج زمردي (v0.7.0)
+            Surface(shape = CircleShape, shadowElevation = 4.dp, color = Color.Transparent) {
+                Box(
+                    Modifier
+                        .size(52.dp)
+                        .background(MaterialTheme.gradients.hero.diagonalBrush(), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
                     Text(
                         ScheduleLogic.formatMinutes(next.startMinutes),
-                        style = MaterialTheme.typography.labelMedium,
+                        style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
                         color = Color.White,
                         fontWeight = FontWeight.Bold
                     )
@@ -555,18 +606,41 @@ private fun EventRow(
         ) else CardDefaults.cardColors()
     ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(
-                shape = MaterialTheme.shapes.small,
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
-            ) {
-                Text(
-                    ScheduleLogic.formatMinutes(event.startMinutes),
-                    Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        fontFeatureSettings = "tnum", fontWeight = FontWeight.Bold
-                    ),
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
+            // شارة الوقت — تدرج أزرق حيّ أثناء التشغيل (v0.7.0)
+            if (isRunning) {
+                Surface(shape = MaterialTheme.shapes.small, shadowElevation = 3.dp, color = Color.Transparent) {
+                    Box(
+                        Modifier.background(
+                            Brush.linearGradient(
+                                listOf(st.running, st.running.copy(alpha = 0.7f))
+                            ),
+                            MaterialTheme.shapes.small
+                        )
+                    ) {
+                        Text(
+                            ScheduleLogic.formatMinutes(event.startMinutes),
+                            Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontFeatureSettings = "tnum", fontWeight = FontWeight.Bold
+                            ),
+                            color = Color.White
+                        )
+                    }
+                }
+            } else {
+                Surface(
+                    shape = MaterialTheme.shapes.small,
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                ) {
+                    Text(
+                        ScheduleLogic.formatMinutes(event.startMinutes),
+                        Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontFeatureSettings = "tnum", fontWeight = FontWeight.Bold
+                        ),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
             }
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(event.title, style = MaterialTheme.typography.bodyLarge)

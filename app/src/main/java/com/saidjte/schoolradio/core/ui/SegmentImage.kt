@@ -1,26 +1,25 @@
 package com.saidjte.schoolradio.core.ui
 
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import coil.compose.SubcomposeAsyncImage
+import coil.request.ImageRequest
+import java.io.File
 
 /**
- * صورة فقرة محمّلة من مسار ملف محلي (v0.5.0).
+ * صورة فقرة محمّلة من مسار ملف محلي (v0.7.0 — عبر Coil).
  *
- * - التحميل على Dispatchers.IO مع inSampleSize مناسب لحجم العرض (لا استهلاك ذاكرة مجنون).
- * - عند null أو فشل القراءة لا يُرسم شيء (يتقلص التخطيط بأمان) — المنادي يقرر البديل.
+ * Coil (io.coil-kt) أفضل مكتبة صور لأندرويد:
+ *  - تحميل غير متزامن خارج الخيط الرئيسي مع كاش ذاكرة تلقائي
+ *  - ظهور متلاشٍ ناعم (crossfade) بدل الظهور المفاجئ
+ *  - placeholder شفاف بلون السطح أثناء فك الترميز
+ * عند null أو فشل القراءة لا يُرسم شيء (يتقلص التخطيط بأمان) — المنادي يقرر البديل.
+ * يعمل Offline بالكامل: المصدر ملفات محلية فقط.
  */
 @Composable
 fun SegmentImage(
@@ -31,28 +30,22 @@ fun SegmentImage(
     cornerRadius: androidx.compose.ui.unit.Dp? = null
 ) {
     if (path.isNullOrBlank()) return
+    val shape = cornerRadius?.let { androidx.compose.foundation.shape.RoundedCornerShape(it) }
+
     val context = LocalContext.current
-    val shape = cornerRadius?.let { RoundedCornerShape(it) } ?: MaterialTheme.shapes.small
-
-    val bitmap by produceState<Bitmap?>(initialValue = null, key1 = path) {
-        value = withContext(Dispatchers.IO) {
-            runCatching {
-                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                BitmapFactory.decodeFile(path, bounds)
-                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
-                var sample = 1
-                while (bounds.outWidth / sample > 1024 || bounds.outHeight / sample > 1024) sample *= 2
-                BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
-            }.getOrNull()
-        }
+    val request = remember(path) {
+        ImageRequest.Builder(context)
+            .data(File(path))
+            .crossfade(180)
+            .build()
     }
 
-    bitmap?.let { bmp ->
-        Image(
-            bitmap = bmp.asImageBitmap(),
-            contentDescription = contentDescription,
-            modifier = modifier.clip(shape),
-            contentScale = contentScale
-        )
-    }
+    val clipped = if (shape != null) modifier.clip(shape) else modifier
+    SubcomposeAsyncImage(
+        model = request,
+        contentDescription = contentDescription,
+        modifier = clipped,
+        contentScale = contentScale,
+        loading = { Box(Modifier.matchParentSize()) }
+    )
 }

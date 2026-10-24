@@ -327,3 +327,40 @@ ScheduleScreen تعرض جدولين وأحداثاً في LazyColumn واحد �
 ### التحقق
 - compileDebugKotlin + testDebugUnitTest + assembleDebug محلياً.
 - CI يبني assembleRelease موقّعاً بنفس المفتاح (versionCode 7).
+
+---
+## v0.7.0 — إعادة تصميم عصرية أنيقة + ترقية المكتبات (Z.ai، 2026-10-24)
+
+### المكتبات (أحدث الإصدارات المستقرة المتوافقة مع compileSdk 35)
+- Compose BOM 2024.10.00 → **2025.03.01** (ui/foundation 1.7.8 + material3 1.3.1)
+- activity-compose 1.10.1 / navigation 2.8.5 / lifecycle 2.8.7
+- Media3 1.4.1 → **1.5.1**
+- **Coil 2.7.0** (جديد): SegmentImage صارت SubcomposeAsyncImage — كاش ذاكرة +
+  ظهور متلاشٍ 180ms بدل فك ترميز يدوي
+
+### نظام التصميم (Theme.kt)
+- لوحة «زمرد مدرسي» أعمق: primary 0B6F60 + ذهبي دافئ + أسطح صافية فوق خلفية نعناعية
+- surfaceContainerLowest→Highest مضبوطة يدوياً في الفاتح والداكن (عمق ثلاث طبقات)
+- **AppGradients**: hero/live/gold/heroSoft تتكيّف مع الوضع الداكن (CompositionLocal)
+- أشكال أنعم: 10/14/18/24/32dp
+
+### مكونات جديدة (Components.kt)
+- ScreenHeader بشريط تمييز ذهبي متدرج + خانة trailing اختيارية (توافق كامل مع المواضع القديمة)
+- EmptyStateCard بقرص متدرج وهالة وظل
+- StatusBadge بشكل حبة مع نقطة إشارة
+- GradientButton: زر متدرج بظل ملون
+- Modifier.driftingGradient: تدرج ينحرف ببطء (4 ثوانٍ ذهاب/إياب)
+- RoundedProgressBar بأطراف دائرية + ProgressRing دائرية
+
+### الشاشات
+- الرئيسية: بطاقة بطل واحدة موحدة (تحية + مدرسة + ساعة) بتدرج حي وحلقات زخرفية،
+  إحصاءات بأيقونات (CheckCircle جديد)، قرص وقت متدرج للفقرة التالية،
+  شارة وقت متدرجة أزرق للفقرة قيد التشغيل
+- شريط التنقل: عائم بحواف 26dp وظل ناعم
+- PlayerBar: زر تشغيل في قرص متدرج + شريط تقدم دائري الأطراف + زوايا 22dp
+- على الهواء: خلفية تدرج داكن + شارة «على الهواء» نابضة + صورة بإطار زجاجي +
+  نص 30sp + أزرار دائرية زجاجية وتشغيل فيروزي + ساعة انتظار داخل هالات نابضة مع التاريخ
+- أيقونة التطبيق: تدرج زمرد + مايكروفون بأمواج بث + monochrome لأندرويد 13+
+
+### التحقق
+- compileDebugKotlin + testDebugUnitTest + assembleDebug محلياً — versionCode 8

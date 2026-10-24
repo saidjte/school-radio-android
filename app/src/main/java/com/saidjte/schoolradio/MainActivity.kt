@@ -14,7 +14,9 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
@@ -24,17 +26,20 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
@@ -110,45 +115,55 @@ private fun AppScaffold() {
                     snackbar,
                     onOpenOnAir = { nav.navigateSafely(AppRoute.ON_AIR) }
                 )
-                NavigationBar(tonalElevation = 3.dp) {
-                    // عدد التسجيلات — شارة حية على تبويب الأرشيف
-                    val recCount by ServiceLocator.recordingsRepo.observeAll()
-                        .collectAsStateWithLifecycle(initialValue = emptyList())
-                    NavigationItem.entries.forEach { item ->
-                        NavigationBarItem(
-                            selected = currentRoute == item.route,
-                            onClick = {
-                                nav.navigate(item.route) {
-                                    popUpTo(AppRoute.DASHBOARD) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            icon = {
-                                if (item.route == AppRoute.RECORDINGS && recCount.isNotEmpty()) {
-                                    BadgedBox(badge = {
-                                        Badge { Text("${recCount.size}", fontSize = 10.sp) }
-                                    }) {
+                // شريط تنقل عائم بحواف دائرية وظل ناعم — لمسة عصرية (v0.7.0)
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(26.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    shadowElevation = 10.dp
+                ) {
+                    NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp) {
+                        // عدد التسجيلات — شارة حية على تبويب الأرشيف
+                        val recCount by ServiceLocator.recordingsRepo.observeAll()
+                            .collectAsStateWithLifecycle(initialValue = emptyList())
+                        NavigationItem.entries.forEach { item ->
+                            NavigationBarItem(
+                                selected = currentRoute == item.route,
+                                onClick = {
+                                    nav.navigate(item.route) {
+                                        popUpTo(AppRoute.DASHBOARD) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                },
+                                icon = {
+                                    if (item.route == AppRoute.RECORDINGS && recCount.isNotEmpty()) {
+                                        BadgedBox(badge = {
+                                            Badge { Text("${recCount.size}", fontSize = 10.sp) }
+                                        }) {
+                                            Icon(item.icon, contentDescription = item.label)
+                                        }
+                                    } else {
                                         Icon(item.icon, contentDescription = item.label)
                                     }
-                                } else {
-                                    Icon(item.icon, contentDescription = item.label)
+                                },
+                                // إصلاح v0.5.0: سطر واحد بخط مصغّر — لم تعد التسميات
+                                // (التسجيلات…) تلتف على سطرين فوق أيقونتها في الشاشات الضيقة
+                                label = {
+                                    Text(
+                                        item.label,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        fontSize = 10.sp
+                                    )
                                 }
-                            },
-                            // إصلاح v0.5.0: سطر واحد بخط مصغّر — لم تعد التسميات
-                            // (التسجيلات…) تلتف على سطرين فوق أيقونتها في الشاشات الضيقة
-                            label = {
-                                Text(
-                                    item.label,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    fontSize = 10.sp
-                                )
-                            }
-                        )
+                            )
+                        }
                     }
                 }
-                }
+            }
             }
         }
     ) { padding ->

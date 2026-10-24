@@ -1,5 +1,11 @@
 package com.saidjte.schoolradio.feature.onair
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,13 +18,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -29,14 +36,20 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.saidjte.schoolradio.core.ui.AppIcons
+import com.saidjte.schoolradio.core.ui.RoundedProgressBar
 import com.saidjte.schoolradio.core.ui.SegmentImage
 import com.saidjte.schoolradio.core.util.AppFormat
 import com.saidjte.schoolradio.core.util.ScheduleLogic
@@ -44,14 +57,19 @@ import com.saidjte.schoolradio.di.ServiceLocator
 import kotlinx.coroutines.delay
 
 /**
- * شاشة العرض «على الهواء» (v0.5.0).
+ * شاشة العرض «على الهواء» (v0.7.0 — إعادة تصميم مسرحية).
  *
  * مكانها في الاستوديو: يُربط الجهاز بشاشة العرض/البروجكتور وتُعرض هذه الشاشة؛
  * تعرض صورة الفقرة الجارية ونصها مع التقدم، وتتكفل بالعناصر التالية تلقائياً:
  *  - إبقاء الشاشة مضاءة طوال العرض (keepScreenOn).
  *  - نبضة زمنية كل ثانية (ساعة كبيرة + تقدم).
- *  - بلا تشغيل حالياً: رسالة هادئة + الساعة — تبقى مناسبة للعرض المستمر.
+ *  - بلا تشغيل حالياً: ساعة فخمة داخل هالات نابضة + التاريخ — مناسبة للعرض المستمر.
+ *  - خلفية متدرجة زمردية داكنة بدل الأسود الصافي + حلقات زخرفية.
  */
+
+/** خلفية العرض: تدرج عمودي زمردي داكن مع حلقات زخرفية هادئة */
+private val AirBg = listOf(Color(0xFF071412), Color(0xFF0C2320), Color(0xFF092024))
+
 @Composable
 fun OnAirScreen(onExit: () -> Unit) {
     val locator = ServiceLocator
@@ -72,26 +90,38 @@ fun OnAirScreen(onExit: () -> Unit) {
             delay(1000)
         }
     }
-    val clockText = remember(nowTick) {
-        // v0.6.0: أرقام مغربية دائماً عبر المنسّق المركزي
-        AppFormat.clock(nowTick)
-    }
+    val clockText = remember(nowTick) { AppFormat.clock(nowTick) }
+    val dateText = remember(nowTick) { AppFormat.dateDay(nowTick) }
 
     val onDark = Color.White
 
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(Brush.verticalGradient(AirBg))
     ) {
+        // حلقات زخرفية في الزوايا — عمق مسرحي بلا تكلفة
+        Canvas(Modifier.fillMaxSize()) {
+            drawCircle(
+                Color.White.copy(alpha = 0.03f),
+                radius = size.height * 0.45f,
+                center = Offset(size.width * 0.95f, size.height * 0.08f)
+            )
+            drawCircle(
+                Color(0xFF5CDAC4).copy(alpha = 0.05f),
+                radius = size.height * 0.35f,
+                center = Offset(size.width * 0.05f, size.height * 0.95f)
+            )
+        }
+
         Column(
             Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(20.dp),
+                .padding(22.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // ===== الترويسة: اسم الفقرة + زر الخروج =====
+            // ===== الترويسة: اسم الفقرة + شارة البث + زر الخروج =====
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -111,33 +141,72 @@ fun OnAirScreen(onExit: () -> Unit) {
                         color = onDark.copy(alpha = 0.65f)
                     )
                 }
+                // شارة «على الهواء» بنقطة نابضة عند وجود تشغيل
+                if (playback.hasQueue) {
+                    val pulse = rememberInfiniteTransition(label = "air-pulse")
+                    val dotAlpha by pulse.animateFloat(
+                        initialValue = 1f, targetValue = 0.25f,
+                        animationSpec = infiniteRepeatable(tween(600), RepeatMode.Reverse),
+                        label = "air-dot"
+                    )
+                    Surface(
+                        color = Color(0xFFD32F2F).copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(50)
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                Modifier
+                                    .size(9.dp)
+                                    .alpha(dotAlpha)
+                                    .background(Color(0xFFFF5A5F), CircleShape)
+                            )
+                            Spacer(Modifier.size(7.dp))
+                            Text(
+                                "على الهواء",
+                                color = Color(0xFFFF8A85),
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                    }
+                }
                 IconButton(onClick = onExit) {
                     Icon(Icons.Filled.Close, "إغلاق شاشة العرض", tint = onDark)
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(18.dp))
 
             if (playback.hasQueue) {
-                // ===== صورة الفقرة (إن وُجدت) — منطقة العرض الأكبر =====
+                // ===== صورة الفقرة (إن وُجدت) — منطقة العرض الأكبر بإطار أنيق =====
                 val img = onAir?.imagePath
                 if (img != null) {
-                    SegmentImage(
-                        img,
+                    Box(
                         Modifier
                             .fillMaxWidth()
-                            .height(340.dp),
-                        contentDescription = "صورة الفقرة",
-                        contentScale = ContentScale.Fit,
-                        cornerRadius = 18.dp
-                    )
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(Color.White.copy(alpha = 0.06f))
+                            .padding(6.dp)
+                    ) {
+                        SegmentImage(
+                            img,
+                            Modifier
+                                .fillMaxWidth()
+                                .height(330.dp)
+                                .clip(RoundedCornerShape(18.dp)),
+                            contentDescription = "صورة الفقرة",
+                            contentScale = ContentScale.Fit
+                        )
+                    }
                 } else {
                     Surface(
                         Modifier
                             .fillMaxWidth()
                             .height(180.dp),
-                        shape = MaterialTheme.shapes.large,
-                        color = onDark.copy(alpha = 0.08f)
+                        shape = RoundedCornerShape(24.dp),
+                        color = onDark.copy(alpha = 0.07f)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
@@ -149,7 +218,7 @@ fun OnAirScreen(onExit: () -> Unit) {
                     }
                 }
 
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(22.dp))
 
                 // ===== نص الفقرة بخط كبير للعرض من بعيد =====
                 Text(
@@ -158,8 +227,9 @@ fun OnAirScreen(onExit: () -> Unit) {
                         ?: playback.currentTitle
                         ?: "",
                     style = MaterialTheme.typography.headlineSmall.copy(
-                        fontSize = 28.sp,
-                        lineHeight = 38.sp
+                        fontSize = 30.sp,
+                        lineHeight = 42.sp,
+                        fontWeight = FontWeight.SemiBold
                     ),
                     color = onDark,
                     textAlign = TextAlign.Center
@@ -167,18 +237,17 @@ fun OnAirScreen(onExit: () -> Unit) {
 
                 Spacer(Modifier.height(24.dp))
 
-                // ===== شريط التقدم + الزمن =====
-                LinearProgressIndicator(
-                    progress = {
-                        if (playback.durationMs > 0)
-                            (playback.positionMs.toFloat() / playback.durationMs).coerceIn(0f, 1f)
-                        else 0f
-                    },
-                    modifier = Modifier.fillMaxWidth().height(8.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = onDark.copy(alpha = 0.2f)
+                // ===== شريط التقدم بأطراف دائرية + الزمن =====
+                RoundedProgressBar(
+                    progress = if (playback.durationMs > 0)
+                        (playback.positionMs.toFloat() / playback.durationMs).coerceIn(0f, 1f)
+                    else 0f,
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color(0xFF5CDAC4),
+                    trackColor = onDark.copy(alpha = 0.18f),
+                    strokeWidth = 6
                 )
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth()) {
                     Text(
                         ScheduleLogic.formatDuration(playback.positionMs),
@@ -197,46 +266,89 @@ fun OnAirScreen(onExit: () -> Unit) {
                     )
                 }
 
-                // ===== تحكم سريع: سابق/تشغيل-إيقاف/تالي =====
+                // ===== تحكم سريع: أزرار دائرية زجاجية + تشغيل بارز =====
                 Row(
-                    Modifier.padding(top = 18.dp),
-                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                    Modifier.padding(top = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(22.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = { locator.playback.previous() }) {
-                        Icon(AppIcons.SkipPrevious, "السابق", tint = onDark)
+                    Surface(
+                        color = onDark.copy(alpha = 0.1f),
+                        shape = CircleShape
+                    ) {
+                        IconButton(onClick = { locator.playback.previous() }) {
+                            Icon(AppIcons.SkipPrevious, "السابق", tint = onDark)
+                        }
                     }
-                    IconButton(onClick = { locator.playback.playPause() }) {
-                        Icon(
-                            if (playback.isPlaying) AppIcons.Pause else Icons.Filled.PlayArrow,
-                            "تشغيل/إيقاف مؤقت",
-                            tint = onDark,
-                            modifier = Modifier.size(44.dp)
-                        )
+                    Surface(
+                        color = Color(0xFF5CDAC4),
+                        shape = CircleShape,
+                        shadowElevation = 8.dp
+                    ) {
+                        IconButton(onClick = { locator.playback.playPause() }) {
+                            Icon(
+                                if (playback.isPlaying) AppIcons.Pause else Icons.Filled.PlayArrow,
+                                "تشغيل/إيقاف مؤقت",
+                                tint = Color(0xFF062A25),
+                                modifier = Modifier.size(44.dp)
+                            )
+                        }
                     }
-                    IconButton(onClick = { locator.playback.next() }) {
-                        Icon(AppIcons.SkipNext, "التالي", tint = onDark)
+                    Surface(
+                        color = onDark.copy(alpha = 0.1f),
+                        shape = CircleShape
+                    ) {
+                        IconButton(onClick = { locator.playback.next() }) {
+                            Icon(AppIcons.SkipNext, "التالي", tint = onDark)
+                        }
                     }
                 }
             } else {
-                // ===== بلا تشغيل: شاشة انتظار هادئة مناسبة للعرض المستمر =====
+                // ===== بلا تشغيل: ساعة فخمة داخل هالات نابضة + التاريخ =====
                 Spacer(Modifier.weight(1f))
-                Icon(
-                    AppIcons.ScheduleClock, null,
-                    tint = onDark.copy(alpha = 0.35f),
-                    modifier = Modifier.size(96.dp)
-                )
-                Spacer(Modifier.height(24.dp))
+                Box(contentAlignment = Alignment.Center) {
+                    // ثلاث هالات بنبض متفاوت — عمق مسرحي
+                    val halo = rememberInfiniteTransition(label = "halo")
+                    val haloAlpha by halo.animateFloat(
+                        initialValue = 0.22f, targetValue = 0.05f,
+                        animationSpec = infiniteRepeatable(tween(1800), RepeatMode.Reverse),
+                        label = "halo-alpha"
+                    )
+                    repeat(3) { ring ->
+                        Box(
+                            Modifier
+                                .size((240 - ring * 46).dp)
+                                .alpha(haloAlpha + ring * 0.04f)
+                                .background(Color(0xFF5CDAC4).copy(alpha = 0.12f), CircleShape)
+                        )
+                    }
+                    Icon(
+                        AppIcons.ScheduleClock, null,
+                        tint = Color(0xFF5CDAC4).copy(alpha = 0.75f),
+                        modifier = Modifier.size(110.dp)
+                    )
+                }
+                Spacer(Modifier.height(28.dp))
                 Text(
                     clockText,
-                    style = MaterialTheme.typography.displayMedium,
-                    color = onDark.copy(alpha = 0.9f),
-                    fontSize = 64.sp
+                    style = MaterialTheme.typography.displaySmall.copy(
+                        fontSize = 72.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFeatureSettings = "tnum"
+                    ),
+                    color = onDark
                 )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    dateText,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = onDark.copy(alpha = 0.65f)
+                )
+                Spacer(Modifier.height(20.dp))
                 Text(
                     "ستبدأ الفقرات المجدولة تلقائياً في مواعيدها",
                     style = MaterialTheme.typography.bodyLarge,
-                    color = onDark.copy(alpha = 0.6f),
+                    color = onDark.copy(alpha = 0.55f),
                     textAlign = TextAlign.Center
                 )
                 Spacer(Modifier.weight(1f))

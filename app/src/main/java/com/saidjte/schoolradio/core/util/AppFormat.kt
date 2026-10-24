@@ -40,4 +40,8 @@ object AppFormat {
     /** «14:05» — أرقام فقط، لا يتأثر بلغة الجهاز */
     fun clock(ms: Long): String =
         SimpleDateFormat("HH:mm", Locale.US).format(Date(ms))
+
+    /** «الأربعاء 24 أكتوبر 2026» — بلا وقت، لشاشات العرض */
+    fun dateDay(ms: Long): String =
+        westernDigits(SimpleDateFormat("EEEE d MMMM yyyy", AR_NAMES).format(Date(ms)))
 }
