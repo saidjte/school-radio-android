@@ -99,6 +99,10 @@ interface AudioTrackDao {
 
     @Query("SELECT COUNT(*) FROM audio_tracks")
     suspend fun count(): Int
+
+    /** v0.14.0: كشف الجينلات المزروعة من التطبيق — يمنع الزرع المزدوج عند كل إقلاع */
+    @Query("SELECT COUNT(*) FROM audio_tracks WHERE document_id = :docId")
+    suspend fun countByDocumentId(docId: String): Int
 }
 
 // =====================================================================

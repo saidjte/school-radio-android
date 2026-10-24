@@ -27,6 +27,13 @@
          من إسكات الأتمتة الإذاعية (يُطلب باقتراح مهذب من شاشة الجدولة) -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!-- v0.14.0: تصدير التسجيلات إلى Downloads على أندرويد 9 وما قبله فقط —
+         أندرويد 10+ يستخدم MediaStore بلا أي صلاحية -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28"
+        tools:ignore="ScopedStorage" />
+
     <application
         android:name=".SchoolRadioApp"
         android:allowBackup="true"
@@ -67,6 +74,18 @@
             android:name=".scheduler.AutomationService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <!-- v0.14.0: مزوّد الملفات — مشاركة التسجيلات عبر تطبيقات أخرى
+             (واتساب/تيليغرام/البريد…) بمنح قراءة مؤقتة وآمنة لملف واحد فقط -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!-- إعادة تهيئة المنبهات بعد إعادة التشغيل / تغيّر الوقت / تحديث التطبيق -->
         <receiver

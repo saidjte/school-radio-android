@@ -53,6 +53,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.saidjte.schoolradio.audio.RecordingsPlayer
 import com.saidjte.schoolradio.core.theme.status
@@ -66,6 +68,12 @@ import com.saidjte.schoolradio.core.util.RecordingLogic
 import com.saidjte.schoolradio.data.local.entity.RecordingEntity
 import com.saidjte.schoolradio.data.local.entity.UserRole
 import com.saidjte.schoolradio.di.ServiceLocator
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.core.content.ContextCompat
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /**
@@ -104,6 +112,62 @@ fun RecordingsScreen(
     var sort by rememberSaveable { mutableStateOf(RecSort.NEWEST) }
     var renameTarget by remember { mutableStateOf<RecordingEntity?>(null) }
     var deleteTarget by remember { mutableStateOf<RecordingEntity?>(null) }
+    // v0.14.0: تسجيل بانتظار صلاحية التصدير (أندرويد 9- فقط)
+    var pendingExport by remember { mutableStateOf<RecordingEntity?>(null) }
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    /** v0.14.0: تنفيذ التصدير خارج الخيط الرئيسي مع ردّ فوري بالـ snackbar */
+    fun doExport(rec: RecordingEntity) {
+        scope.launch(Dispatchers.IO) {
+            val result = RecordingShareHelper.export(context, rec)
+            val msg = when (result) {
+                is RecordingShareHelper.ExportResult.Done ->
+                    com.saidjte.schoolradio.core.util.RecordingExportLogic.successMessage(result.fileName)
+                RecordingShareHelper.ExportResult.SourceMissing ->
+                    "ملف التسجيل غير متاح — ربما حُذف من الذاكرة"
+                is RecordingShareHelper.ExportResult.Failed ->
+                    "فشل التصدير: ${result.reason ?: "خطأ غير معروف"}"
+            }
+            snackbar.showSnackbar(msg)
+        }
+    }
+
+    /** v0.14.0: مشاركة عبر لوحة النظام (بلا صلاحيات — FileProvider) */
+    fun doShare(rec: RecordingEntity) {
+        RecordingShareHelper.share(context, rec)?.let { msg ->
+            scope.launch { snackbar.showSnackbar(msg) }
+        }
+    }
+
+    // v0.14.0: طلب صلاحية الكتابة للتصدير على أندرويد 9- ثم إنجاز التصدير المعلّق
+    val exportPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        pendingExport?.let { rec ->
+            pendingExport = null
+            if (granted) doExport(rec)
+            else scope.launch {
+                snackbar.showSnackbar("بدون صلاحية التخزين لا يمكن التصدير على هذا الإصدار — استعمل زر المشاركة")
+            }
+        }
+    }
+
+    /** v0.14.0: تصدير — على أندرويد 9- تُطلب صلاحية الكتابة أولاً */
+    fun exportOrRequest(rec: RecordingEntity) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            doExport(rec)
+        } else {
+            val granted = ContextCompat.checkSelfPermission(
+                context, Manifest.permission.WRITE_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED
+            if (granted) doExport(rec)
+            else {
+                pendingExport = rec
+                exportPermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            }
+        }
+    }
 
     val visible = recordings
         .filter { rec ->
@@ -229,6 +293,9 @@ fun RecordingsScreen(
                         },
                         onRename = { renameTarget = rec },
                         onDelete = { deleteTarget = rec },
+                        // v0.14.0: مشاركة/تصدير — متاحان للجميع (ليسا تدميراً)
+                        onShare = { doShare(rec) },
+                        onExport = { exportOrRequest(rec) },
                         // v0.5.0: جدولة سريعة — مسودة فقرة بهذا التسجيل ثم الانتقال للجدولة
                         onSchedule = {
                             ServiceLocator.setPendingScheduleDraft(
@@ -461,7 +528,9 @@ private fun RecordingRow(
     onStop: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
-    onSchedule: () -> Unit = {}
+    onSchedule: () -> Unit = {},
+    onShare: () -> Unit = {},
+    onExport: () -> Unit = {}
 ) {
     val st = MaterialTheme.status
     val isCurrent = playing.recordingId == recording.id
@@ -538,6 +607,13 @@ private fun RecordingRow(
                 }
                 IconButton(onClick = onSchedule) {
                     Icon(AppIcons.Event, "جدولة هذا التسجيل")
+                }
+                // v0.14.0: مشاركة عبر التطبيقات + تصدير دائم إلى Downloads
+                IconButton(onClick = onShare) {
+                    Icon(AppIcons.Share, "مشاركة التسجيل")
+                }
+                IconButton(onClick = onExport) {
+                    Icon(AppIcons.Download, "تصدير إلى Downloads")
                 }
                 if (canManage) {
                     IconButton(onClick = onRename) {

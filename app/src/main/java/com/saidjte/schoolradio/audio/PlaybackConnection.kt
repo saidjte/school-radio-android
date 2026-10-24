@@ -38,6 +38,13 @@ data class PlaybackUiState(
     val queueTag: String? = null,
     /** v0.8.0: معرف المقطع من المكتبة قيد التشغيل (mediaId) — لتمييز السطر النشط */
     val currentTrackId: Long? = null,
+    /** v0.14.0: متبقي المقطع الحالي (مدة − موضع) للمؤقت التنازلي على شاشة العرض */
+    val remainingMs: Long = 0,
+    /**
+     * v0.14.0: متبقي قائمة الفقرة كاملة (الحالي + مدد القادمة) —
+     * ‎-1 إذا مدد العناصر القادمة غير معروفة بعد (لم تُحضّر) فلا يُعرض.
+     */
+    val queueRemainingMs: Long = -1L,
     val errorMessage: String? = null
 )
 
@@ -131,12 +138,29 @@ class PlaybackConnection(private val context: Context) {
 
     private fun pushState() {
         val c = controller ?: return
+        // v0.14.0: حساب المؤقت التنازلي — متبقي المقطع + متبقي القائمة إن كانت المدد معروفة
+        val pos = c.currentPosition.coerceAtLeast(0)
+        val dur = if (c.duration > 0) c.duration else 0
+        val remaining = (dur - pos).coerceAtLeast(0)
+        var queueRemaining = remaining.toLong()
+        var queueKnown = true
+        // مدد العناصر القادمة من Timeline (النوافذ غير المحضّرة تعيد TIME_UNSET)
+        val timeline = c.currentTimeline
+        val window = androidx.media3.common.Timeline.Window()
+        for (i in (c.currentMediaItemIndex + 1) until c.mediaItemCount) {
+            timeline.getWindow(i, window)
+            val d = window.durationMs
+            if (d > 0 && d != androidx.media3.common.C.TIME_UNSET) queueRemaining += d
+            else { queueKnown = false; break }
+        }
         _state.value = PlaybackUiState(
             hasQueue = c.mediaItemCount > 0,
             isPlaying = c.isPlaying,
             currentTitle = c.currentMediaItem?.mediaMetadata?.title?.toString(),
-            positionMs = c.currentPosition.coerceAtLeast(0),
-            durationMs = if (c.duration > 0) c.duration else 0,
+            positionMs = pos,
+            durationMs = dur,
+            remainingMs = remaining,
+            queueRemainingMs = if (queueKnown) queueRemaining else -1L,
             queueSize = c.mediaItemCount,
             queueIndex = c.currentMediaItemIndex,
             queueTitles = (0 until c.mediaItemCount.coerceAtMost(50)).map {

@@ -59,6 +59,7 @@ import com.saidjte.schoolradio.core.ui.MicQuickToggle
 import com.saidjte.schoolradio.core.ui.RoundedProgressBar
 import com.saidjte.schoolradio.core.ui.SegmentImage
 import com.saidjte.schoolradio.core.util.AppFormat
+import com.saidjte.schoolradio.core.util.AirCountdown
 import com.saidjte.schoolradio.core.util.ScheduleLogic
 import com.saidjte.schoolradio.di.ServiceLocator
 import kotlinx.coroutines.delay
@@ -118,6 +119,18 @@ fun OnAirScreen(onExit: () -> Unit) {
     }
     val clockText = remember(nowTick) { AppFormat.clock(nowTick) }
     val dateText = remember(nowTick) { AppFormat.dateDay(nowTick) }
+
+    // ===== v0.14.0: المؤقت التنازلي — الفقرة القادمة عند الخمول =====
+    // نفس منطق الرئيسية: فقرات اليوم (الجداول المفعّلة) والقادمة زمنياً
+    val todayEvents by remember {
+        locator.schedules.todayEventsFlow()
+    }.collectAsStateWithLifecycle(initialValue = emptyList())
+    val nextEvent = todayEvents
+        .filter { it.startMinutes > ScheduleLogic.minutesOfDay(nowTick) }
+        .minByOrNull { it.startMinutes }
+    val nextEventIn = remember(nextEvent, nowTick) {
+        nextEvent?.let { AirCountdown.mmss(AirCountdown.secondsUntil(it.startMinutes, nowTick)) }
+    }
 
     val onDark = Color.White
 
@@ -366,6 +379,56 @@ fun OnAirScreen(onExit: () -> Unit) {
                     Spacer(Modifier.height(18.dp))
                 }
 
+                // ===== v0.14.0: المؤقت التنازلي للفقرة — واضح من آخر القاعة =====
+                // لون دلالي: زمردي عادي / كهرماني في آخر دقيقة / أحمر في آخر 15 ثانية
+                val urgency = AirCountdown.urgency(playback.remainingMs, playback.isPlaying)
+                val countdownColor = when (urgency) {
+                    AirCountdown.Urgency.NORMAL -> Color(0xFF5CDAC4)
+                    AirCountdown.Urgency.SOON -> Color(0xFFFFB74D)
+                    AirCountdown.Urgency.FINAL -> Color(0xFFFF5A5F)
+                }
+                Surface(
+                    Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    color = countdownColor.copy(alpha = 0.12f)
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            AppIcons.Alarm, null,
+                            tint = countdownColor,
+                            modifier = Modifier.size(26.dp)
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "المقطع الحالي ينتهي بعد",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = onDark.copy(alpha = 0.6f)
+                            )
+                            if (playback.queueRemainingMs >= 0 && playback.queueSize > 1) {
+                                Text(
+                                    "نهاية الفقرة كاملة بعد " +
+                                        AirCountdown.mmss(playback.queueRemainingMs / 1000),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = onDark.copy(alpha = 0.45f)
+                                )
+                            }
+                        }
+                        Text(
+                            AirCountdown.mmss(playback.remainingMs / 1000),
+                            style = MaterialTheme.typography.displaySmall.copy(
+                                fontSize = 44.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFeatureSettings = "tnum"
+                            ),
+                            color = countdownColor
+                        )
+                    }
+                }
+
                 // ===== شريط التقدم بأطراف دائرية + الزمن =====
                 RoundedProgressBar(
                     progress = if (playback.durationMs > 0)
@@ -487,12 +550,41 @@ fun OnAirScreen(onExit: () -> Unit) {
                     color = onDark.copy(alpha = 0.65f)
                 )
                 Spacer(Modifier.height(20.dp))
-                Text(
-                    "ستبدأ الفقرات المجدولة تلقائياً في مواعيدها",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = onDark.copy(alpha = 0.55f),
-                    textAlign = TextAlign.Center
-                )
+                // ===== v0.14.0: عدّ تنازلي حي للفقرة القادمة — شاشة العرض تعرف موعد الانطلاق =====
+                if (nextEvent != null && nextEventIn != null) {
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = Color(0xFF5CDAC4).copy(alpha = 0.10f)
+                    ) {
+                        Column(
+                            Modifier.padding(horizontal = 22.dp, vertical = 12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                "الفقرة القادمة: ${nextEvent.title}",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = onDark.copy(alpha = 0.85f),
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "تبدأ بعد $nextEventIn",
+                                style = MaterialTheme.typography.headlineSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontFeatureSettings = "tnum"
+                                ),
+                                color = Color(0xFF5CDAC4)
+                            )
+                        }
+                    }
+                } else {
+                    Text(
+                        "ستبدأ الفقرات المجدولة تلقائياً في مواعيدها",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = onDark.copy(alpha = 0.55f),
+                        textAlign = TextAlign.Center
+                    )
+                }
                 Spacer(Modifier.weight(1f))
             }
             Spacer(Modifier.height(12.dp))

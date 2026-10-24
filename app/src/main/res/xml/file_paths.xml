@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    v0.14.0 — مسارات FileProvider لمشاركة التسجيلات عبر ACTION_SEND.
+    التسجيلات تُكتب عادة في getExternalFilesDir(MUSIC)/recordings
+    (ونادراً في filesDir/recordings عند غياب الذاكرة الخارجية).
+-->
+<paths>
+    <external-files-path
+        name="external_recordings"
+        path="Music/recordings/" />
+    <files-path
+        name="internal_recordings"
+        path="recordings/" />
+</paths>

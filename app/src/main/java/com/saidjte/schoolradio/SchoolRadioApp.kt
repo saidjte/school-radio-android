@@ -19,6 +19,9 @@ class SchoolRadioApp : Application() {
                 // v0.3.0: زرع المشرف الافتراضي عند أول تشغيل (بعد تثبيت نظيف فقط)
                 ServiceLocator.session.ensureDefaultUser()
                 ServiceLocator.library.ensureDefaultCategories()
+                // v0.14.0: زرع الجينلات المدمجة للفواصل (تصنيف «فواصل وجينلات») —
+                // تظهر مباشرة في محرر الفواصل والحائط الصوتي دون أي استيراد يدوي
+                ServiceLocator.library.ensureBundledJingles()
                 ServiceLocator.library.refreshAvailability()
                 // عند بدء العملية: أعد ضبط المنبهات (يغطي أيضًا الحالة بعد القتل القسري)
                 val enabled = ServiceLocator.schedules.enabledSchedules().map { it.id }.toSet()

@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.media.MediaMetadataRetriever
 import android.provider.OpenableColumns
+import com.saidjte.schoolradio.data.bundled.BundledJingles
 import com.saidjte.schoolradio.data.local.AppDatabase
 import com.saidjte.schoolradio.data.local.entity.AudioTrackEntity
 import com.saidjte.schoolradio.data.local.entity.CategoryEntity
@@ -162,6 +163,74 @@ class LibraryRepository(
     suspend fun trackById(id: Long): AudioTrackEntity? = trackDao.byId(id)
     suspend fun tracksByIds(ids: List<Long>): List<AudioTrackEntity> = trackDao.byIds(ids)
     suspend fun categoryById(id: Long): CategoryEntity? = categoryDao.byId(id)
+
+    // ================== v0.14.0: الجينلات المدمجة للفواصل ==================
+
+    /**
+     * زرع الجينلات المدمجة في المكتبة عند أول تشغيل (ورقة ضمان: يُستدعى من
+     * SchoolRadioApp بعد زرع التصنيفات). لكل جينل:
+     *  - يُنسخ من assets إلى filesDir/jingles (مرة واحدة — إن وُجد ملف بنفس
+     *    الحجم يُترك لتسريع الإقلاعات التالية).
+     *  - يُسجَّل في قاعدة المكتبة بتصنيف «فواصل وجينلات» وبمعرف مستند
+     *    `bundled:jingles/…` يمنع ازدواج الزرع ويجعله قابلاً للانتقاء فوراً
+     *    في محرر الفواصل (Breaks) والحائط الصوتي.
+     *
+     * يبقى كل شيء قابلاً للتعديل/الحذف كأي مقطع مستورد — لا خصائص خاصة.
+     */
+    suspend fun ensureBundledJingles() {
+        val dir = java.io.File(context.filesDir, "jingles").apply { mkdirs() }
+
+        // التصنيف: موجود؟ وإلا أنشئه (INSERT IGNORE قد يعيد -1 عند سباق نادر — نعيد القراءة)
+        val categoryId = categories.first().firstOrNull { it.name == BundledJingles.CATEGORY }?.id
+            ?: run {
+                categoryDao.insert(
+                    CategoryEntity(name = BundledJingles.CATEGORY, sortOrder = 98, isBuiltIn = false)
+                )
+                categories.first().firstOrNull { it.name == BundledJingles.CATEGORY }?.id
+                    ?: return // تعذّر الحصول على تصنيف — أجّل الزرع لإقلاع قادم
+            }
+
+        for (j in BundledJingles.ALL) {
+            val docId = BundledJingles.docId(j.file)
+            if (trackDao.countByDocumentId(docId) > 0) continue // زُرع سابقاً
+
+            val outFile = java.io.File(dir, j.file)
+            if (!outFile.exists() || outFile.length() == 0L) {
+                try {
+                    context.assets.open("jingles/${j.file}").use { input ->
+                        outFile.outputStream().use { input.copyTo(it) }
+                    }
+                } catch (_: Exception) {
+                    continue // أصل مفقود؟ لا نكسر الإقلاع — الجينلات الباقية تُزرع
+                }
+            }
+
+            val durationMs = queryDurationForFile(outFile)
+            trackDao.insert(
+                AudioTrackEntity(
+                    title = j.title,
+                    uri = Uri.fromFile(outFile).toString(),
+                    documentId = docId,
+                    categoryId = categoryId,
+                    durationMs = durationMs,
+                    sizeBytes = outFile.length()
+                )
+            )
+        }
+    }
+
+    /** مدة ملف محلي عبر MediaMetadataRetriever — 0 عند الفشل (المدة تُصحَّح عند التشغيل) */
+    private fun queryDurationForFile(file: java.io.File): Long {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(file.absolutePath)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0
+        } catch (_: Exception) {
+            0
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
 
     private fun queryDisplayName(cr: android.content.ContentResolver, uri: Uri): String? =
         cr.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
