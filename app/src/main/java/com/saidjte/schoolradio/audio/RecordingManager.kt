@@ -6,6 +6,7 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Process
 import com.saidjte.schoolradio.core.util.RecordingLogic
+import com.saidjte.schoolradio.core.util.WaveformLogic
 import com.saidjte.schoolradio.data.local.entity.RecordingEntity
 import com.saidjte.schoolradio.data.local.entity.RecordingSource
 import com.saidjte.schoolradio.data.local.entity.UserEntity
@@ -55,6 +56,14 @@ class RecordingManager(
     private val _elapsedMs = MutableStateFlow(0L)
     val elapsedMs: StateFlow<Long> = _elapsedMs.asStateFlow()
 
+    /**
+     * v0.12.0 — مستوى الموجة الحية: RMS لدفعات PCM **المرسلة فعلاً إلى الكاتب**
+     * (بعد التلاشي والكسب وسلسلة تنظيف المذيع) — فالموجة تعرض ما يُسجل بالضبط،
+     * لا ما يدخل الميكروفون فقط. يُغذّى من المسارين: حلقة البث (PTT) وخيط الفقرة (MEMO).
+     */
+    private val _recordLevel = MutableStateFlow(0f)
+    val recordLevel: StateFlow<Float> = _recordLevel.asStateFlow()
+
     // ===== الحالة الداخلية =====
     private var writer: AacFileWriter? = null
     private var source: RecordingSource = RecordingSource.PTT
@@ -100,6 +109,7 @@ class RecordingManager(
         source = newSource
         _mode.value = newSource
         _elapsedMs.value = 0L
+        _recordLevel.value = 0f // v0.12.0: موجة جديدة تبدأ من الصمت
 
         return if (newSource == RecordingSource.MEMO) {
             startMemoCapture(w) // في وضع الفقرة نفتح الميكروفون بأنفسنا
@@ -118,6 +128,8 @@ class RecordingManager(
         if (!_isRecording.value || source != RecordingSource.PTT) return
         w.feed(pcm, n)
         _elapsedMs.value = w.totalSamples * 1000L / MicrophoneController.SAMPLE_RATE
+        // v0.12.0: نفس الدفعة تكفي لحساب مستوى الموجة الحية (كلفة 480 عملية/10ms)
+        _recordLevel.value = WaveformLogic.normalize(rmsOf(pcm, n))
     }
 
     /** يُنادى تلقائياً عند توقف البث الحي — ينقذ الملف قبل فتح الميكروفون */
@@ -131,6 +143,7 @@ class RecordingManager(
     fun stopRecording() {
         if (!_isRecording.value && memoRecord == null) return
         _isRecording.value = false
+        _recordLevel.value = 0f // v0.12.0: الموجة تعود إلى الصمت فوراً
         stopMemoCapture()
 
         val w = writer
@@ -213,6 +226,8 @@ class RecordingManager(
                 if (n > 0) {
                     w.feed(chunk, n)
                     _elapsedMs.value = w.totalSamples * 1000L / MicrophoneController.SAMPLE_RATE
+                    // v0.12.0: الموجة الحية للفقرة التمهيدية — من دفعاتها نفسها
+                    _recordLevel.value = WaveformLogic.normalize(rmsOf(chunk, n))
                 }
             }
             try { record.stop() } catch (_: Exception) {}
@@ -227,5 +242,13 @@ class RecordingManager(
         memoThread?.join(400)
         memoThread = null
         memoRecord = null
+    }
+
+    /** v0.12.0: RMS دفعة PCM كنسبة من المدى الكامل — خفيفة عمداً (حلقة واحدة) */
+    private fun rmsOf(x: ShortArray, n: Int): Float {
+        if (n <= 0) return 0f
+        var acc = 0L
+        for (i in 0 until n) acc += x[i].toLong() * x[i]
+        return (kotlin.math.sqrt(acc.toDouble() / n) / Short.MAX_VALUE).toFloat()
     }
 }

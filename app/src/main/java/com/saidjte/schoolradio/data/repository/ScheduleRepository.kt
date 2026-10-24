@@ -25,6 +25,26 @@ class ScheduleRepository(private val db: AppDatabase) {
         dao.update(schedule.copy(enabled = enabled))
     suspend fun deleteSchedule(id: Long) = dao.deleteById(id)
 
+    /** v0.12.0: قراءة جدول واحد — يحتاجها مستقبل المنبه لقراءة إعداد الفواصل */
+    suspend fun scheduleById(id: Long): RadioScheduleEntity? = dao.scheduleById(id)
+
+    /**
+     * v0.12.0: حفظ إعداد الفواصل المجدولة لجدول ما.
+     * تعطيل الفواصل لا يتطلب إعادة ضبط المنبهات — الإعداد يُقرأ لحظة نهاية كل فقرة.
+     */
+    suspend fun setBreakConfig(
+        schedule: RadioScheduleEntity,
+        enabled: Boolean,
+        trackId: Long?,
+        categoryId: Long?
+    ) = dao.update(
+        schedule.copy(
+            breakEnabled = enabled,
+            breakTrackId = trackId,
+            breakCategoryId = categoryId
+        )
+    )
+
     suspend fun addEvent(event: ScheduledEventEntity): Long = dao.insertEvent(event)
     suspend fun updateEvent(event: ScheduledEventEntity) = dao.updateEvent(event)
     suspend fun deleteEvent(id: Long) = dao.deleteEventById(id)

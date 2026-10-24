@@ -2,6 +2,7 @@ package com.saidjte.schoolradio.feature.onair
 
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -49,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.saidjte.schoolradio.core.ui.AppIcons
+import com.saidjte.schoolradio.core.ui.LiveWaveform
 import com.saidjte.schoolradio.core.ui.RoundedProgressBar
 import com.saidjte.schoolradio.core.ui.SegmentImage
 import com.saidjte.schoolradio.core.util.AppFormat
@@ -76,6 +79,22 @@ fun OnAirScreen(onExit: () -> Unit) {
     val playback by locator.playback.state.collectAsStateWithLifecycle()
     val onAir by locator.onAir.collectAsStateWithLifecycle()
     val view = LocalView.current
+
+    // v0.12.0: الموجات الحية — نبض الميكروفون أثناء الإعلان ونبض الموسيقى أثناء الفقرات
+    val micLive by locator.micLive.collectAsStateWithLifecycle()
+    val micLevelRaw by locator.micLevel.collectAsStateWithLifecycle()
+    val mediaLevelRaw by locator.mediaLevel.collectAsStateWithLifecycle()
+    val onAirMicLevel by animateFloatAsState(
+        targetValue = micLevelRaw.coerceIn(0f, 1f),
+        animationSpec = tween(80),
+        label = "onair-mic-wave"
+    )
+    val onAirMediaLevel by animateFloatAsState(
+        targetValue = mediaLevelRaw.coerceIn(0f, 1f),
+        animationSpec = tween(80),
+        label = "onair-media-wave"
+    )
+    val airTeal = Color(0xFF5CDAC4)
 
     // إبقاء الشاشة مضاءة طوال بقاء شاشة العرض مفتوحة
     DisposableEffect(Unit) {
@@ -179,6 +198,36 @@ fun OnAirScreen(onExit: () -> Unit) {
 
             Spacer(Modifier.height(18.dp))
 
+            // ===== v0.12.0: شريط «الميكروفون مباشر» بموجة حية — يظهر أثناء الإعلان الحي مهما كانت الحالة =====
+            if (micLive) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        color = Color(0xFFD32F2F).copy(alpha = 0.22f),
+                        shape = RoundedCornerShape(50)
+                    ) {
+                        Text(
+                            "● الميكروفون مباشر",
+                            Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            color = Color(0xFFFF8A85),
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    LiveWaveform(
+                        level = onAirMicLevel,
+                        active = true,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(40.dp),
+                        color = Color(0xFFFF8A85)
+                    )
+                }
+                Spacer(Modifier.height(14.dp))
+            }
+
             if (playback.hasQueue) {
                 // ===== صورة الفقرة (إن وُجدت) — منطقة العرض الأكبر بإطار أنيق =====
                 val img = onAir?.imagePath
@@ -265,6 +314,19 @@ fun OnAirScreen(onExit: () -> Unit) {
                         color = onDark.copy(alpha = 0.8f)
                     )
                 }
+
+                // ===== v0.12.0: نبض المقطع الحي — موجة الموسيقى/الجينغل كما تُسمع الآن =====
+                // تجعل الفواصل المجدولة (Breaks) مرئية على شاشة العرض لا مسموعة فقط
+                Spacer(Modifier.height(14.dp))
+                LiveWaveform(
+                    level = onAirMediaLevel,
+                    active = playback.isPlaying,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(46.dp),
+                    color = airTeal,
+                    trackColor = onDark.copy(alpha = 0.14f)
+                )
 
                 // ===== تحكم سريع: أزرار دائرية زجاجية + تشغيل بارز =====
                 Row(

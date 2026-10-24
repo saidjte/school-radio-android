@@ -9,14 +9,44 @@ import androidx.room.PrimaryKey
 /**
  * جدول إذاعي مسمّى (مثل «طابور الصباح» و«الاستراحة»).
  * كل جدول يحتوي أحداثاً مجدولة (ScheduledEvent) تُطلق في أوقاتها.
+ *
+ * v0.12.0 — الفواصل المجدولة (Breaks): إدراج جينغل آلي بين فقرات الجدول:
+ *  - [breakEnabled] تفعيل الخاصية لهذا الجدول تحديداً (كل برنامج له هواؤه).
+ *  - [breakTrackId] جينغل محدد من المكتبة يتكرر بين كل فقرتين.
+ *  - [breakCategoryId] أو اختيار عشوائي من تصنيف كامل (جينغلات الانتقال مثلاً).
+ * المفتاح الخارجي SET_NULL: حذف المقطع/التصنيف يعطل الفاصل بهدوء دون عطل.
  */
-@Entity(tableName = "radio_schedules")
+@Entity(
+    tableName = "radio_schedules",
+    foreignKeys = [
+        ForeignKey(
+            entity = AudioTrackEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["break_track_id"],
+            onDelete = ForeignKey.SET_NULL
+        ),
+        ForeignKey(
+            entity = CategoryEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["break_category_id"],
+            onDelete = ForeignKey.SET_NULL
+        )
+    ],
+    indices = [Index("break_track_id"), Index("break_category_id")]
+)
 data class RadioScheduleEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     /** تفعيل الجدول — الجدول المعطّل لا تُضبط منبهاته */
     val enabled: Boolean = true,
-    @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis()
+    @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis(),
+    // ===== v0.12.0: الفواصل المجدولة =====
+    @ColumnInfo(name = "break_enabled", defaultValue = "0")
+    val breakEnabled: Boolean = false,
+    @ColumnInfo(name = "break_track_id")
+    val breakTrackId: Long? = null,
+    @ColumnInfo(name = "break_category_id")
+    val breakCategoryId: Long? = null
 )
 
 /**

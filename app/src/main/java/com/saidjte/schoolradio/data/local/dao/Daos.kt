@@ -167,6 +167,10 @@ interface ScheduleDao {
     @Query("SELECT * FROM radio_schedules WHERE enabled = 1")
     suspend fun enabledSchedules(): List<RadioScheduleEntity>
 
+    /** v0.12.0: جدول واحد بالمعرف — يقرأه AlarmReceiver لحظة نهاية الفقرة (إعداد الفواصل) */
+    @Query("SELECT * FROM radio_schedules WHERE id = :id")
+    suspend fun scheduleById(id: Long): RadioScheduleEntity?
+
     @Query("DELETE FROM radio_schedules WHERE id = :id")
     suspend fun deleteById(id: Long)
 

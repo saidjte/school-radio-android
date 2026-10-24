@@ -27,6 +27,7 @@ import com.saidjte.schoolradio.data.local.entity.UserEntity
  * الإصدار 2 = v0.3.0: أُضيف جدولا «users» (الأدوار) و«recordings» (الأرشيف الصوتي).
  * الإصدار 3 = v0.5.0: حقول الفقرة الموسعة (recording_id + note_text + image_path)
  *   لتشغيل التسجيلات ضمن الفقرات ودعم صور/نصوص شاشة العرض.
+ * الإصدار 4 = v0.12.0: أعمدة الفواصل المجدولة على radio_schedules (جينغل آلي بين الفقرات).
  * عند أي تعديل مستقبلي: زد الإصدار واكتب Migration() صريحاً (لا fallback في الإنتاج)
  * — بيانات المدارس الحقيقية (مكتبة + جداول + أرشيف) لا يجوز فقدانها أبداً.
  */
@@ -42,7 +43,7 @@ import com.saidjte.schoolradio.data.local.entity.UserEntity
         UserEntity::class,
         RecordingEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -116,6 +117,40 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * ترحيل 3 → 4 (v0.11.0 → v0.12.0): ثلاثة أعمدة للفواصل المجدولة على radio_schedules.
+         * ADD COLUMN مع REFERENCES آمن كما في 2→3: القيم الافتراضية NULL/0 ولا تُكتب صفوف
+         * أثناء الترحيل — لا مساس ببيانات الجداول والفقرات القائمة.
+         * SQL هنا يجب أن يطابق حرفياً ما يولّده Room من الكيانات (يُفحص مخطط app/schemas/4.json).
+         */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // تفعيل الفواصل لهذا الجدول (معطل افتراضياً لكل الجداول القائمة)
+                db.execSQL(
+                    "ALTER TABLE `radio_schedules` ADD COLUMN `break_enabled` INTEGER NOT NULL DEFAULT 0"
+                )
+                // جينغل محدد من المكتبة (يبقى سليماً إذا حُذف المقطع)
+                db.execSQL(
+                    "ALTER TABLE `radio_schedules` ADD COLUMN `break_track_id` INTEGER " +
+                        "REFERENCES `audio_tracks`(`id`) ON DELETE SET NULL"
+                )
+                // أو جينغلات عشوائية من تصنيف كامل (يبقى سليماً إذا حُذف التصنيف)
+                db.execSQL(
+                    "ALTER TABLE `radio_schedules` ADD COLUMN `break_category_id` INTEGER " +
+                        "REFERENCES `categories`(`id`) ON DELETE SET NULL"
+                )
+                // فهرسة أعمدة المفاتيح الخارجية — مطابقة لإعلان الكيان (index_radio_schedules_*)
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_radio_schedules_break_track_id` " +
+                        "ON `radio_schedules` (`break_track_id`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_radio_schedules_break_category_id` " +
+                        "ON `radio_schedules` (`break_category_id`)"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -123,7 +158,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "school-radio.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build().also { INSTANCE = it }
             }
     }

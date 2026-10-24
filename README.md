@@ -10,7 +10,8 @@
 
 | الإصدار | APK (اسم موحّد) | الحزمة المصدرية |
 |---------|----------------|-----------------|
-| **v0.5.0** (الحالية) | [SchoolRadio_v0.5.0.apk](https://github.com/saidjte/school-radio-android/releases/download/v0.5.0/SchoolRadio_v0.5.0.apk) | [SchoolRadio_Source_v0.5.0.zip](https://github.com/saidjte/school-radio-android/releases/download/v0.5.0/SchoolRadio_Source_v0.5.0.zip) |
+| **v0.12.0** (الحالية) | [SchoolRadio_v0.12.0.apk](https://github.com/saidjte/school-radio-android/releases/download/v0.12.0/SchoolRadio_v0.12.0.apk) | — |
+| v0.5.0 | [SchoolRadio_v0.5.0.apk](https://github.com/saidjte/school-radio-android/releases/download/v0.5.0/SchoolRadio_v0.5.0.apk) | [SchoolRadio_Source_v0.5.0.zip](https://github.com/saidjte/school-radio-android/releases/download/v0.5.0/SchoolRadio_Source_v0.5.0.zip) |
 | v0.4.0 | [SchoolRadio_v0.4.0.apk](https://github.com/saidjte/school-radio-android/releases/download/v0.4.0/SchoolRadio_v0.4.0.apk) | [SchoolRadio_Source_v0.4.0.zip](https://github.com/saidjte/school-radio-android/releases/download/v0.4.0/SchoolRadio_Source_v0.4.0.zip) |
 | v0.3.0 | [SchoolRadio_v0.3.0.apk](https://github.com/saidjte/school-radio-android/releases/download/v0.3.0/SchoolRadio_v0.3.0.apk) | [SchoolRadio_Source_v0.3.0.zip](https://github.com/saidjte/school-radio-android/releases/download/v0.3.0/SchoolRadio_Source_v0.3.0.zip) |
 | v0.2.0 | [SchoolRadio_v0.2.0.apk](https://github.com/saidjte/school-radio-android/releases/download/v0.2.0/SchoolRadio_v0.2.0.apk) | [SchoolRadio_Source_v0.2.0.zip](https://github.com/saidjte/school-radio-android/releases/download/v0.2.0/SchoolRadio_Source_v0.2.0.zip) |
@@ -21,6 +22,19 @@
   (تطبيق Kotlin خالص دون مكتبات native، وفلتر `abiFilters` مثبّت في إعداد البناء)
 - التوقيع: نفس المفتاح في كل الإصدارات — بصمة SHA-256 في [docs/SIGNING.md](docs/SIGNING.md) —
   لذلك يُثبَّت التحديث الجديد فوق النسخة القديمة مباشرة دون حذف ودون فقدان البيانات.
+
+## المزايا (v0.12.0 — الفواصل المجدولة Breaks + الموجة الحية)
+
+- **الفواصل المجدولة (Breaks) — نمط الأتمتة الإذاعية**: إدراج **جينغل آلي بين فقرات الجدول**:
+  - إعداد لكل جدول: تفعيل الفواصل + مصدر الجينغل (**مقطع محدد** من المكتبة أو **عشوائي من تصنيف** كامل بلا تكرار مباشر)
+  - مساران للعمل: زر **«تشغيل» المتواصل** يشغّل فقرات الجدول كلها متتالية مع فواصل آلية بينها،
+    وفي البث المجدول تنطلق جينغة الانتقال **تلقائياً بعد كل فقرة** إن وُجدت فقرة تالية في اليوم نفسه
+  - شاشة العرض تعرض «فاصل بين الفقرات» أثناء الجينغل — ولا فاصل بعد الفقرة الختامية
+- **موجة التسجيل الحية (Live Waveform)**: عمود مستوى صوت استوديو حقيقي:
+  - في بطاقة البث: تعرض **ما يُكتب في ملف التسجيل فعلاً** (بث PTT أو فقرة تحضيرية MEMO)
+    وموجة الميكروفون على الهواء
+  - على شاشة العرض المسرحية: نبض الميكروفون أثناء الإعلان + نبض الموسيقى/الجينغل أثناء الفقرات والفواصل
+  - رياضيات قياس إدراكية (قصّ ضجيج + منحنى جذري + تنعيم هبوطي) مع 21 اختباراً وحدوياً جديداً (69 إجمالاً)
 
 ## المزايا (v0.5.0 — إذاعة مُجدولة بالتسجيلات + صور ونصوص الفقرات)
 

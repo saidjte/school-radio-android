@@ -83,6 +83,7 @@ import com.saidjte.schoolradio.core.theme.gradients
 import com.saidjte.schoolradio.core.theme.status
 import com.saidjte.schoolradio.core.ui.AppIcons
 import com.saidjte.schoolradio.core.ui.EmptyStateCard
+import com.saidjte.schoolradio.core.ui.LiveWaveform
 import com.saidjte.schoolradio.core.ui.StatusBadge
 import com.saidjte.schoolradio.core.ui.diagonalBrush
 import com.saidjte.schoolradio.core.ui.driftingGradient
@@ -180,6 +181,17 @@ fun DashboardScreen(
     val recActive by locator.recordings.isRecording.collectAsStateWithLifecycle()
     val recElapsed by locator.recordings.elapsedMs.collectAsStateWithLifecycle()
     val recMode by locator.recordings.mode.collectAsStateWithLifecycle()
+    // v0.12.0: مستوى الموجة الحية للتسجيل — ما يُكتب في الملف فعلاً (بث PTT أو فقرة MEMO)
+    val recLevelRaw by locator.recordings.recordLevel.collectAsStateWithLifecycle()
+
+    // v0.12.0: مصدر الموجة الموحد — أثناء التسجيل مستوى الملف، وإلا مستوى البث الحي
+    val waveActive = isLive || recActive
+    val waveSource = if (recActive) recLevelRaw else micLevelRaw
+    val waveLevel by animateFloatAsState(
+        targetValue = waveSource.coerceIn(0f, 1f),
+        animationSpec = tween(80),
+        label = "wave-source-smooth"
+    )
 
     val micPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -394,6 +406,8 @@ fun DashboardScreen(
                 recElapsed = recElapsed,
                 recMode = recMode,
                 micMode = micMode,
+                waveActive = waveActive,
+                waveLevel = waveLevel,
                 onRouteChange = { locator.setBroadcastRoute(it) },
                 onMicModeChange = { mode ->
                     scope.launch {
@@ -779,6 +793,8 @@ private fun LiveBroadcastCard(
     recElapsed: Long,
     recMode: com.saidjte.schoolradio.data.local.entity.RecordingSource?,
     micMode: com.saidjte.schoolradio.audio.MicMode,
+    waveActive: Boolean,
+    waveLevel: Float,
     onRouteChange: (AudioRoutingManager.Route) -> Unit,
     onMicModeChange: (com.saidjte.schoolradio.audio.MicMode) -> Unit,
     onTalkStart: () -> Unit,
@@ -1030,6 +1046,34 @@ private fun LiveBroadcastCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                }
+            }
+
+            // ===== v0.12.0: الموجة الحية — نبض ما يُبثّ/يُسجَّل الآن =====
+            // أثناء التسجيل تعرض مستوى دفعات PCM المرسلة للكاتب (الملف نفسه)،
+            // وأثناء البث بلا تسجيل تعرض صوت الميكروفون على الهواء.
+            AnimatedVisibility(visible = waveActive) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    LiveWaveform(
+                        level = waveLevel,
+                        active = waveActive,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(
+                                (if (recActive) st.live else MaterialTheme.colorScheme.primary)
+                                    .copy(alpha = 0.06f)
+                            ),
+                        color = if (recActive) st.live else MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        if (recActive) "موجة التسجيل الحية — ما يُكتب في الملف الآن"
+                        else "موجة البث الحية — صوت الميكروفون على الهواء",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
 

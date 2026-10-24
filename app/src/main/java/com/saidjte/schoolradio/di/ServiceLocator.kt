@@ -10,8 +10,10 @@ import com.saidjte.schoolradio.audio.PlaybackConnection
 import com.saidjte.schoolradio.audio.PlaybackCoordinator
 import com.saidjte.schoolradio.audio.RecordingManager
 import com.saidjte.schoolradio.audio.RecordingsPlayer
+import com.saidjte.schoolradio.core.util.BreaksLogic
 import com.saidjte.schoolradio.data.backup.BackupRepository
 import com.saidjte.schoolradio.data.local.AppDatabase
+import com.saidjte.schoolradio.data.local.entity.RadioScheduleEntity
 import com.saidjte.schoolradio.data.local.entity.ScheduledEventEntity
 import com.saidjte.schoolradio.data.repository.LibraryRepository
 import com.saidjte.schoolradio.data.repository.PlaylistRepository
@@ -316,6 +318,93 @@ object ServiceLocator {
      */
     fun onScheduledPlaybackStarting() {
         coordinator.requestMainQueueStart()
+    }
+
+    /**
+     * v0.12.0 — التشغيل المتواصل لجدول كامل مع الفواصل الآلية بين فقراته.
+     *
+     * يحقق حرفياً «إدراج جينغل آلي بين الفقرات»: تُجمع فقرات الجدول بالترتيب
+     * الزمني، وتُبنى قائمة واحدة (فقرة ← جينغل ← فقرة …) عبر BreaksLogic،
+     * ثم تنطلق عبر البوابة الموحدة (توقّف المعاينات وضمانات الحَكَم كاملة).
+     *
+     * @return رسالة عربية جاهزة للعرض — نجاح أو تعليل واضح لعدم الانطلاق.
+     */
+    suspend fun playScheduleWithBreaks(schedule: RadioScheduleEntity): String {
+        val events = schedules.allEvents()
+            .filter { it.scheduleId == schedule.id }
+            .sortedBy { it.startMinutes }
+        if (events.isEmpty()) return "لا فقرات في «${schedule.name}» — أضف فقراته أولاً"
+
+        // 1) تجميع محتوى كل فقرة (قائمة/مقطع/تسجيل) — الفقرة المعطوبة تُتخطى بلا عطل
+        var skipped = 0
+        val segments = events.map { e -> resolveEventContent(e) ?: run { skipped++; emptyList() } }
+        if (segments.all { it.isEmpty() })
+            return "محتوى فقرات «${schedule.name}» غير متاح — أعد ربط المقاطع من محرر الفقرات"
+
+        // 2) تجميع تجمع الجينغلات وفق إعداد الجدول
+        val pool: List<BreaksLogic.PlaySpec> = when {
+            schedule.breakTrackId != null ->
+                library.trackById(schedule.breakTrackId)
+                    ?.takeIf { it.isAvailable }
+                    ?.let { listOf(BreaksLogic.PlaySpec(it.uri, it.title, it.id)) }
+                    ?: emptyList()
+            schedule.breakCategoryId != null ->
+                library.tracks.first()
+                    .filter { it.categoryId == schedule.breakCategoryId && it.isAvailable }
+                    .map { BreaksLogic.PlaySpec(it.uri, it.title, it.id) }
+            else -> emptyList()
+        }
+
+        // 3) بناء القائمة المتداخلة (فواصل بين الفقرات فقط، بلا تكرار مباشر)
+        val queue = BreaksLogic.buildQueue(
+            segments = segments,
+            config = BreaksLogic.BreakConfig(
+                enabled = schedule.breakEnabled,
+                trackId = schedule.breakTrackId,
+                categoryId = schedule.breakCategoryId
+            ),
+            breakPool = pool
+        )
+        if (queue.isEmpty()) return "لا يوجد محتوى قابل للتشغيل في «${schedule.name}»"
+
+        // 4) الإطلاق عبر البوابة الموحدة + شاشة العرض تعرض البرنامج كاملاً
+        playMainQueue(
+            queue.map { PlaybackConnection.QueueItem(it.uri, it.title, it.trackId) },
+            queueTag = "breaks:${schedule.id}"
+        )
+        setOnAir(
+            OnAirInfo(
+                eventId = events.first().id,
+                eventTitle = "برنامج: ${schedule.name}",
+                noteText = if (schedule.breakEnabled && pool.isNotEmpty())
+                    "تشغيل متواصل مع فواصل آلية بين الفقرات" else "تشغيل متواصل للفقرات",
+                imagePath = null
+            )
+        )
+        val breakNote = when {
+            !schedule.breakEnabled -> "بلا فواصل (معطّلة في إعداد الجدول)"
+            pool.isEmpty() -> "الفواصل مفعّلة لكن لا جينغل متاح — فحص إعداد الفواصل"
+            else -> "مع فواصل آلية بين الفقرات"
+        }
+        val skippedNote = if (skipped > 0) " • تخطيت $skipped فقرة بلا محتوى" else ""
+        return "انطلق «${schedule.name}» (${queue.size} مقطع) — $breakNote$skippedNote"
+    }
+
+    /** v0.12.0: تحليل محتوى فقرة إلى عناصر تشغيل — null إذا كان غير متاح */
+    private suspend fun resolveEventContent(e: ScheduledEventEntity): List<BreaksLogic.PlaySpec>? = when {
+        e.playlistId != null ->
+            playlists.resolvedTracks(e.playlistId)
+                .map { BreaksLogic.PlaySpec(it.uri, it.title, it.id) }
+                .takeIf { it.isNotEmpty() }
+        e.recordingId != null ->
+            recordingsRepo.byId(e.recordingId)
+                ?.takeIf { java.io.File(it.filePath).exists() }
+                ?.let { listOf(BreaksLogic.PlaySpec(it.filePath, it.title, it.id)) }
+        e.singleTrackId != null ->
+            library.trackById(e.singleTrackId)
+                ?.takeIf { it.isAvailable }
+                ?.let { listOf(BreaksLogic.PlaySpec(it.uri, it.title, it.id)) }
+        else -> null
     }
 
     fun init(context: Context) {

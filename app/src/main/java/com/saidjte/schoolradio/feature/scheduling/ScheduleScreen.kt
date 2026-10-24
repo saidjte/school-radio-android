@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -37,6 +40,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -67,6 +71,8 @@ import com.saidjte.schoolradio.core.ui.diagonalBrush
 import com.saidjte.schoolradio.core.util.EventContentAr
 import com.saidjte.schoolradio.core.util.ScheduleLogic
 import com.saidjte.schoolradio.core.util.SegmentImageStore
+import com.saidjte.schoolradio.data.local.entity.AudioTrackEntity
+import com.saidjte.schoolradio.data.local.entity.CategoryEntity
 import com.saidjte.schoolradio.data.local.entity.ExecutionStatus
 import com.saidjte.schoolradio.data.local.entity.RecordingEntity
 import com.saidjte.schoolradio.data.local.entity.RadioScheduleEntity
@@ -97,11 +103,15 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
     val executions by locator.schedules.recentExecutions.collectAsStateWithLifecycle(initialValue = emptyList())
     val playlists by locator.playlists.playlists.collectAsStateWithLifecycle(initialValue = emptyList())
     val tracks by locator.library.tracks.collectAsStateWithLifecycle(initialValue = emptyList())
+    // v0.12.0: التصنيفات — لأسماء مصادر جينغلات الفواصل
+    val categories by locator.library.categories.collectAsStateWithLifecycle(initialValue = emptyList())
     val recordings by locator.recordingsRepo.observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
 
     var creatingSchedule by remember { mutableStateOf(false) }
     var editingEvent by remember { mutableStateOf<EventEditorState?>(null) }
     var renamingSchedule by remember { mutableStateOf<RadioScheduleEntity?>(null) }
+    // v0.12.0: حوار إعداد الفواصل المجدولة لجدول ما
+    var editingBreaks by remember { mutableStateOf<RadioScheduleEntity?>(null) }
 
     // بوابة الأدوار (v0.3.0): تعديل الجدولة = معلم أو مشرف فقط
     val canManage by locator.session.canManage.collectAsStateWithLifecycle(initialValue = true)
@@ -219,45 +229,79 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
             // (Key was already used) بمجرد إضافة أول فقرة. بادئة نصية تفصل النطاقين.
             items(schedules, key = { "schedule-${it.id}" }) { s ->
                 Card(Modifier.fillMaxWidth()) {
-                    Row(
-                        Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(s.name, style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                "${events.count { it.scheduleId == s.id }} فقرة",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                    Column(Modifier.padding(12.dp)) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(s.name, style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    "${events.count { it.scheduleId == s.id }} فقرة",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = s.enabled,
+                                onCheckedChange = { on ->
+                                    scope.launch {
+                                        locator.schedules.setEnabled(s, on)
+                                        locator.rearmScheduleAlarms()
+                                        snackbar.showSnackbar(
+                                            if (on) "فُعّل الجدول وأُعيدت ضبط منبهاته"
+                                            else "عُطّل الجدول وأُلغيت منبهاته"
+                                        )
+                                    }
+                                }
                             )
-                        }
-                        Switch(
-                            checked = s.enabled,
-                            onCheckedChange = { on ->
-                                scope.launch {
-                                    locator.schedules.setEnabled(s, on)
-                                    locator.rearmScheduleAlarms()
-                                    snackbar.showSnackbar(
-                                        if (on) "فُعّل الجدول وأُعيدت ضبط منبهاته"
-                                        else "عُطّل الجدول وأُلغيت منبهاته"
-                                    )
-                                }
+                            IconButton(onClick = { requireManage { renamingSchedule = s } }) {
+                                Icon(Icons.Filled.Edit, "تعديل الاسم")
                             }
-                        )
-                        IconButton(onClick = { requireManage { renamingSchedule = s } }) {
-                            Icon(Icons.Filled.Edit, "تعديل الاسم")
-                        }
-                        IconButton(onClick = {
-                            requireManage {
-                                scope.launch {
-                                    // تنظيف صور فقرات الجدول قبل حذفها (لا صور يتيمة)
-                                    events.filter { it.scheduleId == s.id }
-                                        .forEach { SegmentImageStore.delete(it.imagePath) }
-                                    locator.schedules.deleteSchedule(s.id)
-                                    locator.rearmScheduleAlarms()
+                            IconButton(onClick = {
+                                requireManage {
+                                    scope.launch {
+                                        // تنظيف صور فقرات الجدول قبل حذفها (لا صور يتيمة)
+                                        events.filter { it.scheduleId == s.id }
+                                            .forEach { SegmentImageStore.delete(it.imagePath) }
+                                        locator.schedules.deleteSchedule(s.id)
+                                        locator.rearmScheduleAlarms()
+                                    }
                                 }
+                            }) { Icon(Icons.Filled.Delete, "حذف الجدول") }
+                        }
+                        // ===== v0.12.0: الفواصل المجدولة — إعداد الجينغل الآلي + التشغيل المتواصل =====
+                        Spacer(Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                AppIcons.MusicNote, null,
+                                tint = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                breaksSourceLabel(s, tracks, categories),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(onClick = { requireManage { editingBreaks = s } }) {
+                                Text("الفواصل")
                             }
-                        }) { Icon(Icons.Filled.Delete, "حذف الجدول") }
+                            TextButton(
+                                onClick = {
+                                    scope.launch {
+                                        snackbar.showSnackbar(locator.playScheduleWithBreaks(s))
+                                    }
+                                },
+                                enabled = events.any { it.scheduleId == s.id }
+                            ) {
+                                Icon(Icons.Filled.PlayArrow, null, Modifier.size(16.dp))
+                                Text(" تشغيل")
+                            }
+                        }
                     }
                 }
             }
@@ -429,6 +473,28 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
         )
     }
 
+    // ===== حوار إعداد الفواصل المجدولة (v0.12.0) =====
+    editingBreaks?.let { s ->
+        BreaksEditorDialog(
+            schedule = s,
+            tracks = tracks,
+            categories = categories,
+            onDismiss = { editingBreaks = null },
+            onSave = { enabled, trackId, categoryId ->
+                scope.launch {
+                    // نقرأ الجدول حديثاً — نسخة s قد تكون قديمة لو تغيرت حالة الجدول
+                    val fresh = locator.schedules.scheduleById(s.id) ?: s
+                    locator.schedules.setBreakConfig(fresh, enabled, trackId, categoryId)
+                    snackbar.showSnackbar(
+                        if (enabled) "فُعّلت الفواصل الآلية بين فقرات «${fresh.name}»"
+                        else "عُطّلت الفواصل في «${fresh.name}»"
+                    )
+                }
+                editingBreaks = null
+            }
+        )
+    }
+
     // ===== حوار إعادة تسمية جدول =====
     renamingSchedule?.let { s ->
         TextDialog(
@@ -457,6 +523,184 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
             creatingSchedule = false
         }
     }
+}
+
+/**
+ * v0.12.0 — وصف مصدر جينغلات الفواصل لبطاقة الجدول (سطر صغير تحت الاسم).
+ * يظهر اسم المقطع/التصنيف الفعلي — أو تعليلاً واضحاً إذا حُذف المصدر.
+ */
+internal fun breaksSourceLabel(
+    schedule: RadioScheduleEntity,
+    tracks: List<AudioTrackEntity>,
+    categories: List<CategoryEntity>
+): String = when {
+    !schedule.breakEnabled -> "الفواصل بين الفقرات: معطّلة"
+    schedule.breakTrackId != null ->
+        "الفواصل: جينغل «${tracks.firstOrNull { it.id == schedule.breakTrackId }?.title ?: "مقطع محذوف"}»"
+    schedule.breakCategoryId != null ->
+        "الفواصل: عشوائي من «${
+            categories.firstOrNull { it.id == schedule.breakCategoryId }?.name ?: "تصنيف محذوف"
+        }»"
+    else -> "الفواصل: مفعّلة بلا جينغل — اختر المصدر"
+}
+
+/**
+ * v0.12.0 — حوار إعداد الفواصل المجدولة لجدول:
+ *  - مفتاح تفعيل الفواصل الآلية بين فقرات هذا الجدول.
+ *  - نمطان لمصدر الجينغل: مقطع محدد من المكتبة (يناسب هوية البرنامج الثابتة)
+ *    أو اختيار عشوائي من تصنيف كامل (يناسب تجمعات جينغلات الانتقال) —
+ *    الاختيار العشوائي يستبعد التكرار المباشر تلقائياً.
+ */
+@Composable
+private fun BreaksEditorDialog(
+    schedule: RadioScheduleEntity,
+    tracks: List<AudioTrackEntity>,
+    categories: List<CategoryEntity>,
+    onDismiss: () -> Unit,
+    onSave: (enabled: Boolean, trackId: Long?, categoryId: Long?) -> Unit
+) {
+    var enabled by remember { mutableStateOf(schedule.breakEnabled) }
+    // نمط المصدر — يُستنتج من الإعداد الحالي (افتراضي المقطع المحدد)
+    var modeIsTrack by remember { mutableStateOf(schedule.breakCategoryId == null) }
+    var selectedTrackId by remember { mutableStateOf(schedule.breakTrackId) }
+    var selectedCategoryId by remember { mutableStateOf(schedule.breakCategoryId) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("الفواصل المجدولة") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    "جينغة انتقال تنطلق آلياً بين فقرات «${schedule.name}»: " +
+                        "في زر «تشغيل» المتواصل، وبعد كل فقرة مجدولة إن وُجدت فقرة تالية اليوم.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(checked = enabled, onCheckedChange = { enabled = it })
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        "فواصل آلية بين الفقرات",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { enabled = !enabled }
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = modeIsTrack,
+                        onClick = { modeIsTrack = true },
+                        label = { Text("جينغل محدد") }
+                    )
+                    FilterChip(
+                        selected = !modeIsTrack,
+                        onClick = { modeIsTrack = false },
+                        label = { Text("عشوائي من تصنيف") }
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                if (modeIsTrack) {
+                    if (tracks.isEmpty()) {
+                        Text(
+                            "المكتبة فارغة — استورد جينغلات الانتقال من المكتبة أولاً",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    } else {
+                        Column(Modifier.heightIn(max = 260.dp)) {
+                            tracks.forEach { t ->
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clickable { selectedTrackId = t.id }
+                                        .padding(vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(
+                                        selected = selectedTrackId == t.id,
+                                        onClick = { selectedTrackId = t.id }
+                                    )
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            t.title,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        if (!t.isAvailable) {
+                                            Text(
+                                                "غير متاح حالياً على الجهاز",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.error
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    if (categories.isEmpty()) {
+                        Text(
+                            "لا تصنيفات بعد — أنشئ تصنيف «جينغلات» من المكتبة أولاً",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    } else {
+                        Column(Modifier.heightIn(max = 260.dp)) {
+                            categories.forEach { c ->
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clickable { selectedCategoryId = c.id }
+                                        .padding(vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(
+                                        selected = selectedCategoryId == c.id,
+                                        onClick = { selectedCategoryId = c.id }
+                                    )
+                                    Text(
+                                        c.name,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                if (enabled && modeIsTrack && selectedTrackId == null) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "اختر مقطعاً لتكون الفواصل فعّالة عند الحفظ",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    // الحفظ يفعّل الفواصل فقط إذا كان المصدر محدداً فعلاً — لا إعداد نصف مكتمل
+                    val sourceReady =
+                        if (modeIsTrack) selectedTrackId != null else selectedCategoryId != null
+                    onSave(
+                        enabled && sourceReady,
+                        if (modeIsTrack) selectedTrackId else null,
+                        if (modeIsTrack) null else selectedCategoryId
+                    )
+                }
+            ) { Text("حفظ") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("إلغاء") }
+        }
+    )
 }
 
 /** حالة محرر الفقرة (جديد أو موجود) */

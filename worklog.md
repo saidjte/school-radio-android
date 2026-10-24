@@ -502,3 +502,28 @@ ScheduleScreen تعرض جدولين وأحداثاً في LazyColumn واحد �
 ### الحالة
 - محلياً: compileDebugKotlin + 39 اختبار + assembleDebug — SchoolRadio_v0.11.0.apk (16.9MB)
 - CI + Release: انظر التسليم أدناه
+
+---
+
+## v0.12.0 — الفواصل المجدولة Breaks + موجة التسجيل الحية (versionCode 13)
+
+### الميزة 1: الفواصل المجدولة (إدراج جينغل آلي بين الفقرات)
+- `core/util/BreaksLogic.kt` جديد: منطق صافي قابل للاختبار — buildQueue (فقرة←جينغل←فقرة، بلا فاصل بعد الختام ولا فاصل يتيم)، pickNoRepeat (لا تكرار مباشر)، hasNextSegmentToday (قرار الفاصل بعد فقرة مجدولة).
+- DB v4: أعمدة break_enabled/break_track_id/break_category_id على radio_schedules (FK SET_NULL + فهارس) — ترحيل MIGRATION_3_4 صريح + schema 4.json.
+- AlarmReceiver: بعد STATE_ENDED لفقرة مجدولة يُقرأ إعداد الجدول → جينغة انتقال آلية على نفس المشغل + شاشة العرض تعرض «فاصل بين الفقرات» ثم تُخلّى — والملاحظة تدخل في سجل التنفيذ.
+- ServiceLocator.playScheduleWithBreaks: زر «تشغيل» في بطاقة كل جدول — يبني قائمة متواصلة (فقرة/جينغل) عبر البوابة الموحدة (حَكَم + ducking كاملان).
+- ScheduleScreen: صف الفواصل في بطاقة الجدول (وصف المصدر الحي) + BreaksEditorDialog (مفتاح + مقطع محدد/عشوائي من تصنيف).
+
+### الميزة 2: موجة التسجيل الحية
+- RecordingManager: recordLevel StateFlow — RMS دفعات PCM المرسلة للكاتب فعلاً (PTT عبر feedLivePcm + MEMO من خيط الفقرة) مع تصفير عند البدء/الإيقاف.
+- `core/util/WaveformLogic.kt`: قصّ أرضية ضجيج + منحنى جذري إدراكي + تنعيم هبوطي + نافذة منزلقة 64 عموداً.
+- `core/ui/LiveWaveform.kt` جديد: Canvas أعمدة متماثلة حول خط وسط، الأحدث يساراً (RTL)، تلاشٍ نحو التاريخ، معاينة 22fps مستقلة عن وتيرة الصوت.
+- الدمج: بطاقة البث في الرئيسية (ما يُسجل/الميكروفون الحي) + شاشة العرض OnAir (شريط «الميكروفون مباشر» + نبض الموسيقى تحت شريط التقدم — يجعل الفواصل مرئية).
+
+### الجودة
+- اختبارات جديدة: BreaksLogicTest (14) + WaveformLogicTest (7) → 69 اختباراً كاملة، 0 إخفاق.
+- محلياً: compileDebugKotlin + testDebugUnitTest + assembleDebug — SchoolRadio_v0.12.0.apk (17.0MB ديباغي).
+- بيئة: init.gradle بنمط settingsEvaluated (حقن على مستوى الإعدادات يوافق FAIL_ON_PROJECT_REPOS) — Tencent أولاً (Aliyun 502 مؤقتاً) — محلي فقط.
+
+### ما بعد الإصدار (مرشح v0.13.0)
+- مشاركة/تصدير التسجيلات، ربط السكربت بالفقرة المجدولة، مؤقت تنازلي للفقرة على شاشة العرض.

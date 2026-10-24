@@ -10,13 +10,16 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
 import com.saidjte.schoolradio.audio.PlaybackConnection
 import com.saidjte.schoolradio.audio.PlaybackService
+import com.saidjte.schoolradio.core.util.BreaksLogic
 import com.saidjte.schoolradio.core.util.ScheduleLogic
 import com.saidjte.schoolradio.data.local.entity.ExecutionStatus
+import com.saidjte.schoolradio.data.local.entity.ScheduledEventEntity
 import com.saidjte.schoolradio.di.OnAirInfo
 import com.saidjte.schoolradio.di.ServiceLocator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -128,7 +131,7 @@ class AlarmReceiver : BroadcastReceiver() {
                             imagePath = event.imagePath
                         )
                     )
-                    watchCompletion(controller, eventId, dateKey)
+                    watchCompletion(controller, event, dateKey)
                 } catch (e: Exception) {
                     CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
                         ServiceLocator.schedules.markStatus(
@@ -142,25 +145,113 @@ class AlarmReceiver : BroadcastReceiver() {
     }
 
     /**
-     * ===== 4) مراقبة النهاية لتوثيق النتيجة ثم تحرير المتحكم =====
+     * ===== 4) مراقبة النهاية لتوثيق النتيجة ثم الفاصل الآلي =====
      *
      * إصلاح v0.8.0: كان isLastItem يُحسب مرة واحدة عند التسجيل (قبل أي انتقال بين
      * المقاطع، الفهرس لا يزال 0) فلا تُوثّق أي فقرة متعددة المقاطع كـ COMPLETED أبداً.
      * الصحيح: STATE_ENDED لا يُطلق إلا عند نهاية القائمة *كاملة* — دليل الإكمال بذاته.
+     *
+     * v0.12.0 — الفواصل المجدولة: بعد توثيق الإكمال يُفحص إعداد فواصل الجدول،
+     * فإن وُجد جينغل ووُجدت فقرة تالية اليوم انطلق الفاصل آلياً على نفس المشغل
+     * (نمط الأتمتة الإذاعية: فقرة ← جينغة انتقال ← فقرة) ثم تُخلّى شاشة العرض.
      */
-    private fun watchCompletion(controller: MediaController, eventId: Long, dateKey: String) {
+    private fun watchCompletion(controller: MediaController, event: ScheduledEventEntity, dateKey: String) {
+        controller.addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_ENDED) {
+                    controller.removeListener(this)
+                    CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+                        // v0.12.0: قرار الفاصل قبل التوثيق ليدخل في الملاحظة
+                        val brk = runCatching { resolveScheduledBreak(event) }.getOrNull()
+                        ServiceLocator.schedules.markStatus(
+                            event.id, dateKey, ExecutionStatus.COMPLETED,
+                            if (brk != null) "شُغّلت كاملة • انطلق الفاصل الآلي" else "شُغّلت كاملة"
+                        )
+                        if (brk == null) {
+                            withContext(Dispatchers.Main) { controller.release() }
+                            // انتهت الفقرة (ولا فاصل) — شاشة العرض تعود إلى الوضع الخامل
+                            ServiceLocator.setOnAir(null)
+                        } else {
+                            withContext(Dispatchers.Main) { playBreak(controller, event, brk) }
+                        }
+                    }
+                }
+            }
+        })
+    }
+
+    /**
+     * v0.12.0 — قراءة إعداد الفواصل واختيار جينغل الفاصل إن وُجد.
+     * يعود null في كل حالات «لا فاصل»: تعطيل الخاصية، لا فقرة تالية اليوم،
+     * أو تعذر توفير جينغل (مقطع محذوف/تصنيف فارغ) — فيبقى السلوك القديم بلا أي عطل.
+     */
+    private suspend fun resolveScheduledBreak(event: ScheduledEventEntity): PlaybackConnection.QueueItem? {
+        val locator = ServiceLocator
+        val schedule = locator.schedules.scheduleById(event.scheduleId) ?: return null
+        if (!schedule.breakEnabled) return null
+        val now = System.currentTimeMillis()
+        // فاصل «بين» الفقرات فقط: يجب وجود فقرة لاحقة اليوم لنفس الجدول
+        val hasMore = BreaksLogic.hasNextSegmentToday(
+            locator.schedules.allEvents()
+                .filter { it.scheduleId == schedule.id }
+                .map { BreaksLogic.EventTiming(it.id, it.startMinutes, it.weekDaysMask) },
+            currentEventId = event.id,
+            dayBit = ScheduleLogic.dayBitOf(now),
+            minutesNow = ScheduleLogic.minutesOfDay(now)
+        )
+        if (!hasMore) return null
+        // تجميع تجمع الجينغلات: مقطع محدد أو تصنيف كامل (المتاح فقط)
+        val pool: List<BreaksLogic.PlaySpec> = when {
+            schedule.breakTrackId != null ->
+                locator.library.trackById(schedule.breakTrackId)
+                    ?.takeIf { it.isAvailable }
+                    ?.let { listOf(BreaksLogic.PlaySpec(it.uri, it.title, it.id)) }
+                    ?: emptyList()
+            schedule.breakCategoryId != null ->
+                locator.library.tracks.first()
+                    .filter { it.categoryId == schedule.breakCategoryId && it.isAvailable }
+                    .map { BreaksLogic.PlaySpec(it.uri, it.title, it.id) }
+            else -> emptyList()
+        }
+        val spec = BreaksLogic.resolveBreakSpec(
+            BreaksLogic.BreakConfig(
+                enabled = true,
+                trackId = schedule.breakTrackId,
+                categoryId = schedule.breakCategoryId
+            ),
+            pool
+        ) ?: return null
+        return PlaybackConnection.QueueItem(spec.uri, spec.title, spec.trackId)
+    }
+
+    /**
+     * v0.12.0 — تشغيل الفاصل على نفس المشغل (يجب استدعاؤه من الخيط الرئيسي):
+     * تُبقى شاشة العرض حية بعبارة «فاصل بين الفقرات» واسم الجينغل،
+     * وبعد انتهائه يُحرّر المتحكم وتعود الشاشة إلى ساعة الخمول.
+     */
+    private fun playBreak(
+        controller: MediaController,
+        event: ScheduledEventEntity,
+        brk: PlaybackConnection.QueueItem
+    ) {
+        controller.setMediaItems(listOf(brk.toMediaItem()))
+        controller.repeatMode = Player.REPEAT_MODE_OFF
+        controller.prepare()
+        controller.play()
+        ServiceLocator.setOnAir(
+            OnAirInfo(
+                eventId = event.id,
+                eventTitle = "فاصل بين الفقرات",
+                noteText = brk.title,
+                imagePath = null
+            )
+        )
         controller.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_ENDED) {
                     controller.removeListener(this)
                     controller.release()
-                    CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-                        ServiceLocator.schedules.markStatus(
-                            eventId, dateKey, ExecutionStatus.COMPLETED, "شُغّلت كاملة"
-                        )
-                        // انتهت الفقرة — شاشة العرض تعود إلى الوضع الخامل
-                        ServiceLocator.setOnAir(null)
-                    }
+                    ServiceLocator.setOnAir(null)
                 }
             }
         })
