@@ -173,6 +173,25 @@ object ServiceLocator {
         _teleprompterScript.value = script
     }
 
+    // ===== v0.10.0: مسار إخراج البث المختار — حالة مشتركة بين الرئيسية وقارئ السكربت =====
+    // كان مسار الإخراج حالة محلية في شاشة الرئيسية، فلم يستطع زر الاختصار العائم
+    // في قارئ السكربت (أو أي شاشة أخرى) معرفة المسار المختار — صار الآن مركزياً.
+    private val _broadcastRoute = MutableStateFlow(AudioRoutingManager.Route.SPEAKER)
+    val broadcastRoute: StateFlow<AudioRoutingManager.Route> = _broadcastRoute.asStateFlow()
+
+    fun setBroadcastRoute(route: AudioRoutingManager.Route) { _broadcastRoute.value = route }
+
+    /**
+     * v0.10.0: بدء البث المباشر من أي شاشة بالمسار المشترك — الواجهة المشتركة
+     * (زر الاختصار العائم وغيره) تستدعي هذا بدل تكرار منطق الصلاحية والمسار.
+     * @return false إذا كانت الصلاحية غير ممنوحة (تتولى الشاشة المستدعية طلبها)
+     */
+    fun startMicBroadcast(onResult: (String?) -> Unit): Boolean {
+        if (!mic.hasPermission()) return false
+        mic.start(_broadcastRoute.value, onResult)
+        return true
+    }
+
     private val _micLive = MutableStateFlow(false)
     val micLive: StateFlow<Boolean> = _micLive.asStateFlow()
 
@@ -234,21 +253,19 @@ object ServiceLocator {
     /**
      * بوابة معاينة التسجيلات — كل الشاشات تستدعي هذه بدل recordingsPlayer مباشرة.
      * تمر عبر الحَكَم (توقف مؤقت للقائمة الرئيسية إن كانت تعمل) وتُرجع رسالة
-     * عربية جاهزة للعرض إذا منع البدء (البث المباشر يعمل)، أو null عند النجاح.
+     * عربية جاهزة للعرض إذا منع البدء (البث المباشر يعمل أو الملف مفقود)،
+     * أو null عند النجاح.
      */
     fun previewToggle(recording: com.saidjte.schoolradio.data.local.entity.RecordingEntity): String? {
         val currentId = recordingsPlayer.state.value.recordingId
         val sameRecording = currentId == recording.id
         if (sameRecording) {
             // تبديل تشغيل/إيقاف لنفس التسجيل — لا قرار عزلة جديد
-            recordingsPlayer.toggle(recording)
-            return null
+            // v0.10.0: تمرير رسالة فشل (مثل ملف مفقود) إلى الواجهة بدل الصمت
+            return recordingsPlayer.toggle(recording)
         }
         return when (coordinator.requestPreviewStart()) {
-            PlaybackCoordinator.PreviewDecision.OK -> {
-                recordingsPlayer.toggle(recording)
-                null
-            }
+            PlaybackCoordinator.PreviewDecision.OK -> recordingsPlayer.toggle(recording)
             PlaybackCoordinator.PreviewDecision.BLOCKED_LIVE ->
                 "أوقف البث المباشر أولاً للاستماع إلى التسجيل — لا يجوز خلطهما"
         }

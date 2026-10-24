@@ -125,7 +125,7 @@ fun RecordingsScreen(
         }
     val totalBytes = recordings.sumOf { it.sizeBytes }
 
-    /** فتح/إغلاق معاينة عبر الحَكَم الموحّد — الرسائل المنعِقة تظهر كـ snackbar */
+    /** فتح/إغلاق معاينة عبر الحَكَم الموحّد — الرسائل المنعِقة (بث يعمل/ملف مفقود) تظهر snackbar */
     fun togglePreview(rec: RecordingEntity) {
         locator.previewToggle(rec)?.let { msg ->
             scope.launch { snackbar.showSnackbar(msg) }
@@ -208,6 +208,8 @@ fun RecordingsScreen(
             val currentRec = remember(
                 playback.recordingId, recordings
             ) { recordings.firstOrNull { it.id == playback.recordingId } }
+            // v0.10.0: موقع التسجيل الحالي داخل القائمة المرئية — للسابق/التالي والعدّاد
+            val visibleIndex = currentRec?.let { visible.indexOfFirst { r -> r.id == it.id } } ?: -1
 
             LazyColumn(
                 Modifier.weight(1f),
@@ -245,11 +247,15 @@ fun RecordingsScreen(
                 item { Spacer(Modifier.height(12.dp)) }
             }
 
-            // ===== v0.9.0: مشغل التسجيلات المثبّت — تقديم ±15ث + سرعة + تقدم كامل =====
+            // ===== v0.10.0: مشغل التسجيلات المثبّت — سابق/تالي + ±15ث + سرعة + تقدم كامل =====
             if (currentRec != null) {
                 RecordingsMiniPlayer(
                     state = playback,
                     title = currentRec.title,
+                    positionText = if (visibleIndex >= 0 && visible.isNotEmpty())
+                        "${visibleIndex + 1} من ${visible.size}" else null,
+                    canGoPrevious = visibleIndex > 0,
+                    canGoNext = visibleIndex in 0 until visible.size - 1,
                     onToggle = { togglePreview(currentRec) },
                     onStop = {
                         locator.recordingsPlayer.stopAll()
@@ -257,7 +263,15 @@ fun RecordingsScreen(
                     },
                     onSeek = { ms -> locator.recordingsPlayer.seekTo(ms) },
                     onSkip = { delta -> locator.recordingsPlayer.skipBy(delta) },
-                    onSpeed = { speed -> locator.recordingsPlayer.setSpeed(speed) }
+                    onSpeed = { speed -> locator.recordingsPlayer.setSpeed(speed) },
+                    // v0.10.0: التنقل بين التسجيلات من المشغل نفسه — بلا عودة للقائمة
+                    onPrevious = {
+                        if (visibleIndex > 0) togglePreview(visible[visibleIndex - 1])
+                    },
+                    onNext = {
+                        if (visibleIndex in 0 until visible.size - 1)
+                            togglePreview(visible[visibleIndex + 1])
+                    }
                 )
             }
         }
@@ -301,19 +315,25 @@ fun RecordingsScreen(
 }
 
 /**
- * v0.9.0: مشغل التسجيلات المثبّت أسفل الأرشيف — أداة احترافية كاملة:
- * تشغيل/إيقاف، شريط تقدم تفاعلي، قفزات ±15 ثانية، وسرعات تشغيل (0.75× حتى 2×).
+ * v0.10.0: مشغل التسجيلات المثبّت أسفل الأرشيف — أداة احترافية كاملة:
+ * تشغيل/إيقاف، شريط تقدم تفاعلي، قفزات ±15 ثانية، سرعات تشغيل (0.75× حتى 2×)،
+ * وتنقّل سابق/تالي بين تسجيلات القائمة المرئية مع عدّاد الموضع (3 من 12).
  * يظهر فقط عند وجود تسجيل مختار ويبقى ثابتاً أثناء تمرير القائمة.
  */
 @Composable
 private fun RecordingsMiniPlayer(
     state: RecordingsPlayer.State,
     title: String,
+    positionText: String? = null,
+    canGoPrevious: Boolean = false,
+    canGoNext: Boolean = false,
     onToggle: () -> Unit,
     onStop: () -> Unit,
     onSeek: (Long) -> Unit,
     onSkip: (Long) -> Unit,
-    onSpeed: (Float) -> Unit
+    onSpeed: (Float) -> Unit,
+    onPrevious: () -> Unit = {},
+    onNext: () -> Unit = {}
 ) {
     val isPlaying = state.isPlaying
     Surface(
@@ -346,7 +366,8 @@ private fun RecordingsMiniPlayer(
                     )
                     Text(
                         "${RecordingLogic.formatElapsed(state.positionMs)} / " +
-                            RecordingLogic.formatElapsed(state.durationMs),
+                            RecordingLogic.formatElapsed(state.durationMs) +
+                            (positionText?.let { "  •  $it" } ?: ""),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -371,6 +392,14 @@ private fun RecordingsMiniPlayer(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                // v0.10.0: التسجيل السابق في القائمة المرئية
+                FilledTonalIconButton(
+                    onClick = onPrevious,
+                    enabled = canGoPrevious,
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Icon(AppIcons.SkipPrevious, "التسجيل السابق", Modifier.size(20.dp))
+                }
                 // قفزة للخلف 15 ثانية
                 FilledTonalIconButton(
                     onClick = { onSkip(-15_000L) },
@@ -385,8 +414,27 @@ private fun RecordingsMiniPlayer(
                 ) {
                     Text("+15ث", fontSize = 11.sp)
                 }
-                Spacer(Modifier.weight(1f))
-                // سرعات التشغيل
+                // v0.10.0: التسجيل التالي في القائمة المرئية
+                FilledTonalIconButton(
+                    onClick = onNext,
+                    enabled = canGoNext,
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Icon(AppIcons.SkipNext, "التسجيل التالي", Modifier.size(20.dp))
+                }
+            }
+
+            // سرعات التشغيل — صف مستقل كي لا يتكدس السطر أعلاه على الشاشات الضيقة
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(top = 4.dp)
+            ) {
+                Text(
+                    "السرعة:",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 listOf(0.75f, 1f, 1.5f, 2f).forEach { s ->
                     FilterChip(
                         selected = kotlin.math.abs(state.speed - s) < 0.02f,

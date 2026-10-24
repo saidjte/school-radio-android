@@ -32,7 +32,9 @@ data class AppSettings(
     val eqGains: String = "",              // كسب الشرائح بالديسيبل مفصولاً بـ | (مثل "0.0|1.5|-2.0")
     val bassStrength: Float = 0f,          // تعزيز الباص 0..1
     val virtStrength: Float = 0f,          // المؤثر المحيطي 0..1
-    val micGain: Float = 1.0f              // كسب الميكروفون 0..2 (فيدر الميكسر)
+    val micGain: Float = 1.0f,             // كسب الميكروفون 0..2 (فيدر الميكسر)
+    // v0.10.0: نمط البث — "HOLD" استمرار للبث / "TOGGLE" ضغطة للبدء والإنهاء
+    val micMode: String = "TOGGLE"
 )
 
 /**
@@ -58,6 +60,8 @@ class SettingsStore(private val context: Context) {
         val BASS_STRENGTH = floatPreferencesKey("bass_strength")
         val VIRT_STRENGTH = floatPreferencesKey("virt_strength")
         val MIC_GAIN = floatPreferencesKey("mic_gain")
+        // v0.10.0: نمط تشغيل الميكروفون في البث المباشر
+        val MIC_MODE = stringPreferencesKey("mic_mode")
     }
 
     /** معرف المستخدم الحالي (لتوليفه مع جدول users في SessionRepository) */
@@ -79,7 +83,8 @@ class SettingsStore(private val context: Context) {
             eqGains = p[Keys.EQ_GAINS] ?: "",
             bassStrength = p[Keys.BASS_STRENGTH] ?: 0f,
             virtStrength = p[Keys.VIRT_STRENGTH] ?: 0f,
-            micGain = p[Keys.MIC_GAIN] ?: 1.0f
+            micGain = p[Keys.MIC_GAIN] ?: 1.0f,
+            micMode = p[Keys.MIC_MODE] ?: "TOGGLE"
         )
     }
 
@@ -108,4 +113,7 @@ class SettingsStore(private val context: Context) {
     suspend fun setBassStrength(v: Float) = context.dataStore.edit { it[Keys.BASS_STRENGTH] = v }
     suspend fun setVirtStrength(v: Float) = context.dataStore.edit { it[Keys.VIRT_STRENGTH] = v }
     suspend fun setMicGain(v: Float) = context.dataStore.edit { it[Keys.MIC_GAIN] = v.coerceIn(0f, 2f) }
+
+    /** v0.10.0: حفظ نمط البث المختار (HOLD/TOGGLE) */
+    suspend fun setMicMode(v: String) = context.dataStore.edit { it[Keys.MIC_MODE] = v }
 }

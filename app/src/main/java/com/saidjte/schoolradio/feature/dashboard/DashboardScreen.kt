@@ -166,7 +166,14 @@ fun DashboardScreen(
         animationSpec = tween(90),
         label = "mic-level-smooth"
     )
-    var route by remember { mutableStateOf(AudioRoutingManager.Route.SPEAKER) }
+    // v0.10.0: المسار المشترك مركزياً — الرئيسية وقارئ السكربت يتقاسمان نفس الاختيار
+    val route by locator.broadcastRoute.collectAsStateWithLifecycle()
+    // v0.10.0: نمط البث (استمرار / ضغطة) محفوظ في الإعدادات
+    val settingsState by locator.settings.settings
+        .collectAsStateWithLifecycle(initialValue = com.saidjte.schoolradio.data.settings.AppSettings())
+    val micMode = remember(settingsState.micMode) {
+        com.saidjte.schoolradio.audio.MicMode.from(settingsState.micMode)
+    }
 
     // حالة التسجيل — مؤقّت + وضع + نشاط
     val recActive by locator.recordings.isRecording.collectAsStateWithLifecycle()
@@ -385,7 +392,13 @@ fun DashboardScreen(
                 recActive = recActive,
                 recElapsed = recElapsed,
                 recMode = recMode,
-                onRouteChange = { route = it },
+                micMode = micMode,
+                onRouteChange = { locator.setBroadcastRoute(it) },
+                onMicModeChange = { mode ->
+                    scope.launch {
+                        locator.settings.setMicMode(mode.name)
+                    }
+                },
                 onTalkStart = {
                     if (mic.hasPermission()) {
                         mic.start(route) { err -> err?.let { m -> scope.launch { snackbar.showSnackbar(m) } } }
@@ -725,6 +738,13 @@ private fun EventRow(
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
+/**
+ * بطاقة البث المباشر (v0.10.0 — دعم نمطي التشغيل):
+ *  - HOLD «استمرار للبث»: الضغط بالاستمرار يفتح الهواء وتحريره يغلقه (نمط PTT الاستوديو)
+ *  - TOGGLE «ضغطة للبدء»: ضغطة تفتح وضغطة تالية تغلق — الأنسب أثناء قراءة السكربت
+ * النمط يُختار من الشريحة العلوية للبطاقة ويُحفظ في الإعدادات، والزر يتكيّف معه
+ * بالتلميح والسلوك معاً — سلاسة البدء/الإيقاف نفسها (تلاشي صوتي + آلة حالات).
+ */
 private fun LiveBroadcastCard(
     isLive: Boolean,
     phase: MicPhase,
@@ -734,7 +754,9 @@ private fun LiveBroadcastCard(
     recActive: Boolean,
     recElapsed: Long,
     recMode: com.saidjte.schoolradio.data.local.entity.RecordingSource?,
+    micMode: com.saidjte.schoolradio.audio.MicMode,
     onRouteChange: (AudioRoutingManager.Route) -> Unit,
+    onMicModeChange: (com.saidjte.schoolradio.audio.MicMode) -> Unit,
     onTalkStart: () -> Unit,
     onTalkEnd: () -> Unit,
     onRecordToggle: () -> Unit
@@ -781,8 +803,23 @@ private fun LiveBroadcastCard(
                     )
                 }
             }
+
+            // ===== v0.10.0: منتقي نمط البث — استمرار (PTT) أو ضغطة (Toggle) =====
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(top = 6.dp)
+            ) {
+                com.saidjte.schoolradio.audio.MicMode.entries.forEach { mode ->
+                    FilterChip(
+                        selected = micMode == mode,
+                        onClick = { onMicModeChange(mode) },
+                        label = { Text(mode.labelAr, style = MaterialTheme.typography.labelMedium) }
+                    )
+                }
+            }
             Text(
-                "اضغط مع الاستمرار للتحدث — حرّر للإنهاء (تُخفَّض الموسيقى تلقائياً)",
+                micMode.hintAr + " (تُخفَّض الموسيقى تلقائياً)",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -816,6 +853,7 @@ private fun LiveBroadcastCard(
                 val talkStart by rememberUpdatedState(onTalkStart)
                 val talkEnd by rememberUpdatedState(onTalkEnd)
                 val phaseRef by rememberUpdatedState(phase)
+                val modeRef by rememberUpdatedState(micMode)
                 Surface(
                     modifier = Modifier
                         .size(96.dp)
@@ -823,14 +861,33 @@ private fun LiveBroadcastCard(
                             detectTapGestures(
                                 onPress = {
                                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    if (phaseRef == MicPhase.IDLE) talkStart()
-                                    try { awaitRelease() } finally {
-                                        // حرر الإصبع أثناء البث أو حتى أثناء البدء؟ أوقف بأمان —
-                                        // آلة الحالات تعالج «الإيقاف أثناء البدء» بلا تسريب
-                                        val p = phaseRef
-                                        if (p == MicPhase.LIVE || p == MicPhase.STARTING) {
-                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            talkEnd()
+                                    when (modeRef) {
+                                        // نمط الاستوديو: بثّ ما دام الإصبع مضغوطاً
+                                        com.saidjte.schoolradio.audio.MicMode.HOLD -> {
+                                            if (phaseRef == MicPhase.IDLE) talkStart()
+                                            try { awaitRelease() } finally {
+                                                // حرر الإصبع أثناء البث أو حتى أثناء البدء؟ أوقف بأمان —
+                                                // آلة الحالات تعالج «الإيقاف أثناء البدء» بلا تسريب
+                                                val p = phaseRef
+                                                if (p == MicPhase.LIVE || p == MicPhase.STARTING) {
+                                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    talkEnd()
+                                                }
+                                            }
+                                        }
+                                        // نمط القراءة الطويلة: ضغطة تبدأ وضغطة تالية تنهي
+                                        com.saidjte.schoolradio.audio.MicMode.TOGGLE -> {
+                                            try { awaitRelease() } finally {
+                                                // نفّذ عند رفع الإصبع حتى لا يُحتسب ضغطاً مزدوجاً
+                                                val p = phaseRef
+                                                if (p == MicPhase.IDLE) {
+                                                    talkStart()
+                                                } else if (p == MicPhase.LIVE) {
+                                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    talkEnd()
+                                                }
+                                                // STARTING/STOPPING: تجاهل — آلة الحالات تُكمل ثم نقرر لاحقاً
+                                            }
                                         }
                                     }
                                 }
@@ -867,7 +924,9 @@ private fun LiveBroadcastCard(
                                     modifier = Modifier.size(26.dp)
                                 )
                                 Text(
-                                    if (isLive) "تُبثّ الآن" else "اضغط\nللتحدث",
+                                    if (isLive) "تُبثّ الآن — اضغط للإنهاء"
+                                    else if (micMode == com.saidjte.schoolradio.audio.MicMode.HOLD) "اضغط\nواستمر"
+                                    else "اضغط للبدء",
                                     color = Color.White,
                                     style = MaterialTheme.typography.titleSmall,
                                     textAlign = TextAlign.Center

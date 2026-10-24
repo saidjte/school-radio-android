@@ -6,6 +6,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -85,6 +88,9 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
     var editing by remember { mutableStateOf<AudioTrackEntity?>(null) }
     var relinking by remember { mutableStateOf<AudioTrackEntity?>(null) }
     var categoryMenuOpen by remember { mutableStateOf(false) }
+    // v0.10.0: إدارة التصنيفات — إضافة سريعة + حوار إدارة كامل
+    var addCategoryOpen by remember { mutableStateOf(false) }
+    var manageCategoriesOpen by remember { mutableStateOf(false) }
 
     // استيراد ملفات متعددة من المستندات (بلا صلاحيات تخزين شامل)
     val importLauncher = rememberLauncherForActivityResult(
@@ -147,7 +153,7 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                 shape = MaterialTheme.shapes.medium
             )
 
-            // ===== شريط التصنيفات =====
+            // ===== شريط التصنيفات (v0.10.0: مع رقاقة إضافة جديدة + زر إدارة) =====
             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 item {
                     FilterChip(
@@ -165,6 +171,25 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                         label = { Text(c.name) }
                     )
                 }
+                // v0.10.0: رقاقة «+» سريعة — إضافة تصنيف جديد من مكان العرض نفسه
+                item {
+                    FilterChip(
+                        selected = false,
+                        onClick = { addCategoryOpen = true },
+                        label = { Text("+ تصنيف") },
+                        leadingIcon = {
+                            Icon(Icons.Filled.Add, "إضافة تصنيف جديد", Modifier.size(16.dp))
+                        }
+                    )
+                }
+            }
+            // v0.10.0: زر إدارة التصنيفات — إعادة تسمية وحذف بعدد المقاطع لكل تصنيف
+            TextButton(
+                onClick = { manageCategoriesOpen = true },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+            ) {
+                Icon(Icons.Filled.Edit, null, Modifier.size(15.dp))
+                Text("إدارة التصنيفات", style = MaterialTheme.typography.labelMedium)
             }
 
             val visible = filtered.filter {
@@ -251,6 +276,50 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                     snackbar.showSnackbar("حُدّث المقطع")
                 }
                 editing = null
+            }
+        )
+    }
+
+    // ===== v0.10.0: إضافة تصنيف سريعة من رقاقة «+» =====
+    if (addCategoryOpen) {
+        AddCategoryDialog(
+            onDismiss = { addCategoryOpen = false },
+            onConfirm = { name ->
+                scope.launch {
+                    val err = locator.library.addCategory(name)
+                    snackbar.showSnackbar(err ?: "أُضيف التصنيف «${name.trim()}»")
+                }
+                addCategoryOpen = false
+            }
+        )
+    }
+
+    // ===== v0.10.0: إدارة التصنيفات الكاملة (تسمية/حذف/إضافة بعدد المقاطع) =====
+    if (manageCategoriesOpen) {
+        ManageCategoriesDialog(
+            onDismiss = { manageCategoriesOpen = false },
+            onAdd = { name, onDone ->
+                scope.launch {
+                    val err = locator.library.addCategory(name)
+                    snackbar.showSnackbar(err ?: "أُضيف التصنيف «${name.trim()}»")
+                    onDone(err)
+                }
+            },
+            onRename = { category, newName, onDone ->
+                scope.launch {
+                    val err = locator.library.renameCategory(category, newName)
+                    snackbar.showSnackbar(err ?: "عُدّل اسم التصنيف إلى «${newName.trim()}»")
+                    onDone(err)
+                }
+            },
+            onDelete = { category, onDone ->
+                scope.launch {
+                    val err = locator.library.deleteCategory(category)
+                    snackbar.showSnackbar(
+                        err ?: "حُذف التصنيف — عادت مقاطعه إلى «بدون تصنيف»"
+                    )
+                    onDone(err)
+                }
             }
         )
     }
@@ -424,4 +493,214 @@ private fun EditTrackDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
     )
+}
+
+/**
+ * v0.10.0: حوار إضافة تصنيف جديد — من رقاقة «+» في شريط التصنيفات.
+ * تحقق فوري: اسم فارغ يُعطّل زر الحفظ، والتكرار تُرجعه المستودع كرسالة snackbar.
+ */
+@Composable
+private fun AddCategoryDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var value by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("تصنيف جديد") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "أضف تصنيفاً يناسب برنامج مدرستك (مثلاً: مسابقات، ترحيب، وقفات إيمانية…)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = { value = it },
+                    label = { Text("اسم التصنيف") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(value) },
+                enabled = value.isNotBlank()
+            ) { Text("إضافة") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
+    )
+}
+
+/**
+ * v0.10.0: حوار إدارة التصنيفات الكامل — قائمة بكل التصنيفات مع عدد مقاطعها،
+ * إعادة تسمية لأي تصنيف، حذف للمخصص فقط (الافتراضية محمية)، وإضافة جديدة من الأعلى.
+ * العمليات غير متزامنة عبر [onDone] — رسالة الخطأ تُعرض للمستخدم ولا يُغلق الحوار.
+ */
+@Composable
+private fun ManageCategoriesDialog(
+    onDismiss: () -> Unit,
+    onAdd: (name: String, onDone: (String?) -> Unit) -> Unit,
+    onRename: (com.saidjte.schoolradio.data.local.entity.CategoryEntity, String, (String?) -> Unit) -> Unit,
+    onDelete: (com.saidjte.schoolradio.data.local.entity.CategoryEntity, (String?) -> Unit) -> Unit
+) {
+    val locator = ServiceLocator
+    val categoriesWithCounts by locator.library.categoriesWithCounts
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+
+    var newName by remember { mutableStateOf("") }
+    var renameTarget by remember { mutableStateOf<com.saidjte.schoolradio.data.local.entity.CategoryEntity?>(null) }
+    var deleteTarget by remember { mutableStateOf<com.saidjte.schoolradio.data.local.entity.CategoryEntity?>(null) }
+    var busy by remember { mutableStateOf(false) }
+
+    /** ينفّذ العملية ثم يعرض الخطأ إن وُجد (لا يغلق شيئاً — القائمة تتجدد بالتدفق) */
+    fun run(op: () -> Unit) {
+        if (busy) return
+        busy = true
+        op()
+    }
+
+    fun clearBusy(err: String?) { busy = false; renameTarget = null; deleteTarget = null; if (err != null) Unit }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("إدارة التصنيفات") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // ===== إضافة سريعة داخل الحوار نفسه =====
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it },
+                        label = { Text("تصنيف جديد…") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    FilledTonalIconButton(
+                        onClick = { run { onAdd(newName) { err -> clearBusy(err) }; newName = "" } },
+                        enabled = newName.isNotBlank() && !busy
+                    ) {
+                        Icon(Icons.Filled.Add, "إضافة التصنيف")
+                    }
+                }
+
+                if (categoriesWithCounts.isEmpty()) {
+                    Text(
+                        "لا تصنيفات بعد",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    // قائمة التصنيفات — ارتفاع محدود كي لا يفيض الحوار على الشاشات الصغيرة
+                    Column(
+                        Modifier
+                            .height(300.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        categoriesWithCounts.forEach { c ->
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        c.name,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        if (c.trackCount == 0) "لا مقاطع" else
+                                            "${c.trackCount} مقطعاً" +
+                                                if (c.isBuiltIn) " • افتراضي" else "",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                IconButton(onClick = { renameTarget =
+                                    com.saidjte.schoolradio.data.local.entity.CategoryEntity(
+                                        id = c.id, name = c.name,
+                                        sortOrder = c.sortOrder, isBuiltIn = c.isBuiltIn
+                                    ) }) {
+                                    Icon(Icons.Filled.Edit, "إعادة تسمية", Modifier.size(18.dp))
+                                }
+                                IconButton(
+                                    onClick = {
+                                        deleteTarget =
+                                            com.saidjte.schoolradio.data.local.entity.CategoryEntity(
+                                                id = c.id, name = c.name,
+                                                sortOrder = c.sortOrder, isBuiltIn = c.isBuiltIn
+                                            )
+                                    },
+                                    enabled = !c.isBuiltIn
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Delete, "حذف التصنيف",
+                                        Modifier.size(18.dp),
+                                        tint = if (c.isBuiltIn)
+                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                                        else MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("تم") }
+        }
+    )
+
+    // حوار إعادة التسمية الفرعي
+    renameTarget?.let { target ->
+        var renameValue by remember(target.id) { mutableStateOf(target.name) }
+        AlertDialog(
+            onDismissRequest = { renameTarget = null },
+            title = { Text("إعادة تسمية «${target.name}»") },
+            text = {
+                OutlinedTextField(
+                    value = renameValue,
+                    onValueChange = { renameValue = it },
+                    label = { Text("الاسم الجديد") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        run { onRename(target, renameValue) { err -> clearBusy(err) } }
+                    },
+                    enabled = renameValue.isNotBlank() && !busy
+                ) { Text("حفظ") }
+            },
+            dismissButton = { TextButton(onClick = { renameTarget = null }) { Text("إلغاء") } }
+        )
+    }
+
+    // حوار تأكيد الحذف الفرعي — يوضح مصير مقاطع التصنيف
+    deleteTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("حذف «${target.name}»؟") },
+            text = {
+                Text(
+                    "سيُحذف التصنيف فقط وتعود مقاطعه إلى «بدون تصنيف» — لا يُحذف أي ملف صوتي."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    run { onDelete(target) { err -> clearBusy(err) } }
+                }) { Text("حذف", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("إلغاء") } }
+        )
+    }
 }

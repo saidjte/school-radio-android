@@ -2,6 +2,7 @@ package com.saidjte.schoolradio.feature.scripts
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -51,6 +52,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.saidjte.schoolradio.core.ui.AppIcons
+import com.saidjte.schoolradio.core.ui.MicQuickToggle
 import com.saidjte.schoolradio.core.ui.RoundedProgressBar
 import com.saidjte.schoolradio.core.util.RecordingLogic
 import com.saidjte.schoolradio.data.scripts.ScriptItem
@@ -58,20 +60,23 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /**
- * قارئ السكربت (Teleprompter) (v0.9.0) — أداة المذيع الاحترافية:
+ * قارئ السكربت (Teleprompter) (v0.9.0، محدّث v0.10.0) — أداة المذيع الاحترافية:
  *
  *  - نص بخط ضخم قابل للتكبير (18..64sp) على خلفية داكنة واضحة
  *  - تمرير تلقائي بسرعة قابلة للضبط — المذيع يقرأ والنص يتقدم بهدوء
  *  - تشغيل/إيقاف التمرير بلمسة، وزمن قراءة حي
  *  - وضع الانعكاس الأفقي (Mirror) — لتركيب الهاتف أمام مرآة استوديو حقيقية
+ *  - ★ v0.10.0: زر اختصار عائم دائم لفتح/إغلاق الهواء — المذيع يبثّ بلمسة
+ *    واحدة دون مغادرة النص، ويبقى ظاهراً حتى مع إخفاء بقية الأدوات
  *  - الشاشة تبقى مضاء تلقائياً أثناء القراءة (keepScreenOn)
  *
- * لمسة على أي مكان في الشاشة تُظهر/تُخفي عناصر التحكم.
+ * لمسة على أي مكان في الشاشة تُظهر/تُخفي عناصر التحكم (الزر العائم يبقى دائماً).
  */
 @Composable
 fun TeleprompterScreen(
     script: ScriptItem,
-    onExit: () -> Unit
+    onExit: () -> Unit,
+    snackbar: androidx.compose.material3.SnackbarHostState? = null
 ) {
     val scrollState = rememberScrollState()
     val density = LocalDensity.current
@@ -84,6 +89,11 @@ fun TeleprompterScreen(
     var controlsVisible by remember { mutableStateOf(true) }
     var readSeconds by remember { mutableStateOf(0) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+    /** رسائل زر الهواء العائم — عبر snackbar الشاشة المضيفة إن توفر */
+    val quickMicMessage: (String) -> Unit = { msg ->
+        snackbar?.let { s -> scope.launch { s.showSnackbar(msg) } }
+    }
 
     // الشاشة تبقى مضاء أثناء القراءة — أساسي للمذيع أمام الجمهور
     DisposableEffect(Unit) {
@@ -121,6 +131,12 @@ fun TeleprompterScreen(
 
     val scrollRatio = if (scrollState.maxValue > 0)
         scrollState.value.toFloat() / scrollState.maxValue else 0f
+
+    // v0.10.0: يرتفع زر الهواء فوق شريط الأدوات عند ظهوره وينزل عند إخفائه — حركة ناعمة
+    val micFloatBottom by animateDpAsState(
+        targetValue = if (controlsVisible) 185.dp else 22.dp,
+        label = "mic-float-bottom"
+    )
 
     Box(
         Modifier
@@ -197,6 +213,17 @@ fun TeleprompterScreen(
                     }
                 }
             }
+        }
+
+        // ===== v0.10.0: زر الهواء العائم الدائم — الهدية للمذيع =====
+        // يبقى ظاهراً حتى مع إخفاء بقية الأدوات: المذيع يفتح ويغلق البث بلمسة
+        // واحدة دون أن يغادر النص أو يعود إلى الرئيسية.
+        Box(
+            Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 16.dp, bottom = micFloatBottom)
+        ) {
+            MicQuickToggle(onResult = quickMicMessage)
         }
 
         // ===== شريط التحكم السفلي =====

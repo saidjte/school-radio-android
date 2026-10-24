@@ -1,5 +1,6 @@
 package com.saidjte.schoolradio.data.local.dao
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
@@ -34,12 +35,38 @@ interface CategoryDao {
     @Query("SELECT * FROM categories WHERE id = :id")
     suspend fun byId(id: Long): CategoryEntity?
 
+    @Update
+    suspend fun update(category: CategoryEntity)
+
     @Delete
     suspend fun delete(category: CategoryEntity)
 
     @Query("DELETE FROM categories WHERE id = :id AND is_built_in = 0")
     suspend fun deleteIfCustom(id: Long)
+
+    /** عدد المقاطع في كل تصنيف — لإدارة التصنيفات (v0.10.0) */
+    @Query(
+        """
+        SELECT c.*, (SELECT COUNT(*) FROM audio_tracks t WHERE t.category_id = c.id)
+            AS track_count
+        FROM categories c ORDER BY c.sort_order, c.name
+        """
+    )
+    fun observeAllWithCounts(): Flow<List<CategoryWithCount>>
 }
+
+/**
+ * v0.10.0: تصنيف مع عدد مقاطعه — لعرض حوار إدارة التصنيفات بشكل مفهوم
+ * (الاسم، عدد المقاطع، وهل هو افتراضي لا يُحذف).
+ * data class عادي (ليس كيان Room) — Room يصفّ الأعمدة عليه في الاستعلام السابق.
+ */
+data class CategoryWithCount(
+    val id: Long,
+    val name: String,
+    @ColumnInfo(name = "sort_order") val sortOrder: Int = 0,
+    @ColumnInfo(name = "is_built_in") val isBuiltIn: Boolean = false,
+    @ColumnInfo(name = "track_count") val trackCount: Int = 0
+)
 
 @Dao
 interface AudioTrackDao {

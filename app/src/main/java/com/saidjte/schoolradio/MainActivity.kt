@@ -223,7 +223,12 @@ private fun AppScaffold() {
                     val script by ServiceLocator.teleprompterScript
                         .collectAsStateWithLifecycle()
                     script?.let { s ->
-                        TeleprompterScreen(script = s, onExit = { nav.popBackStack() })
+                        // v0.10.0: snackbar يمرر لرسائل زر الهواء العائم (صلاحية/أخطاء البدء)
+                        TeleprompterScreen(
+                            script = s,
+                            onExit = { nav.popBackStack() },
+                            snackbar = snackbar
+                        )
                     }
                 }
             }

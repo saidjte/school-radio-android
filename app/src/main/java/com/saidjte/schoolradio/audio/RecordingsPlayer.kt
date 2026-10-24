@@ -66,30 +66,60 @@ class RecordingsPlayer(context: Context) {
                     onEnded?.invoke()
                 }
             }
+
+            // v0.10.0: لحظة جاهزية المقطع — ثبّت المدة الفعلية (قد تختلف عن القيمة المسجلة)
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                _state.value = _state.value.copy(positionMs = 0)
+            }
         })
     }
 
     /**
      * تشغيل/إيقاف مؤقت/تبديل — استدعِ من الخيط الرئيسي (Compose).
      * نفس التسجيل = تبديل تشغيل/إيقاف، تسجيل آخر = استبدال فوري.
+     *
+     * v0.10.0 — إصلاح خلل حرج: recordingId لم يكن يُضبط في الحالة أبداً عند
+     * بدء تسجيل جديد، فكان المشغل المثبّت في الأرشيف لا يظهر إطلاقاً ولا
+     * يتزامن أي سطر مع الصوت (فُقد التحكم الكامل بالتسجيلات).
+     * كما أصبحت الدالة تُرجع رسالة عربية عند ملف مفقود بدل الصمت المريب،
+     * وتعيد المقطع المنتهي من بدايته عند الضغط الثانية بعد انتهائه طبيعياً.
+     *
+     * @return null عند النجاح، أو رسالة خطأ جاهزة للعرض (ملف مفقود مثلاً)
      */
-    fun toggle(recording: RecordingEntity) {
+    fun toggle(recording: RecordingEntity): String? {
         val currentId = _state.value.recordingId
         if (currentId == recording.id) {
-            if (player.isPlaying) player.pause() else player.play()
+            if (player.playbackState == Player.STATE_ENDED) {
+                // انتهى سابقاً طبيعياً — إعادة تشغيل من البداية بدل ضغطة ميتة
+                player.seekTo(0)
+                player.play()
+            } else if (player.isPlaying) {
+                player.pause()
+            } else {
+                player.play()
+            }
             startPolling()
-            return
+            return null
         }
         val file = java.io.File(recording.filePath)
         if (!file.exists()) {
-            // ملف مفقود (استعادة نسخة على جهاز آخر مثلاً) — رسالة عبر الحالة بدل انهيار
+            // ملف مفقود (استعادة نسخة على جهاز آخر مثلاً) — رسالة واضحة بدل انهيار أو صمت
             _state.value = State() // صفّر الاختيار
-            return
+            return "ملف هذا التسجيل غير موجود على الجهاز — ربما حُذف أو نُقل"
         }
         player.setMediaItem(MediaItem.fromUri(android.net.Uri.fromFile(file)))
         player.prepare()
         player.play()
+        // ★ الإصلاح الجوهري: ربط الحالة بالتسجيل الجديد فوراً —
+        // من دون هذا يبقى recordingId صفراً/قديماً فلا يظهر المشغل ولا يتوهّج السطر النشط
+        _state.value = _state.value.copy(
+            recordingId = recording.id,
+            positionMs = 0,
+            durationMs = recording.durationMs, // القيمة المسجلة — تُصححها المدة الفعلية عند الجاهزية
+            isPlaying = true
+        )
         startPolling()
+        return null
     }
 
     /** تقديم/ترجيع إلى موضع محدد بالمللي ثانية — لشريط التقدم التفاعلي (v0.8.0) */

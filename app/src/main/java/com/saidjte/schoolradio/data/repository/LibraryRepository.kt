@@ -9,6 +9,7 @@ import com.saidjte.schoolradio.data.local.entity.AudioTrackEntity
 import com.saidjte.schoolradio.data.local.entity.CategoryEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 /**
@@ -39,6 +40,51 @@ class LibraryRepository(
                 categoryDao.insert(CategoryEntity(name = name, sortOrder = i, isBuiltIn = true))
             }
         }
+    }
+
+    // ================== v0.10.0: إدارة كاملة للتصنيفات ==================
+    // سابقاً كانت التصنيفات الافتراضية السبعة تُعرض للقراءة فقط — لا إضافة
+    // ولا تسمية ولا حذف، فتكدّست المقاطع في «فقرات متنوعة» عن قهر.
+
+    val categoriesWithCounts: Flow<List<com.saidjte.schoolradio.data.local.dao.CategoryWithCount>> =
+        categoryDao.observeAllWithCounts()
+
+    /**
+     * إضافة تصنيف جديد مخصص.
+     * @return null عند النجاح، أو رسالة عربية (اسم فارغ/مكرر) لعرضها للمستخدم
+     */
+    suspend fun addCategory(name: String): String? {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return "اكتب اسم التصنيف أولاً"
+        if (categoryDao.insert(CategoryEntity(name = trimmed, sortOrder = 999, isBuiltIn = false)) == -1L) {
+            return "تصنيف بهذا الاسم موجود بالفعل"
+        }
+        return null
+    }
+
+    /** إعادة تسمية أي تصنيف (افتراضي أو مخصص) — @return رسالة خطأ أو null */
+    suspend fun renameCategory(category: CategoryEntity, newName: String): String? {
+        val trimmed = newName.trim()
+        if (trimmed.isEmpty()) return "الاسم لا يمكن أن يكون فارغاً"
+        if (trimmed == category.name) return null
+        // فحص التكرار يدوياً (القيد UNIQUE يُتجاهل بصمت مع IGNORE فقط عند الإدراج)
+        if (categories.first().any { it.id != category.id && it.name == trimmed }) {
+            return "تصنيف بهذا الاسم موجود بالفعل"
+        }
+        categoryDao.update(category.copy(name = trimmed))
+        return null
+    }
+
+    /**
+     * حذف تصنيف مخصص — المقاطع التابعة له تعود إلى «بدون تصنيف» تلقائياً
+     * (قيد FK onDelete = SET_NULL يتكفل بذلك على مستوى قاعدة البيانات).
+     * التصنيفات الافتراضية (isBuiltIn) لا تُحذف حفاظاً على بنية البرنامج المدرسي.
+     * @return رسالة خطأ أو null عند النجاح
+     */
+    suspend fun deleteCategory(category: CategoryEntity): String? {
+        if (category.isBuiltIn) return "التصنيفات الافتراضية لا تُحذف — يمكنك إعادة تسميتها فقط"
+        categoryDao.deleteIfCustom(category.id)
+        return null
     }
 
     /**
