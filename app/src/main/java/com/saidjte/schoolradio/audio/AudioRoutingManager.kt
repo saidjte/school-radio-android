@@ -24,7 +24,7 @@ class AudioRoutingManager(context: Context) {
         SPEAKER("مكبر الجهاز"),
         WIRED("سماعة/AUX"),
         BLUETOOTH("بلوتوث"),
-        MEDIA_DEFAULT("المسار الافتراضي للوسائط")
+        MEDIA_DEFAULT("تلقائي")
     }
 
     private val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager

@@ -33,12 +33,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -73,6 +76,7 @@ import com.saidjte.schoolradio.core.theme.status
 import com.saidjte.schoolradio.core.ui.AppIcons
 import com.saidjte.schoolradio.core.ui.EmptyStateCard
 import com.saidjte.schoolradio.core.ui.StatusBadge
+import com.saidjte.schoolradio.core.util.AppFormat
 import com.saidjte.schoolradio.core.util.ScheduleLogic
 import com.saidjte.schoolradio.data.local.entity.ExecutionStatus
 import com.saidjte.schoolradio.data.local.entity.ScheduledEventEntity
@@ -80,10 +84,8 @@ import com.saidjte.schoolradio.data.settings.AppSettings
 import com.saidjte.schoolradio.di.ServiceLocator
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
-import java.util.Locale
 
 /**
  * لوحة التحكم الرئيسية (v0.4.0 — إعادة تصميم):
@@ -127,7 +129,8 @@ fun DashboardScreen(
         }
     }
     val nowText = remember(nowTick) {
-        SimpleDateFormat("EEEE d MMMM yyyy — HH:mm:ss", Locale("ar")).format(Date(nowTick))
+        // v0.6.0: أرقام مغربية (1234) مع أسماء عربية — عبر المنسّق المركزي
+        AppFormat.dateLong(nowTick)
     }
 
     // أحداث اليوم + سجل التنفيذ لتلوين الحالات
@@ -602,6 +605,7 @@ private fun EventRow(
  * حلقة مستوى صوت حية انسيابية، شارة «مباشر» نابضة، اختيار مسار الإخراج،
  * وزر تسجيل: يسجّل البث الجاري أو فقرة تحضيرية مستقلة.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun LiveBroadcastCard(
     isLive: Boolean,
@@ -788,18 +792,40 @@ private fun LiveBroadcastCard(
                 }
             }
 
-            // اختيار مسار الإخراج (يُقفل أثناء البث)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // اختيار مسار الإخراج (يُقفل أثناء البث) — v0.6.0:
+            // FlowRow ملتفّ بدل Row يفيض، رقائق اختيار بأيقونات وحالة مختارة واضحة،
+            // فلم تعد رقاقة «تلقائي» تُقص خارج الشاشة فارغةً مشوّهة.
+            val routeIcons = mapOf(
+                AudioRoutingManager.Route.SPEAKER to AppIcons.VolumeUp,
+                AudioRoutingManager.Route.WIRED to AppIcons.Headphones,
+                AudioRoutingManager.Route.BLUETOOTH to AppIcons.Bluetooth,
+                AudioRoutingManager.Route.MEDIA_DEFAULT to AppIcons.Autorenew
+            )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
                 listOf(
                     AudioRoutingManager.Route.SPEAKER,
                     AudioRoutingManager.Route.WIRED,
                     AudioRoutingManager.Route.BLUETOOTH,
                     AudioRoutingManager.Route.MEDIA_DEFAULT
                 ).forEach { r ->
-                    AssistChip(
+                    FilterChip(
+                        selected = route == r,
                         onClick = { if (!isLive) onRouteChange(r) },
+                        enabled = !isLive,
                         label = { Text(r.labelAr) },
-                        enabled = !isLive
+                        leadingIcon = {
+                            Icon(
+                                routeIcons[r]!!, null,
+                                modifier = Modifier.size(17.dp)
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
                     )
                 }
             }

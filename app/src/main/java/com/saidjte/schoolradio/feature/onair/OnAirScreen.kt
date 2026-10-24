@@ -38,12 +38,10 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.saidjte.schoolradio.core.ui.AppIcons
 import com.saidjte.schoolradio.core.ui.SegmentImage
+import com.saidjte.schoolradio.core.util.AppFormat
 import com.saidjte.schoolradio.core.util.ScheduleLogic
 import com.saidjte.schoolradio.di.ServiceLocator
 import kotlinx.coroutines.delay
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * شاشة العرض «على الهواء» (v0.5.0).
@@ -75,7 +73,8 @@ fun OnAirScreen(onExit: () -> Unit) {
         }
     }
     val clockText = remember(nowTick) {
-        SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(nowTick))
+        // v0.6.0: أرقام مغربية دائماً عبر المنسّق المركزي
+        AppFormat.clock(nowTick)
     }
 
     val onDark = Color.White

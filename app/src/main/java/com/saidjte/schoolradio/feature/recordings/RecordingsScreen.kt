@@ -54,14 +54,12 @@ import com.saidjte.schoolradio.core.ui.AppIcons
 import com.saidjte.schoolradio.core.ui.EmptyStateCard
 import com.saidjte.schoolradio.core.ui.ScreenHeader
 import com.saidjte.schoolradio.core.ui.StatusBadge
+import com.saidjte.schoolradio.core.util.AppFormat
 import com.saidjte.schoolradio.core.util.RecordingLogic
 import com.saidjte.schoolradio.data.local.entity.RecordingEntity
 import com.saidjte.schoolradio.data.local.entity.UserRole
 import com.saidjte.schoolradio.di.ServiceLocator
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * شاشة أرشيف التسجيلات (v0.4.0):
@@ -240,8 +238,8 @@ private fun RecordingRow(
     val st = MaterialTheme.status
     val isCurrent = playing.recordingId == recording.id
     val isLiveSrc = recording.sourceEnum().name == "PTT"
-    val dateText = SimpleDateFormat("EEEE d/M/yyyy — HH:mm", Locale("ar"))
-        .format(Date(recording.createdAt))
+    // v0.6.0: أرقام مغربية عبر المنسّق المركزي
+    val dateText = AppFormat.dateShort(recording.createdAt)
 
     Card(Modifier.fillMaxWidth().animateContentSize()) {
         Column(Modifier.padding(12.dp)) {

@@ -582,6 +582,108 @@ object AppIcons {
         }
     }
 
+    /** بلوتوث — مسار إخراج الصوت */
+    val Bluetooth: ImageVector by lazy {
+        builder("Bluetooth") {
+            path(
+                fill = SolidColor(Color.Black),
+                pathFillType = PathFillType.NonZero
+            ) {
+                // Material Icons — Bluetooth (Apache 2.0)
+                moveTo(17.71f, 7.71f)
+                lineTo(12f, 2f)
+                horizontalLineToRelative(-1f)
+                verticalLineToRelative(7.59f)
+                lineTo(6.41f, 5f)
+                lineTo(5f, 6.41f)
+                lineTo(10.59f, 12f)
+                lineTo(5f, 17.59f)
+                lineTo(6.41f, 19f)
+                lineTo(11f, 14.41f)
+                verticalLineTo(22f)
+                horizontalLineToRelative(1f)
+                lineToRelative(5.71f, -5.71f)
+                lineToRelative(-4.3f, -4.29f)
+                lineToRelative(4.3f, -4.29f)
+                close()
+                moveTo(13f, 5.83f)
+                lineToRelative(1.88f, 1.88f)
+                lineTo(13f, 9.59f)
+                verticalLineTo(5.83f)
+                close()
+                moveToRelative(1.88f, 10.46f)
+                lineTo(13f, 18.17f)
+                verticalLineToRelative(-3.76f)
+                lineToRelative(1.88f, 1.88f)
+                close()
+            }
+        }
+    }
+
+    /** سماعة سلكية — مسار إخراج الصوت */
+    val Headphones: ImageVector by lazy {
+        builder("Headphones") {
+            path(
+                fill = SolidColor(Color.Black),
+                pathFillType = PathFillType.NonZero
+            ) {
+                // Material Icons — Headphones (Apache 2.0)
+                moveTo(12f, 3f)
+                curveToRelative(-4.97f, 0f, -9f, 4.03f, -9f, 9f)
+                verticalLineToRelative(7f)
+                curveToRelative(0f, 1.1f, 0.9f, 2f, 2f, 2f)
+                horizontalLineToRelative(4f)
+                verticalLineToRelative(-8f)
+                horizontalLineTo(5f)
+                verticalLineToRelative(-1f)
+                curveToRelative(0f, -3.87f, 3.13f, -7f, 7f, -7f)
+                reflectiveCurveToRelative(7f, 3.13f, 7f, 7f)
+                verticalLineToRelative(1f)
+                horizontalLineToRelative(-4f)
+                verticalLineToRelative(8f)
+                horizontalLineToRelative(4f)
+                curveToRelative(1.1f, 0f, 2f, -0.9f, 2f, -2f)
+                verticalLineToRelative(-7f)
+                curveToRelative(0f, -4.97f, -4.03f, -9f, -9f, -9f)
+                close()
+            }
+        }
+    }
+
+    /** تلقائي — المسار الافتراضي للوسائط */
+    val Autorenew: ImageVector by lazy {
+        builder("Autorenew") {
+            path(
+                fill = SolidColor(Color.Black),
+                pathFillType = PathFillType.NonZero
+            ) {
+                // Material Icons — Autorenew (Apache 2.0)
+                moveTo(12f, 6f)
+                verticalLineToRelative(3f)
+                lineToRelative(4f, -4f)
+                lineToRelative(-4f, -4f)
+                verticalLineToRelative(3f)
+                curveToRelative(-4.42f, 0f, -8f, 3.58f, -8f, 8f)
+                curveToRelative(0f, 1.57f, 0.46f, 3.03f, 1.24f, 4.26f)
+                lineTo(6.7f, 14.8f)
+                curveToRelative(-0.45f, -0.83f, -0.7f, -1.79f, -0.7f, -2.8f)
+                curveToRelative(0f, -3.31f, 2.69f, -6f, 6f, -6f)
+                close()
+                moveToRelative(6.76f, 1.74f)
+                lineTo(17.3f, 9.2f)
+                curveToRelative(0.44f, 0.84f, 0.7f, 1.79f, 0.7f, 2.8f)
+                curveToRelative(0f, 3.31f, -2.69f, 6f, -6f, 6f)
+                verticalLineToRelative(-3f)
+                lineToRelative(-4f, 4f)
+                lineToRelative(4f, 4f)
+                verticalLineToRelative(-3f)
+                curveToRelative(4.42f, 0f, 8f, -3.58f, 8f, -8f)
+                curveToRelative(0f, -1.57f, -0.46f, -3.03f, -1.24f, -4.26f)
+                close()
+            }
+        }
+    }
+
     /** شاشة عرض — فتح شاشة «على الهواء» (v0.5.0) */
     val Display: ImageVector by lazy {
         builder("Display") {
