@@ -28,6 +28,8 @@ import com.saidjte.schoolradio.data.local.entity.UserEntity
  * الإصدار 3 = v0.5.0: حقول الفقرة الموسعة (recording_id + note_text + image_path)
  *   لتشغيل التسجيلات ضمن الفقرات ودعم صور/نصوص شاشة العرض.
  * الإصدار 4 = v0.12.0: أعمدة الفواصل المجدولة على radio_schedules (جينغل آلي بين الفقرات).
+ * الإصدار 5 = v0.13.0: ربط سكربت المذيع بالفقرة المجدولة (script_id على scheduled_events)
+ *   + أساس الأتمتة الموثوقة (خدمة حارسة + منبهات دقيقة مضمونة).
  * عند أي تعديل مستقبلي: زد الإصدار واكتب Migration() صريحاً (لا fallback في الإنتاج)
  * — بيانات المدارس الحقيقية (مكتبة + جداول + أرشيف) لا يجوز فقدانها أبداً.
  */
@@ -43,7 +45,7 @@ import com.saidjte.schoolradio.data.local.entity.UserEntity
         UserEntity::class,
         RecordingEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -151,6 +153,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * ترحيل 4 → 5 (v0.12.0 → v0.13.0): عمود واحد رابط سكربت المذيع.
+         * ADD COLUMN قيمته NULL افتراضياً ولا تُكتب صفوف أثناء الترحيل — لا مساس بالبيانات.
+         * لا FK عمداً: السكربتات تخزن في JSON خارج Room — يُتحقق من الوجود لحظة الإطلاق.
+         * SQL هنا يجب أن يطابق حرفياً ما يولّده Room من الكيانات (يُفحص مخطط app/schemas/5.json).
+         */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `scheduled_events` ADD COLUMN `script_id` INTEGER"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -158,7 +174,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "school-radio.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build().also { INSTANCE = it }
             }
     }

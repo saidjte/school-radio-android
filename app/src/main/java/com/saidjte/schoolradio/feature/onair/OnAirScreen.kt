@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,9 +32,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -52,6 +55,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.saidjte.schoolradio.core.ui.AppIcons
 import com.saidjte.schoolradio.core.ui.LiveWaveform
+import com.saidjte.schoolradio.core.ui.MicQuickToggle
 import com.saidjte.schoolradio.core.ui.RoundedProgressBar
 import com.saidjte.schoolradio.core.ui.SegmentImage
 import com.saidjte.schoolradio.core.util.AppFormat
@@ -84,6 +88,9 @@ fun OnAirScreen(onExit: () -> Unit) {
     val micLive by locator.micLive.collectAsStateWithLifecycle()
     val micLevelRaw by locator.micLevel.collectAsStateWithLifecycle()
     val mediaLevelRaw by locator.mediaLevel.collectAsStateWithLifecycle()
+    // v0.13.0: السكربتات — لحل السكربت المرتبط بالفقرة الجارية على شاشة العرض
+    val scripts by locator.scripts.scripts.collectAsStateWithLifecycle(initialValue = emptyList())
+    val onAirScript = onAir?.scriptId?.let { sid -> scripts.firstOrNull { it.id == sid } }
     val onAirMicLevel by animateFloatAsState(
         targetValue = micLevelRaw.coerceIn(0f, 1f),
         animationSpec = tween(80),
@@ -285,6 +292,79 @@ fun OnAirScreen(onExit: () -> Unit) {
                 )
 
                 Spacer(Modifier.height(24.dp))
+
+                // ===== v0.13.0: لوحة سكربت المذيع — ربط السكربت بالفقرة المجدولة =====
+                // عند انطلاق الفقرة المرتبطة بسكربت تظهر لوحة القراءة جاهزة على شاشة
+                // العرض نفسها: نص بخط كبير + زر هواء عائم لفتح/إغلاق الميكروفون أثناء القراءة.
+                if (onAirScript != null) {
+                    var scriptOpen by remember(onAirScript.id) {
+                        androidx.compose.runtime.mutableStateOf(true)
+                    }
+                    Surface(
+                        Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(20.dp),
+                        color = onDark.copy(alpha = 0.07f)
+                    ) {
+                        Column(Modifier.padding(14.dp)) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    AppIcons.Article, null,
+                                    tint = airTeal,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "سكربت الفقرة: ${onAirScript.title}",
+                                    Modifier.weight(1f),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = onDark
+                                )
+                                TextButton(onClick = { scriptOpen = !scriptOpen }) {
+                                    Text(
+                                        if (scriptOpen) "طَوِ" else "اقرأ",
+                                        color = airTeal
+                                    )
+                                }
+                            }
+                            if (scriptOpen) {
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    onAirScript.body.ifBlank { "السكربت فارغ — أضف نصه من شاشة السكربتات" },
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(max = 300.dp)
+                                        .verticalScroll(rememberScrollState()),
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontSize = 24.sp,
+                                        lineHeight = 40.sp,
+                                        fontWeight = FontWeight.Medium
+                                    ),
+                                    color = onDark,
+                                    textAlign = TextAlign.Start
+                                )
+                                Spacer(Modifier.height(10.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    MicQuickToggle(
+                                        size = 56.dp,
+                                        onResult = { }
+                                    )
+                                    Spacer(Modifier.width(14.dp))
+                                    Text(
+                                        "اضغط الزر لفتح أو إغلاق الميكروفون أثناء القراءة",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = onDark.copy(alpha = 0.6f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(18.dp))
+                }
 
                 // ===== شريط التقدم بأطراف دائرية + الزمن =====
                 RoundedProgressBar(

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- أيقونة إشعار الأتمتة (v0.13.0): هوائي بث — أحادية اللون لقناة الإشعارات -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- نقطة المصدر -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,10 m-2,0 a2,2 0 1,1 4,0 a2,2 0 1,1 -4,0" />
+    <!-- ساق الهوائي -->
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M12,14 L12,21" />
+    <!-- أقواس الموجات الداخلية -->
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:pathData="M7.76,7.76 C6.67,8.85 6,10.35 6,12 C6,13.65 6.67,15.15 7.76,16.24" />
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:pathData="M16.24,7.76 C17.33,8.85 18,10.35 18,12 C18,13.65 17.33,15.15 16.24,16.24" />
+    <!-- أقواس الموجات الخارجية -->
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:pathData="M5.64,5.64 C4.02,7.26 3,9.51 3,12 C3,14.49 4.02,16.74 5.64,18.36" />
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:pathData="M18.36,5.64 C19.98,7.26 21,9.51 21,12 C21,14.49 19.98,16.74 18.36,18.36" />
+</vector>

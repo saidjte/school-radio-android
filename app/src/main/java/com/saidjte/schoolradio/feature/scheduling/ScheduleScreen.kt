@@ -97,6 +97,7 @@ import kotlinx.coroutines.launch
 fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
     val locator = ServiceLocator
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     val schedules by locator.schedules.schedules.collectAsStateWithLifecycle(initialValue = emptyList())
     val events by locator.schedules.events.collectAsStateWithLifecycle(initialValue = emptyList())
@@ -106,6 +107,8 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
     // v0.12.0: التصنيفات — لأسماء مصادر جينغلات الفواصل
     val categories by locator.library.categories.collectAsStateWithLifecycle(initialValue = emptyList())
     val recordings by locator.recordingsRepo.observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
+    // v0.13.0: السكربتات — لربط سكربت المذيع بالفقرة المجدولة
+    val scripts by locator.scripts.scripts.collectAsStateWithLifecycle(initialValue = emptyList())
 
     var creatingSchedule by remember { mutableStateOf(false) }
     var editingEvent by remember { mutableStateOf<EventEditorState?>(null) }
@@ -204,6 +207,32 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                             }
                             TextButton(onClick = { locator.scheduler.openExactAlarmSettings() }) {
                                 Text("منح")
+                            }
+                        }
+                    }
+                }
+            }
+            // ===== v0.13.0: بطاقة حماية الأتمتة (تحسينات البطارية) =====
+            item {
+                val batteryOk = remember { locator.scheduler.isIgnoringBatteryOptimizations() }
+                if (!batteryOk) {
+                    Card(Modifier.fillMaxWidth()) {
+                        Row(
+                            Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                AppIcons.Bolt, null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                                Text(
+                                    "اعفِ التطبيق من تحسينات البطارية لتعمل الفقرات الأوتوماتيكية موثوقاً على كل الأجهزة",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                            TextButton(onClick = { locator.scheduler.requestIgnoreBatteryOptimizations() }) {
+                                Text("إعفاء")
                             }
                         }
                     }
@@ -460,12 +489,15 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
             schedules = schedules,
             events = events,
             recordings = recordings,
+            scripts = scripts,
             onDismiss = { editingEvent = null },
             onSave = { event ->
                 scope.launch {
                     if (state.originalId == null) locator.schedules.addEvent(event)
                     else locator.schedules.updateEvent(event)
                     locator.rearmScheduleAlarms()
+                    // v0.13.0: أول فقرة تُحفظ → أقم خدمة الأتمتة الحارسة إن لم تكن حية
+                    com.saidjte.schoolradio.scheduler.AutomationService.start(context)
                     snackbar.showSnackbar("حُفظت الفقرة وأُعيد ضبط المنبهات")
                 }
                 editingEvent = null
@@ -714,7 +746,8 @@ data class EventEditorState(
     val singleTrackId: Long? = null,
     val recordingId: Long? = null,
     val noteText: String? = null,
-    val imagePath: String? = null
+    val imagePath: String? = null,
+    val scriptId: Long? = null
 ) {
     companion object {
         fun from(e: ScheduledEventEntity) = EventEditorState(
@@ -727,7 +760,8 @@ data class EventEditorState(
             singleTrackId = e.singleTrackId,
             recordingId = e.recordingId,
             noteText = e.noteText,
-            imagePath = e.imagePath
+            imagePath = e.imagePath,
+            scriptId = e.scriptId
         )
     }
 }
@@ -814,6 +848,7 @@ private fun EventEditorDialog(
     schedules: List<RadioScheduleEntity>,
     events: List<ScheduledEventEntity>,
     recordings: List<RecordingEntity>,
+    scripts: List<com.saidjte.schoolradio.data.scripts.ScriptItem>,
     onDismiss: () -> Unit,
     onSave: (ScheduledEventEntity) -> Unit
 ) {
@@ -829,6 +864,8 @@ private fun EventEditorDialog(
     var recordingId by remember { mutableStateOf(initial.recordingId) }
     var noteText by remember { mutableStateOf(initial.noteText ?: "") }
     var imagePath by remember { mutableStateOf(initial.imagePath) }
+    // v0.13.0: سكربت المذيع المرتبط بالفقرة — يفتح على شاشة العرض لحظة الإطلاق
+    var scriptId by remember { mutableStateOf(initial.scriptId) }
     var conflictError by remember { mutableStateOf<String?>(null) }
 
     val playlists by locator.playlists.playlists.collectAsStateWithLifecycle(initialValue = emptyList())
@@ -928,6 +965,19 @@ private fun EventEditorDialog(
                     onClear = { recordingId = null }
                 )
 
+                // ===== v0.13.0: سكربت المذيع المرتبط بالفقرة =====
+                Text(
+                    "سكربت المذيع (Teleprompter) — يظهر جاهزاً للقراءة على شاشة العرض لحظة انطلاق الفقرة",
+                    style = MaterialTheme.typography.labelLarge
+                )
+                SimpleDropdownRow(
+                    label = "سكربت الفقرة",
+                    selected = scripts.firstOrNull { it.id == scriptId }?.title ?: "بلا",
+                    options = scripts.map { it.id to it.title },
+                    onPick = { scriptId = it },
+                    onClear = { scriptId = null }
+                )
+
                 // ===== نص الفقرة (يظهر على شاشة العرض على الهواء) =====
                 OutlinedTextField(
                     value = noteText, onValueChange = { noteText = it },
@@ -1007,7 +1057,8 @@ private fun EventEditorDialog(
                                     singleTrackId = singleTrackId,
                                     recordingId = recordingId,
                                     noteText = noteText.trim().takeIf { it.isNotBlank() },
-                                    imagePath = imagePath
+                                    imagePath = imagePath,
+                                    scriptId = scriptId
                                 )
                             )
                         }

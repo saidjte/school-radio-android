@@ -34,13 +34,19 @@ import kotlinx.coroutines.launch
 
 /**
  * معلومات الفقرة المعروضة حالياً على شاشة «على الهواء» (v0.5.0).
- * يضبطها AlarmReceiver لحظة إطلاق فقرة مجدولة، ويعرضها OnAirScreen بالصورة والنص.
+ * يضبطها ScheduledPlaybackLauncher لحظة إطلاق فقرة مجدولة، ويعرضها OnAirScreen بالصورة والنص.
+ *
+ * v0.13.0 — ربط السكربت بالفقرة: [scriptId] يفتح لوحة قراءة السكربت (Teleprompter)
+ * على شاشة العرض لحظة انطلاق الفقرة، و[scriptTitle] عنوانه إن وُجد (يُتحقق من
+ * الوجود لحظة العرض — حذف السكربت لا يكسر شيئاً).
  */
 data class OnAirInfo(
     val eventId: Long,
     val eventTitle: String,
     val noteText: String? = null,
-    val imagePath: String? = null
+    val imagePath: String? = null,
+    val scriptId: Long? = null,
+    val scriptTitle: String? = null
 )
 
 /**

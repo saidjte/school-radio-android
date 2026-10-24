@@ -118,6 +118,26 @@ object AppIcons {
         }
     }
 
+    /** برق — طاقة/حماية الأتمتة (v0.13.0) */
+    val Bolt: ImageVector by lazy {
+        builder("Bolt") {
+            path(
+                fill = SolidColor(Color.Black),
+                pathFillType = PathFillType.NonZero
+            ) {
+                // مسار Material flash_on (Apache 2.0): M7,2v11h3v9l7,-12h-4l4,-8z
+                moveTo(7f, 2f)
+                verticalLineTo(13f)
+                horizontalLineTo(10f)
+                verticalLineTo(22f)
+                lineTo(17f, 10f)
+                horizontalLineTo(13f)
+                lineTo(17f, 2f)
+                close()
+            }
+        }
+    }
+
     /** منبه */
     val Alarm: ImageVector by lazy {
         builder("Alarm") {

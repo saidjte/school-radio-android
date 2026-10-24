@@ -24,6 +24,11 @@ class SchoolRadioApp : Application() {
                 val enabled = ServiceLocator.schedules.enabledSchedules().map { it.id }.toSet()
                 val events = ServiceLocator.schedules.allEvents().filter { it.scheduleId in enabled }
                 ServiceLocator.scheduler.rescheduleAll(events)
+                // v0.13.0: إحياء خدمة الأتمتة الحارسة مع كل فتح للعملية —
+                // تضمن انطلاق الفقرات أوتوماتيكياً حتى لو انقلبت المنبهات
+                if (enabled.isNotEmpty()) {
+                    com.saidjte.schoolradio.scheduler.AutomationService.start(this@SchoolRadioApp)
+                }
             }
         }
     }

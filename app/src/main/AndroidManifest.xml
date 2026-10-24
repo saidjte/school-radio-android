@@ -19,6 +19,13 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- منبهات دقيقة لبدء الفقرات في موعدها (API 31+، تُطلب من المستخدم في الإعدادات) -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- v0.13.0: منبهات دقيقة مضمونة تلقائياً على أندرويد 13/14+ — التطبيق خارج متجر
+         Play (تثبيت مباشر للمدارس) فلا تخضع لمراجعة سياساته، وهذه وظيفته الجوهرية:
+         إذاعة آلية في ثانية محددة. تلغي الحاجة للموافقة اليدوية على أندرويد الحديث. -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <!-- v0.13.0: طلب إعفاء من تحسينات البطارية — يمنع قتلة الخلفية عند المصنّعين
+         من إسكات الأتمتة الإذاعية (يُطلب باقتراح مهذب من شاشة الجدولة) -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
         android:name=".SchoolRadioApp"
@@ -53,6 +60,13 @@
         <receiver
             android:name=".scheduler.AlarmReceiver"
             android:exported="false" />
+
+        <!-- v0.13.0: خدمة الأتمتة الحارسة — نبض دائم يضمن انطلاق الفقرات
+             أوتوماتيكياً حتى لو انقلبت المنبهات (أجهزة تقتل الخلفية) -->
+        <service
+            android:name=".scheduler.AutomationService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <!-- إعادة تهيئة المنبهات بعد إعادة التشغيل / تغيّر الوقت / تحديث التطبيق -->
         <receiver

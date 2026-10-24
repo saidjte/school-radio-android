@@ -11,6 +11,7 @@ import android.media.AudioTrack
 import android.media.MediaRecorder
 import android.os.Handler
 import android.os.Looper
+import android.os.Process
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,7 +40,10 @@ enum class MicPhase { IDLE, STARTING, LIVE, STOPPING }
  *  - ضغطة خاطفة سريعة (إيقاف طُلب أثناء بدء البدء) تُعالج بأمان: البدء يُكمل
  *    تهيئته ثم يغلق فوراً بلا تسريب موارد.
  *
- * البنية: AudioRecord (التقاط) → حلقة خيط مخصص → AudioTrack (إخراج MODE_STREAM).
+ * v0.13.0 — قضاء على التقطيع: خيطا التقاط/إخراج منفصلان على PcmRingBuffer (200ms)،
+ * مخزن إخراج ~120ms، أولوية URGENT_AUDIO، ومستوى واجهة مخنّق 25Hz.
+ *
+ * البنية: AudioRecord (التقاط) ← PcmRingBuffer ← AudioTrack (إخراج MODE_STREAM).
  * - معدل العينة 48kHz (النطاق الأصلي لأغلب الأجهزة — يمنع إعادة المعاينة وكلفة تأخيرها).
  * - مصدر VOICE_COMMUNICATION يفعّل معالجة الصدى (AEC) ضد صفير التغذية الراجعة.
  *
@@ -94,11 +98,15 @@ class MicrophoneController(
 
     @Volatile private var running = false
     @Volatile private var stopRequested = false
-    private var loopThread: Thread? = null
+    private var captureThread: Thread? = null
+    private var playbackThread: Thread? = null
     private var audioRecord: AudioRecord? = null
     private var audioTrack: AudioTrack? = null
     private var deviceLossCallback: AudioDeviceCallback? = null
     private var lastRoute: AudioRoutingManager.Route = AudioRoutingManager.Route.SPEAKER
+
+    /** v0.13.0: المخزن الحلقي بين خيطي الالتقاط والإخراج — يُنشأ عند كل بث */
+    private var ring: PcmRingBuffer? = null
 
     /** v0.11.0: سلسلة معالجة صوت المذيع — دورة حياة عُقدة البث نفسها */
     private val processingChain = MicProcessingChain()
@@ -165,12 +173,15 @@ class MicrophoneController(
                 failStart("معاملات الصوت غير مدعومة على هذا الجهاز")
                 return
             }
-            val bufferSize = minRecordBuffer * 2
+            val captureBufferSize = minRecordBuffer * 2
+            // v0.13.0: مخزن إخراج ~120ms — الحصن ضد underrun (كان عند الحد الأدنى فأسمع التقطيع)
+            val trackBufferSize = maxOf(captureBufferSize, (SAMPLE_RATE * 2 * 0.12f).toInt())
+            ring = PcmRingBuffer(SAMPLE_RATE / 5) // 200ms = عشرون دفعة 10ms
 
             val rec = try {
                 AudioRecord(
                     MediaRecorder.AudioSource.VOICE_COMMUNICATION, // AEC ضد الصفير
-                    SAMPLE_RATE, CHANNEL_IN, ENCODING, bufferSize
+                    SAMPLE_RATE, CHANNEL_IN, ENCODING, captureBufferSize
                 )
             } catch (e: Exception) {
                 routing.restoreNormal()
@@ -205,7 +216,7 @@ class MicrophoneController(
                             .build()
                     )
                     .setTransferMode(AudioTrack.MODE_STREAM)
-                    .setBufferSizeInBytes(bufferSize)
+                    .setBufferSizeInBytes(trackBufferSize)
                     .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
                     .build()
             } catch (e: Exception) {
@@ -240,7 +251,13 @@ class MicrophoneController(
                 if (running) stop("انقطع جهاز الإخراج فتوقف البث")
             }
 
-            loopThread = Thread({ passthroughLoop() }, "ptt-passthrough").apply {
+            // v0.13.0: خيطا الالتقاط والإخراج منفصلان — يلتقيان على المخزن الحلقي،
+            // وأي اختناق لحظي يمتصه المخزن بدل أن يصل أذن المستمع تقطيعاً
+            captureThread = Thread({ captureLoop() }, "mic-capture").apply {
+                priority = Thread.MAX_PRIORITY
+                start()
+            }
+            playbackThread = Thread({ playbackLoop() }, "mic-playback").apply {
                 priority = Thread.MAX_PRIORITY
                 start()
             }
@@ -262,44 +279,73 @@ class MicrophoneController(
         notifyResult(message)
     }
 
-    /** حلقة التمرير: قراءة ← تلاشي ← كتابة فورية ← تفريغ للتسجيل ← حساب مستوى RMS */
-    private fun passthroughLoop() {
-        // دفعة 10ms = 480 عينة عند 48kHz — أصغر دفعة عملية لتأخير منخفض
-        val chunk = ShortArray(SAMPLE_RATE / 100)
-        val fadeInStep = 1f / FADE_IN_CHUNKS
-        val fadeOutStep = 1f / FADE_OUT_CHUNKS
-        var gain = 0f          // يبدأ من الصفر: دخول ناعم بلا فرقعة
-        var fadingOut = false
+    /**
+     * خيط الالتقاط: قراءة من الميكروفون فقط ثم كتابة في المخزن الحلقي.
+     * أقل كود ممكن هنا = أقل فرص توقف وأدق التقاط لأزمنة الميكروفون.
+     */
+    private fun captureLoop() {
+        Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
+        val chunk = ShortArray(SAMPLE_RATE / 100) // دفعة 10ms
         while (running) {
             val n = try {
                 audioRecord?.read(chunk, 0, chunk.size) ?: break
             } catch (_: Exception) { break }
             if (n > 0) {
-                // طُلب الإيقاف؟ ننحّل الصوت تدريجياً ثم نخرج — لا قطع مفاجئ
-                if (stopRequested) fadingOut = true
-                if (gain < 1f) gain = (gain + fadeInStep).coerceAtMost(1f)
-                if (fadingOut) gain = (gain - fadeOutStep).coerceAtLeast(0f)
-
-                // v0.9.0: كسب الميكروفون (فيدر الميكسر) × تلاشي الدخول/الخروج
-                // مع منع التشبع: قيمة كسب > 1 بدون تحديد النطاق تلفّ الموجة فتصدر تشويه رقمي
-                val g = gain * gainFactor
-                for (i in 0 until n) {
-                    val s = chunk[i] * g
-                    chunk[i] = when {
-                        s > Short.MAX_VALUE -> Short.MAX_VALUE
-                        s < Short.MIN_VALUE -> Short.MIN_VALUE
-                        else -> s.toInt().toShort()
-                    }
-                }
-
-                if (n > 0 && g > 0f) {
-                    audioTrack?.write(chunk, 0, n)
-                    // نفس الدفعة تذهب للتسجيل المتزامن (كلفة استدعاء واحد — لا تأخير عملي)
-                    onPcm(chunk, n)
-                    onLevel(rms(chunk, n))
-                }
-                if (fadingOut && gain <= 0f) break
+                ring?.write(chunk, 0, n)
+            } else if (n < 0) {
+                // خطأ قراءة عطل (ERROR_INVALID_OPERATION…): أوقف البث بأمان
+                stop("تعذر الاستمرار في قراءة الميكروفون")
+                break
             }
+        }
+    }
+
+    /**
+     * خيط الإخراج: استهلاك المخزن الحلقي ← تلاشٍ وكسب ← AudioTrack
+     * ← تفريغ للتسجيل المتزامن ← حساب المستوى (مخنّق 25Hz للواجهة).
+     * يعمل حتى بعد رفع running لإتمام نحول الإيقاف (fade-out) ثم يخرج.
+     */
+    private fun playbackLoop() {
+        Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
+        val chunk = ShortArray(SAMPLE_RATE / 100)
+        val fadeInStep = 1f / FADE_IN_CHUNKS
+        val fadeOutStep = 1f / FADE_OUT_CHUNKS
+        var gain = 0f          // يبدأ من الصفر: دخول ناعم بلا فرقعة
+        var fadingOut = false
+        var lastLevelAt = 0L
+        while (running || fadingOut) {
+            // انتظار حتى 100ms — يمكّن فحص running بين الدفعات إن خلا المخزن
+            val n = ring?.read(chunk, 0, chunk.size, 100) ?: 0
+            if (n <= 0) continue
+            // طُلب الإيقاف؟ ننحّل الصوت تدريجياً ثم نخرج — لا قطع مفاجئ
+            if (stopRequested) fadingOut = true
+            if (gain < 1f) gain = (gain + fadeInStep).coerceAtMost(1f)
+            if (fadingOut) gain = (gain - fadeOutStep).coerceAtLeast(0f)
+
+            // كسب الميكروفون (فيدر الميكسر) × تلاشي الدخول/الخروج
+            // مع منع التشبع: قيمة كسب > 1 بدون تحديد النطاق تلفّ الموجة فتصدر تشويه رقمي
+            val g = gain * gainFactor
+            for (i in 0 until n) {
+                val s = chunk[i] * g
+                chunk[i] = when {
+                    s > Short.MAX_VALUE -> Short.MAX_VALUE
+                    s < Short.MIN_VALUE -> Short.MIN_VALUE
+                    else -> s.toInt().toShort()
+                }
+            }
+
+            if (g > 0f) {
+                audioTrack?.write(chunk, 0, n)
+                // نفس الدفعة تذهب للتسجيل المتزامن (كلفة استدعاء واحد — لا تأخير عملي)
+                onPcm(chunk, n)
+            }
+            // المستوى للواجهة (الموجة الحية): 25Hz كافية بصرياً وتريح الخيط الرئيسي
+            val now = System.currentTimeMillis()
+            if (now - lastLevelAt >= 40) {
+                lastLevelAt = now
+                onLevel(rms(chunk, n))
+            }
+            if (fadingOut && gain <= 0f) break
         }
     }
 
@@ -324,11 +370,16 @@ class MicrophoneController(
     private fun stopNow(reason: String?) {
         try {
             running = false
-            // حلقة التمرير تنحل الصوت وتخرج بنفسها عند رؤية stopRequested؛
-            // ننتظرها بوقت سخي ثم نجبر إن علقت (قراءة معطوبة مثلاً)
-            loopThread?.join(1200)
-            if (loopThread?.isAlive == true) loopThread?.interrupt()
-            loopThread = null
+            // خيط الإخراج ينحل الصوت ويخرج بنفسه عند رؤية stopRequested (أقل من 100ms)؛
+            // خيط الالتقاط يخرج فور رفع running. ننتظر بوقت سخي ثم نجبر إن علقت.
+            playbackThread?.join(1200)
+            if (playbackThread?.isAlive == true) playbackThread?.interrupt()
+            playbackThread = null
+            captureThread?.join(1200)
+            if (captureThread?.isAlive == true) captureThread?.interrupt()
+            captureThread = null
+            ring?.clear()
+            ring = null
             releaseAll()
             routing.restoreNormal()
             deviceLossCallback?.let { try { routing.unregister(it) } catch (_: Exception) {} }

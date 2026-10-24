@@ -96,7 +96,13 @@ data class ScheduledEventEntity(
     /** v0.5.0: نص إرشادي/إعلاني يُعرض على شاشة «على الهواء» أثناء تشغيل الفقرة */
     @ColumnInfo(name = "note_text") val noteText: String? = null,
     /** v0.5.0: مسار مطلق لصورة الفقرة داخل ملفات التطبيق (filesDir/event_images) */
-    @ColumnInfo(name = "image_path") val imagePath: String? = null
+    @ColumnInfo(name = "image_path") val imagePath: String? = null,
+    /**
+     * v0.13.0: سكربت المذيع المرتبط بالفقرة (id من مستودع السكربتات JSON — لا FK لأنه
+     * خارج Room). عند إطلاق الفقرة أوتوماتيكياً يظهر السكربت جاهزاً للقراءة على شاشة
+     * العرض؛ حذف السكربت من المستودع لا يكسر شيئاً — يُتحقق من وجوده لحظة الإطلاق.
+     */
+    @ColumnInfo(name = "script_id") val scriptId: Long? = null
 ) {
     /** هل الحدث مجدول في اليوم المحدد؟ (dayOfWeek بمعيار ISO: الاثنين=1..الأحد=7) */
     fun runsOn(dayOfWeekIso: Int): Boolean {

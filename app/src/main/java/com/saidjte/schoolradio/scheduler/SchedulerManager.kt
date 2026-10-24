@@ -39,6 +39,26 @@ class SchedulerManager(private val context: Context) {
     }
 
     /**
+     * v0.13.0 — هل التطبيق معفي من تحسينات البطارية؟
+     * الإعفاء يمنع قتلة الخلفية (خاصة عند مصنّعين بقصّاصات مخصصة) من إسكات
+     * خدمة الأتمتة الحارسة والمنبهات — شرط عملي لجدولة إذاعية موثوقة.
+     */
+    fun isIgnoringBatteryOptimizations(): Boolean {
+        val pm = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        return pm.isIgnoringBatteryOptimizations(context.packageName)
+    }
+
+    /** فتح حوار النظام لطلب الإعفاء من تحسينات البطارية (رسالة النظام مهذبة ومباشرة) */
+    fun requestIgnoreBatteryOptimizations() {
+        try {
+            val i = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                .setData(android.net.Uri.parse("package:${context.packageName}"))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(i)
+        } catch (_: Exception) {}
+    }
+
+    /**
      * إعادة ضبط منبهات كل الأحداث القادمة (تُستدعى بعد أي تعديل أو إقلاع).
      * تُلغي المنبهات القديمة أولاً ثم تضبط الحدث الأقرب لكل حدث مجدول.
      */

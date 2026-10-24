@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.saidjte.schoolradio.core.util.AutomationLogic
 import com.saidjte.schoolradio.di.ServiceLocator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -39,7 +40,13 @@ class BootReceiver : BroadcastReceiver() {
                 val events = ServiceLocator.schedules.allEvents()
                     .filter { ServiceLocator.schedules.enabledSchedules().any { s -> s.id == it.scheduleId } }
                 ServiceLocator.scheduler.rescheduleAll(events)
-                val missed = ServiceLocator.schedules.markMissed(System.currentTimeMillis())
+                // v0.13.0: نافذة السماح — فقرة موعدها خلال آخر دقيقتين لا تُعلَّم فائتة
+                // (خدمة الأتمتة ستطلقها في أول نبض بدل ذلك)
+                val missed = ServiceLocator.schedules.markMissed(
+                    System.currentTimeMillis(), AutomationLogic.GRACE_MINUTES
+                )
+                // v0.13.0: إحياء الخدمة الحارسة بعد الإقلاع — الأتمتة لا تتوقف بإعادة التشغيل
+                AutomationService.start(app)
                 Log.i("BootReceiver", "أُعيدت تهيئة ${events.size} حدثاً؛ فائت = $missed")
             } catch (e: Exception) {
                 Log.e("BootReceiver", "فشل إعادة التهيئة", e)

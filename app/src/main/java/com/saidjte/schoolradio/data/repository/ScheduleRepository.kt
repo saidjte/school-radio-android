@@ -110,13 +110,17 @@ class ScheduleRepository(private val db: AppDatabase) {
     /**
      * معالجة الفقرات الفائتة: كل حدث كان موعده اليوم قبل الآن ولم يُسجل تنفيذه → MISSED.
      * تُستدعى بعد إعادة التشغيل أو تغيّر الوقت (BootReceiver).
+     *
+     * v0.13.0 — [graceMinutes]: نافذة السماح. الفقرة التي بدأت خلال آخر graceMinutes
+     * لا تُعلَّم فائتة — خدمة الأتمتة ستطلقها خلال نبضها القادم (يُمرر AutomationLogic.GRACE_MINUTES
+     * من الخدمة/الإقلاع؛ الاستدعاءات القديمة تبقى بسلوكها الصارم 0).
      */
-    suspend fun markMissed(nowMillis: Long): Int {
+    suspend fun markMissed(nowMillis: Long, graceMinutes: Int = 0): Int {
         val dateKey = ScheduleLogic.dateKey(nowMillis)
-        val minutesNow = ScheduleLogic.minutesOfDay(nowMillis)
+        val cutoff = ScheduleLogic.minutesOfDay(nowMillis) - graceMinutes
         var missed = 0
         for (event in dao.eventsForDayBit(ScheduleLogic.dayBitOf(nowMillis))) {
-            if (event.startMinutes < minutesNow && !executedOn(event.id, dateKey)) {
+            if (event.startMinutes < cutoff && !executedOn(event.id, dateKey)) {
                 dao.insertExecution(
                     ScheduleExecutionEntity(
                         eventId = event.id, dateKey = dateKey,
