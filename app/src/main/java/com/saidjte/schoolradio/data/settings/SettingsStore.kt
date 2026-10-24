@@ -42,6 +42,9 @@ data class AppSettings(
     // ===== v0.11.0: حائط الجينغل (Cart Wall) =====
     val cartVolume: Float = 0.85f,         // فيدَر قناة الجينغل 0..1
     val cartLayoutJson: String = "",       // تخطيط الرقائق JSON (راجع CartWallStore)
+    // ===== v0.15.0: الميكسر الاحترافي — قنوات مستقلة + ماستر =====
+    val masterVolume: Float = 1.0f,        // فيدَر الماستر (يضرب القنوات الموسيقية) 0..1
+    val previewVolume: Float = 0.9f,       // فيدَر قناة معاينة الأرشيف 0..1
     // ===== v0.11.0: تفضيلات قارئ السكربت (Teleprompter) =====
     val prompterSpeed: Float = 55f,        // سرعة التمرير dp/ثانية
     val prompterFont: Float = 30f,         // حجم خط النص sp
@@ -80,6 +83,9 @@ class SettingsStore(private val context: Context) {
         val MIC_ECHO_CANCEL = booleanPreferencesKey("mic_echo_cancel")
         val CART_VOLUME = floatPreferencesKey("cart_volume")
         val CART_LAYOUT = stringPreferencesKey("cart_layout_json")
+        // v0.15.0: الميكسر الاحترافي
+        val MASTER_VOLUME = floatPreferencesKey("master_volume")
+        val PREVIEW_VOLUME = floatPreferencesKey("preview_volume")
         val PROMPTER_SPEED = floatPreferencesKey("prompter_speed")
         val PROMPTER_FONT = floatPreferencesKey("prompter_font")
         val PROMPTER_MIRROR = booleanPreferencesKey("prompter_mirror")
@@ -113,6 +119,8 @@ class SettingsStore(private val context: Context) {
             micEchoCancel = p[Keys.MIC_ECHO_CANCEL] ?: true,
             cartVolume = p[Keys.CART_VOLUME] ?: 0.85f,
             cartLayoutJson = p[Keys.CART_LAYOUT] ?: "",
+            masterVolume = p[Keys.MASTER_VOLUME] ?: 1.0f,
+            previewVolume = p[Keys.PREVIEW_VOLUME] ?: 0.9f,
             prompterSpeed = p[Keys.PROMPTER_SPEED] ?: 55f,
             prompterFont = p[Keys.PROMPTER_FONT] ?: 30f,
             prompterMirror = p[Keys.PROMPTER_MIRROR] ?: false,
@@ -157,6 +165,10 @@ class SettingsStore(private val context: Context) {
     // ===== v0.11.0: حائط الجينغل =====
     suspend fun setCartVolume(v: Float) = context.dataStore.edit { it[Keys.CART_VOLUME] = v.coerceIn(0f, 1f) }
     suspend fun setCartLayoutJson(v: String) = context.dataStore.edit { it[Keys.CART_LAYOUT] = v }
+
+    // ===== v0.15.0: الميكسر الاحترافي =====
+    suspend fun setMasterVolume(v: Float) = context.dataStore.edit { it[Keys.MASTER_VOLUME] = v.coerceIn(0f, 1f) }
+    suspend fun setPreviewVolume(v: Float) = context.dataStore.edit { it[Keys.PREVIEW_VOLUME] = v.coerceIn(0f, 1f) }
 
     // ===== v0.11.0: تفضيلات قارئ السكربت =====
     suspend fun setPrompterSpeed(v: Float) =

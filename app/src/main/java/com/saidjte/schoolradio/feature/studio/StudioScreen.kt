@@ -32,6 +32,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -64,6 +65,7 @@ import com.saidjte.schoolradio.core.ui.GradientButton
 import com.saidjte.schoolradio.core.ui.ScreenHeader
 import com.saidjte.schoolradio.core.ui.StatusBadge
 import com.saidjte.schoolradio.core.ui.driftingGradient
+import com.saidjte.schoolradio.core.util.MixerLogic
 import com.saidjte.schoolradio.data.settings.AppSettings
 import com.saidjte.schoolradio.di.ServiceLocator
 import kotlinx.coroutines.delay
@@ -161,21 +163,51 @@ fun StudioScreen(
             )
         }
 
-        // ===== وحدة المزج =====
+        // ===== v0.15.0: وحدة المزج الاحترافية (4 قنوات + ماستر + مشاهد) =====
         item {
-            MixerCard(
-                micGain = micGain,
+            MixerConsole(
+                micFader = micGain,
                 micLevel = micLevelRaw,
-                mediaVolume = playbackState.volume,
+                musicFader = settings.defaultVolume,
                 mediaLevel = mediaLevelRaw,
+                breaksFader = settings.cartVolume,
+                previewFader = settings.previewVolume,
+                masterFader = settings.masterVolume,
                 duckEnabled = settings.duckEnabled,
                 duckVolume = settings.duckVolume,
-                onMicGain = { mic.setMicGain(it) },
-                onMicGainFinished = { v -> scope.launch { locator.settings.setMicGain(v) } },
-                onMediaVolume = { locator.playback.setVolume(it) },
-                onMediaVolumeFinished = { v -> scope.launch { locator.settings.setDefaultVolume(v) } },
+                onMicFader = { mic.setMicGain(it) },
+                onMicFaderFinished = { v -> scope.launch { locator.settings.setMicGain(v) } },
+                onMusicFader = { locator.playback.setVolume(it) },
+                onMusicFaderFinished = { v -> scope.launch { locator.settings.setDefaultVolume(v) } },
+                onBreaksFader = { locator.cartPlayer.setVolume(it) },
+                onBreaksFaderFinished = { v -> scope.launch { locator.settings.setCartVolume(v) } },
+                onPreviewFader = { locator.recordingsPlayer.setVolume(it) },
+                onPreviewFaderFinished = { v -> scope.launch { locator.settings.setPreviewVolume(v) } },
+                onMasterFader = { v ->
+                    scope.launch { locator.settings.setMasterVolume(v) }
+                    locator.applyMixerVolumes(master = v)
+                },
+                onMasterFaderFinished = { locator.applyMixerVolumes() },
                 onDuckEnabled = { scope.launch { locator.settings.setDuckEnabled(it) } },
-                onDuckVolume = { scope.launch { locator.settings.setDuckVolume(it) } }
+                onDuckVolume = { scope.launch { locator.settings.setDuckVolume(it) } },
+                onScene = { scene ->
+                    mic.setMicGain(scene.set.mic)
+                    locator.applyMixerVolumes(
+                        musicFader = scene.set.music,
+                        master = scene.set.master,
+                        previewFader = scene.set.preview,
+                        cartFader = scene.set.breaks
+                    )
+                    scope.launch {
+                        locator.settings.setMicGain(scene.set.mic)
+                        locator.settings.setDefaultVolume(scene.set.music)
+                        locator.settings.setCartVolume(scene.set.breaks)
+                        locator.settings.setPreviewVolume(scene.set.preview)
+                        locator.settings.setMasterVolume(scene.set.master)
+                        locator.settings.setDuckEnabled(scene.set.duckEnabled)
+                        locator.settings.setDuckVolume(scene.set.duckVolume)
+                    }
+                }
             )
         }
 
@@ -412,24 +444,54 @@ private fun ProcessingSwitch(
 }
 
 // =====================================================================
-// وحدة المزج: فيدَرَان + مؤشرا مستوى + خفض تلقائي
+// v0.15.0 — وحدة المزج الاحترافية: 4 قنوات + ماستر + مشاهد جاهزة
 // =====================================================================
 
+/**
+ * لوحة المزج بأسلوب الاستوديوهات الإذاعية:
+ *  - قناة الميكروفون (كسب 0..200٪ + VU حي + كتم).
+ *  - قناة الموسيقى (فيدَر + VU حي + كتم) — تمثل مشغل المكتبة/القوائم/الفقرات.
+ *  - قناة الجينل (فيدَر + كتم) — حائط الرقائق والفواصل.
+ *  - قناة المعاينة (فيدَر + كتم) — استماع أرشيف التسجيلات.
+ *  - الماستر: يضرب القنوات الموسيقية الثلاث (لا يمس الميك — خط مباشر).
+ *  - الخفض التلقائي أثناء الإعلان (Ducking) كما كان.
+ *  - مشاهد جاهزة: ضغطة واحدة تنقل كل الفيدرات لوضع إذاعي مُجرَّب.
+ *
+ * الكتم (M) مؤقت كأجهزة الاستوديو: يحفظ الفيدَر تحته ويعود لحظة رفعه،
+ * ولا يُكتب في الإعدادات — الإعدادات تحفظ الفيدرات لا حالة الكتم.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun MixerCard(
-    micGain: Float,
+private fun MixerConsole(
+    micFader: Float,
     micLevel: Float,
-    mediaVolume: Float,
+    musicFader: Float,
     mediaLevel: Float,
+    breaksFader: Float,
+    previewFader: Float,
+    masterFader: Float,
     duckEnabled: Boolean,
     duckVolume: Float,
-    onMicGain: (Float) -> Unit,
-    onMicGainFinished: (Float) -> Unit,
-    onMediaVolume: (Float) -> Unit,
-    onMediaVolumeFinished: (Float) -> Unit,
+    onMicFader: (Float) -> Unit,
+    onMicFaderFinished: (Float) -> Unit,
+    onMusicFader: (Float) -> Unit,
+    onMusicFaderFinished: (Float) -> Unit,
+    onBreaksFader: (Float) -> Unit,
+    onBreaksFaderFinished: (Float) -> Unit,
+    onPreviewFader: (Float) -> Unit,
+    onPreviewFaderFinished: (Float) -> Unit,
+    onMasterFader: (Float) -> Unit,
+    onMasterFaderFinished: () -> Unit,
     onDuckEnabled: (Boolean) -> Unit,
-    onDuckVolume: (Float) -> Unit
+    onDuckVolume: (Float) -> Unit,
+    onScene: (MixerLogic.Scene) -> Unit
 ) {
+    // الكتم جلسي — لا يُحفظ (سلوك لوحات المزج الحقيقية)
+    var micMuted by remember { mutableStateOf(false) }
+    var musicMuted by remember { mutableStateOf(false) }
+    var breaksMuted by remember { mutableStateOf(false) }
+    var previewMuted by remember { mutableStateOf(false) }
+
     Card(
         Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -439,66 +501,159 @@ private fun MixerCard(
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(AppIcons.Tune, null, tint = MaterialTheme.colorScheme.primary)
-                Column(Modifier.padding(horizontal = 10.dp)) {
+                Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
                     Text("وحدة المزج", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "اضبط قناة الميكروفون وقناة الموسيقى كما في الاستوديوهات",
+                        "أربع قنوات + ماستر — كما في لوحات الاستوديوهات الإذاعية",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
 
+            // ===== المشاهد الجاهزة =====
+            Text(
+                "مشاهد جاهزة",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MixerLogic.Scene.entries.forEach { scene ->
+                    FilterChip(
+                        selected = false,
+                        onClick = { onScene(scene) },
+                        label = { Text(scene.labelAr) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    )
+                }
+            }
+            Text(
+                "المستوى المسموع = فيدَر القناة × الماستر • الكتم مؤقت ولا يمس الفيدَر",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            // ===== صف القنوات: ميك + موسيقى + جينل + معاينة + ماستر =====
             Row(
-                Modifier.fillMaxWidth().height(230.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                Modifier.fillMaxWidth().height(250.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // قناة الميكروفون: مؤشر مستوى + فيدَر
-                VuMeter(
-                    level = micLevel,
-                    label = "الميك",
-                    modifier = Modifier.weight(1f)
-                )
-                VerticalFader(
-                    value = micGain / 2f,
-                    onValueChange = { onMicGain(it * 2f) },
-                    onFinished = { onMicGainFinished(micGain) },
-                    label = "كسب الميكروفون",
-                    valueText = if (micGain <= 0.01f) "مكتوم"
-                    else "${(micGain * 100).roundToInt()}٪",
+                // ---- قناة الميكروفون ----
+                ChannelStrip(
                     modifier = Modifier.weight(1.2f),
-                    accent = MaterialTheme.colorScheme.primary
+                    channel = MixerLogic.Channel.MIC,
+                    fader = micFader,
+                    faderFraction = micFader / 2f,
+                    muted = micMuted,
+                    hasVu = true,
+                    vuLevel = micLevel,
+                    obeysMaster = false,
+                    onFader = { raw ->
+                        val v = MixerLogic.clampFader(MixerLogic.Channel.MIC, raw)
+                        onMicFader(if (micMuted) 0f else v)
+                    },
+                    onFaderFinished = { onMicFaderFinished(micFader) },
+                    onToggleMute = {
+                        micMuted = !micMuted
+                        onMicFader(if (micMuted) 0f else micFader)
+                    }
                 )
 
-                Box(
-                    Modifier
-                        .width(1.dp)
-                        .fillMaxHeight()
-                        .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                StripDivider()
+
+                // ---- قناة الموسيقى ----
+                ChannelStrip(
+                    modifier = Modifier.weight(1.2f),
+                    channel = MixerLogic.Channel.MUSIC,
+                    fader = musicFader,
+                    faderFraction = musicFader,
+                    muted = musicMuted,
+                    hasVu = true,
+                    vuLevel = mediaLevel,
+                    obeysMaster = true,
+                    onFader = { raw ->
+                        val v = MixerLogic.clampFader(MixerLogic.Channel.MUSIC, raw)
+                        onMusicFader(if (musicMuted) 0f else v * masterFader)
+                    },
+                    onFaderFinished = { onMusicFaderFinished(musicFader) },
+                    onToggleMute = {
+                        musicMuted = !musicMuted
+                        onMusicFader(if (musicMuted) 0f else musicFader * masterFader)
+                    }
                 )
 
-                // قناة الموسيقى: فيدَر + مؤشر مستوى
-                VerticalFader(
-                    value = mediaVolume,
-                    onValueChange = { onMediaVolume(it) },
-                    onFinished = { onMediaVolumeFinished(mediaVolume) },
-                    label = "مستوى الموسيقى",
-                    valueText = "${(mediaVolume * 100).roundToInt()}٪",
+                StripDivider()
+
+                // ---- قناة الجينل ----
+                ChannelStrip(
                     modifier = Modifier.weight(1.2f),
-                    accent = MaterialTheme.colorScheme.secondary
+                    channel = MixerLogic.Channel.BREAKS,
+                    fader = breaksFader,
+                    faderFraction = breaksFader,
+                    muted = breaksMuted,
+                    hasVu = false,
+                    vuLevel = 0f,
+                    obeysMaster = true,
+                    onFader = { raw ->
+                        val v = MixerLogic.clampFader(MixerLogic.Channel.BREAKS, raw)
+                        onBreaksFader(if (breaksMuted) 0f else v * masterFader)
+                    },
+                    onFaderFinished = { onBreaksFaderFinished(breaksFader) },
+                    onToggleMute = {
+                        breaksMuted = !breaksMuted
+                        onBreaksFader(if (breaksMuted) 0f else breaksFader * masterFader)
+                    }
                 )
-                VuMeter(
-                    level = mediaLevel,
-                    label = "الموسيقى",
-                    modifier = Modifier.weight(1f),
-                    accent = MaterialTheme.colorScheme.secondary
+
+                StripDivider()
+
+                // ---- قناة المعاينة ----
+                ChannelStrip(
+                    modifier = Modifier.weight(1.2f),
+                    channel = MixerLogic.Channel.PREVIEW,
+                    fader = previewFader,
+                    faderFraction = previewFader,
+                    muted = previewMuted,
+                    hasVu = false,
+                    vuLevel = 0f,
+                    obeysMaster = true,
+                    onFader = { raw ->
+                        val v = MixerLogic.clampFader(MixerLogic.Channel.PREVIEW, raw)
+                        onPreviewFader(if (previewMuted) 0f else v * masterFader)
+                    },
+                    onFaderFinished = { onPreviewFaderFinished(previewFader) },
+                    onToggleMute = {
+                        previewMuted = !previewMuted
+                        onPreviewFader(if (previewMuted) 0f else previewFader * masterFader)
+                    }
                 )
+
+                StripDivider()
+
+                // ---- الماستر ----
+                Column(
+                    Modifier.weight(1.15f),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    VerticalFader(
+                        value = masterFader,
+                        onValueChange = { onMasterFader(it) },
+                        onFinished = onMasterFaderFinished,
+                        label = "الماستر",
+                        valueText = "${(masterFader * 100).roundToInt()}٪",
+                        modifier = Modifier.weight(1f),
+                        accent = Color(0xFFE8B33C),
+                        showValueInside = true
+                    )
+                }
             }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
 
-            // الخفض التلقائي (Ducking)
+            // ===== الخفض التلقائي (Ducking) =====
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("خفض الموسيقى تلقائياً أثناء الإعلان", style = MaterialTheme.typography.titleSmall)
@@ -526,6 +681,86 @@ private fun MixerCard(
                 }
             }
         }
+    }
+}
+
+/** فاصل عمودي رقيق بين قنوات اللوحة */
+@Composable
+private fun StripDivider() {
+    Box(
+        Modifier
+            .width(1.dp)
+            .fillMaxHeight()
+            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+    )
+}
+
+/**
+ * قناة واحدة في اللوحة: (VU اختياري) + فيدَر + زر كتم M.
+ * [onFader] يستقبل القيمة الخام 0..1 من الإيماءة ويحوّلها المستدعي لدلالة قناته.
+ */
+@Composable
+private fun ChannelStrip(
+    channel: MixerLogic.Channel,
+    fader: Float,
+    faderFraction: Float,
+    muted: Boolean,
+    hasVu: Boolean,
+    vuLevel: Float,
+    obeysMaster: Boolean,
+    onFader: (Float) -> Unit,
+    onFaderFinished: () -> Unit,
+    onToggleMute: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val st = MaterialTheme.status
+    Column(
+        modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            if (hasVu) {
+                VuMeter(
+                    level = if (muted) 0f else vuLevel,
+                    label = "",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            VerticalFader(
+                value = faderFraction,
+                onValueChange = onFader,
+                onFinished = onFaderFinished,
+                label = "",
+                valueText = MixerLogic.faderText(channel, if (muted) 0f else fader),
+                modifier = if (hasVu) Modifier.weight(1.1f) else Modifier.fillMaxWidth(),
+                accent = if (muted) MaterialTheme.colorScheme.outlineVariant
+                else MaterialTheme.colorScheme.primary,
+                showValueInside = true
+            )
+        }
+        // زر الكتم M — أحمر عند الكتم كما في اللوحات الحقيقية
+        Surface(
+            onClick = onToggleMute,
+            shape = MaterialTheme.shapes.small,
+            color = if (muted) st.live.copy(alpha = 0.85f)
+            else MaterialTheme.colorScheme.surfaceVariant,
+            modifier = Modifier.padding(top = 6.dp)
+        ) {
+            Text(
+                "M",
+                Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+                color = if (muted) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        Text(
+            channel.labelAr,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            textAlign = TextAlign.Center
+        )
     }
 }
 

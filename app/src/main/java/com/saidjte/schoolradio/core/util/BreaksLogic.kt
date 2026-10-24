@@ -27,6 +27,12 @@ object BreaksLogic {
     data class PlaySpec(val uri: String, val title: String, val trackId: Long)
 
     /**
+     * v0.15.0 — عنصر قائمة التشغيل مع وسم «فاصل»: يحتاجه محرك التشغيل
+     * ليعرف أين تنتهي فقرة ويبدأ جينل فيطبق مهلة الانتقال قبلها.
+     */
+    data class QueueEntry(val spec: PlaySpec, val isBreak: Boolean)
+
+    /**
      * إعداد فواصل جدول — مرآة لأعمدة radio_schedules المضافة في v0.12.0.
      * [trackId] جينغل محدد يتكرر بين كل فقرتين، [categoryId] اختيار عشوائي من تصنيف.
      * تحديد الاثنين معاً يعطي الأولوية للمقطع المحدد (أوضح للمستخدم).
@@ -34,9 +40,16 @@ object BreaksLogic {
     data class BreakConfig(
         val enabled: Boolean = false,
         val trackId: Long? = null,
-        val categoryId: Long? = null
+        val categoryId: Long? = null,
+        /** v0.15.0: مهلة الانتقال بالثواني بعد انتهاء كل فقرة قبل انطلاق الجينل */
+        val transitionSec: Int = 0,
+        /** v0.15.0: نمط «الجينل مع نهاية كل مقطع» — فاصل بين كل مقطعين متتاليين */
+        val everyTrack: Boolean = false
     ) {
         val isConfigured: Boolean get() = trackId != null || categoryId != null
+
+        /** مهلة الانتقال بالميلي ثانية — جاهزة لآلية التشغيل (سقف 5 دقائق أماناً) */
+        val transitionMs: Long get() = transitionSec.coerceIn(0, 300) * 1000L
     }
 
     /** معلومة موعّية مصغرة لفقرة — تكفي لقرار «هل توجد فقرة تالية اليوم؟» */
@@ -126,6 +139,54 @@ object BreaksLogic {
         return out
     }
 
-    /** كم فواصلاً سيُدرج نظرياً لعدد فقرات فعلي معطى؟ (بين الفقرات فقط) */
-    fun breaksCountFor(filledSegments: Int): Int = (filledSegments - 1).coerceAtLeast(0)
+    /**
+     * v0.15.0 — النسخة الموسومة لبناء قائمة التشغيل: كل عنصر يحمل [QueueEntry.isBreak]
+     * ليعرف محرك الحدود في خدمة المشغل أين تنتهي فقرة ويبدأ جينل — فيطبق مهلة
+     * الانتقال ([BreakConfig.transitionSec]) قبل الجينل تماماً لا قبله.
+     *
+     * النمطان:
+     *  - افتراضياً: فاصل بين الفقرات فقط (فقرة ← جينل ← فقرة …).
+     *  - [BreakConfig.everyTrack]: فاصل بين كل مقطعين متتاليين عبر الفقرات كلها —
+     *    «الجينل مع نهاية كل مقطع» حرفياً.
+     *
+     * نفس قواعد [buildQueue]: الفقرات الفارغة تُتخطى، والفاصل المعطل/الفارغ يُتجاهل بهدوء.
+     */
+    fun buildQueueTagged(
+        segments: List<List<PlaySpec>>,
+        config: BreakConfig,
+        breakPool: List<PlaySpec>,
+        rng: Random = Random.Default
+    ): List<QueueEntry> {
+        val out = mutableListOf<QueueEntry>()
+        val filled = segments.filter { it.isNotEmpty() }
+        var lastBreakTrackId: Long? = null
+
+        fun appendBreak() {
+            val brk = resolveBreakSpec(config, breakPool, lastBreakTrackId, rng)
+            brk?.let {
+                out.add(QueueEntry(it, isBreak = true))
+                lastBreakTrackId = it.trackId
+            }
+        }
+
+        if (config.enabled && config.isConfigured && config.everyTrack) {
+            val tracks = filled.flatten()
+            tracks.forEachIndexed { index, spec ->
+                if (index > 0) appendBreak()
+                out.add(QueueEntry(spec, isBreak = false))
+            }
+        } else {
+            filled.forEachIndexed { index, segment ->
+                if (index > 0 && config.enabled && config.isConfigured) appendBreak()
+                segment.forEach { out.add(QueueEntry(it, isBreak = false)) }
+            }
+        }
+        return out
+    }
+
+    /** كم فواصلاً سيُدرج نظرياً؟ — في نمط «كل مقطع» يُحسب بين كل مقطعين لا فقرتين فقط */
+    fun breaksCountFor(filledSegments: Int, filledTracks: Int = filledSegments, everyTrack: Boolean = false): Int {
+        val items = if (everyTrack) filledTracks else filledSegments
+        return (items - 1).coerceAtLeast(0)
+    }
 }

@@ -282,21 +282,30 @@ class MicrophoneController(
     /**
      * خيط الالتقاط: قراءة من الميكروفون فقط ثم كتابة في المخزن الحلقي.
      * أقل كود ممكن هنا = أقل فرص توقف وأدق التقاط لأزمنة الميكروفون.
+     *
+     * v0.15.0 — مناعة كاملة ضد الانهيار (إصلاح إنهاء البث):
+     * أي استثناء يهرب من هذا الخيط كان يقتل العملية كلها (معالج الاستثناء الافتراضي
+     * للخيوط). الآن لا يهرب شيء — الخيط يخرج بهدوء وآلية الإيقاف تكمل عملها.
      */
     private fun captureLoop() {
-        Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
-        val chunk = ShortArray(SAMPLE_RATE / 100) // دفعة 10ms
-        while (running) {
-            val n = try {
-                audioRecord?.read(chunk, 0, chunk.size) ?: break
-            } catch (_: Exception) { break }
-            if (n > 0) {
-                ring?.write(chunk, 0, n)
-            } else if (n < 0) {
-                // خطأ قراءة عطل (ERROR_INVALID_OPERATION…): أوقف البث بأمان
-                stop("تعذر الاستمرار في قراءة الميكروفون")
-                break
+        try {
+            Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
+            val chunk = ShortArray(SAMPLE_RATE / 100) // دفعة 10ms
+            while (running) {
+                val n = try {
+                    audioRecord?.read(chunk, 0, chunk.size) ?: break
+                } catch (_: Exception) { break }
+                if (n > 0) {
+                    ring?.write(chunk, 0, n)
+                } else if (n < 0) {
+                    // خطأ قراءة عطل (ERROR_INVALID_OPERATION…): أوقف البث بأمان
+                    stop("تعذر الاستمرار في قراءة الميكروفون")
+                    break
+                }
             }
+        } catch (t: Throwable) {
+            // v0.15.0: لا يجوز أن يموت خيط صوتي باستثناء غير معالج — النظام يغلق التطبيق
+            if (running) stop("توقف غير متوقع في خيط الالتقاط")
         }
     }
 
@@ -306,6 +315,9 @@ class MicrophoneController(
      * يعمل حتى بعد رفع running لإتمام نحول الإيقاف (fade-out) ثم يخرج.
      */
     private fun playbackLoop() {
+        // v0.15.0: كل جسم الخيط داخل درع try/catch — أي استثناء يهرب من خيط صوتي
+        // كان يقتل العملية كلها (سبب انهيار التطبيق عند إنهاء البث)
+        try {
         Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
         val chunk = ShortArray(SAMPLE_RATE / 100)
         val fadeInStep = 1f / FADE_IN_CHUNKS
@@ -335,9 +347,15 @@ class MicrophoneController(
             }
 
             if (g > 0f) {
-                audioTrack?.write(chunk, 0, n)
-                // نفس الدفعة تذهب للتسجيل المتزامن (كلفة استدعاء واحد — لا تأخير عملي)
-                onPcm(chunk, n)
+                try {
+                    audioTrack?.write(chunk, 0, n)
+                    // نفس الدفعة تذهب للتسجيل المتزامن (كلفة استدعاء واحد — لا تأخير عملي)
+                    onPcm(chunk, n)
+                } catch (t: Throwable) {
+                    // المسار الإخراجي تلف (حُرر AudioTrack مثلاً) — نوقف البث بلا انهيار
+                    stop("توقف الإخراج الصوتي بشكل غير متوقع")
+                    break
+                }
             }
             // المستوى للواجهة (الموجة الحية): 25Hz كافية بصرياً وتريح الخيط الرئيسي
             val now = System.currentTimeMillis()
@@ -346,6 +364,10 @@ class MicrophoneController(
                 onLevel(rms(chunk, n))
             }
             if (fadingOut && gain <= 0f) break
+        }
+        } catch (t: Throwable) {
+            // v0.15.0: حصن أخير — لا خيط صوتي يموت باستثناء حيّ مهما كانت الظروف
+            if (running) stop("توقف غير متوقع في خيط الإخراج")
         }
     }
 
@@ -363,6 +385,9 @@ class MicrophoneController(
         if (_phase.value == MicPhase.IDLE || _phase.value == MicPhase.STOPPING) return
         stopRequested = true
         _phase.value = MicPhase.STOPPING // الواجهة تعرض «جارٍ الإيقاف…» فوراً
+        // v0.15.0: استيقِظ الخيوط المنتظرة فوراً — يختصر زمن الإيقاف وينهي
+        // الحلقتين طبيعياً دون اللجوء إلى المقاطعة القاسية في الغالبية الساحقة
+        ring?.wakeUp()
         controlExecutor.execute { stopNow(reason) }
     }
 
@@ -370,13 +395,22 @@ class MicrophoneController(
     private fun stopNow(reason: String?) {
         try {
             running = false
+            ring?.wakeUp()
             // خيط الإخراج ينحل الصوت ويخرج بنفسه عند رؤية stopRequested (أقل من 100ms)؛
             // خيط الالتقاط يخرج فور رفع running. ننتظر بوقت سخي ثم نجبر إن علقت.
             playbackThread?.join(1200)
-            if (playbackThread?.isAlive == true) playbackThread?.interrupt()
+            if (playbackThread?.isAlive == true) {
+                // v0.15.0: المقاطعة الآن آمنة — المخزن يلتقط InterruptedException
+                // وخيوط الصوت كلها داخل درع try/catch فلا انهيار مهما حدث
+                playbackThread?.interrupt()
+                playbackThread?.join(400)
+            }
             playbackThread = null
             captureThread?.join(1200)
-            if (captureThread?.isAlive == true) captureThread?.interrupt()
+            if (captureThread?.isAlive == true) {
+                captureThread?.interrupt()
+                captureThread?.join(400)
+            }
             captureThread = null
             ring?.clear()
             ring = null
@@ -388,10 +422,13 @@ class MicrophoneController(
             onDuck(false) // إعادة مستوى الموسيقى إلى قيمته السابقة
             _phase.value = MicPhase.IDLE
             notifyState(false, reason)
-        } catch (e: Exception) {
-            try { releaseAll() } catch (_: Exception) {}
+        } catch (t: Throwable) {
+            // v0.15.0: الإيقاف مسؤولية مقدسة — لا يجوز أن يفشل بانهيار أبداً
+            // (كان يكفي استثناء واحد غير معالج ليغلق التطبيق عند ضغطة الإنهاء)
+            try { releaseAll() } catch (_: Throwable) {}
+            try { routing.restoreNormal() } catch (_: Throwable) {}
             _phase.value = MicPhase.IDLE
-            notifyState(false, reason ?: "خطأ أثناء الإيقاف: ${e.message ?: ""}")
+            notifyState(false, reason ?: "خطأ أثناء الإيقاف: ${t.message ?: ""}")
         }
     }
 

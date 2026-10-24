@@ -180,17 +180,27 @@ class PlaybackConnection(private val context: Context) {
     /**
      * تشغيل قائمة مقاطع بالترتيب (يستبدل قائمة الانتظار الحالية).
      * v0.8.0: [queueTag] يعرّف مصدر الطلب (مثل "playlist:2") لتمييز القائمة النشطة في الواجهة.
+     * v0.15.0: [transitionDelayMs] مهلة الانتقال قبل الجينل في قوائم الفواصل —
+     * عند بدء قائمة وسمها "breaks:" تُفعّل آلية الحدود في PlaybackService تلقائياً
+     * (توقف حافة كل مقطع + مهلة انتقال قابلة للضبط قبل انطلاق الجينل).
      */
     fun playQueue(
         items: List<QueueItem>,
         startIndex: Int = 0,
         repeatAll: Boolean = false,
-        queueTag: String? = null
+        queueTag: String? = null,
+        transitionDelayMs: Long = 0L
     ) {
         val c = controller ?: return
         if (items.isEmpty()) return
         // تشغيل يدوي من الواجهة — ليس فقرة مجدولة، نمسح معلومات العرض على الهواء
         com.saidjte.schoolradio.di.ServiceLocator.setOnAir(null)
+        // v0.15.0: مزامنة وضع الفواصل مع خدمة المشغل — أي قائمة بلا وسم فواصل
+        // تعطّل آلية الحدود فوراً (القوائم العادية تتقدم تلقائياً كما كانت)
+        val breaksMode = queueTag?.startsWith("breaks:") == true
+        com.saidjte.schoolradio.di.ServiceLocator.breaksModeActive.value = breaksMode
+        com.saidjte.schoolradio.di.ServiceLocator.breakTransitionMs.value =
+            if (breaksMode) transitionDelayMs.coerceAtLeast(0L) else 0L
         _state.value = _state.value.copy(errorMessage = null, queueTag = queueTag)
         c.setMediaItems(items.map { it.toMediaItem() }, startIndex, 0)
         c.repeatMode = if (repeatAll) Player.REPEAT_MODE_ALL else Player.REPEAT_MODE_OFF
@@ -220,6 +230,9 @@ class PlaybackConnection(private val context: Context) {
         controller?.stop()
         controller?.clearMediaItems()
         com.saidjte.schoolradio.di.ServiceLocator.setOnAir(null)
+        // v0.15.0: إعادة وضع الفواصل إلى الخمول عند تفريغ القائمة
+        com.saidjte.schoolradio.di.ServiceLocator.breaksModeActive.value = false
+        com.saidjte.schoolradio.di.ServiceLocator.breakTransitionMs.value = 0L
         _state.value = PlaybackUiState()
     }
 
@@ -246,17 +259,40 @@ class PlaybackConnection(private val context: Context) {
         _state.value = _state.value.copy(errorMessage = null)
     }
 
-    /** عنصر قائمة انتظار مبسط للمشغل */
-    data class QueueItem(val uri: String, val title: String, val trackId: Long) {
-        fun toMediaItem(): MediaItem = MediaItem.Builder()
-            .setUri(uri)
-            .setMediaId(trackId.toString())
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(title)
-                    .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
-                    .build()
-            )
-            .build()
+    /**
+     * عنصر قائمة انتظار مبسط للمشغل.
+     * v0.15.0: [isBreak] يميز عناصر الجينل (الفواصل) — تُحمل داخل Metadata.extras
+     * ليتعرف عليها محرك الحدود في PlaybackService ويطبق مهلة الانتقال قبلها.
+     */
+    data class QueueItem(
+        val uri: String,
+        val title: String,
+        val trackId: Long,
+        val isBreak: Boolean = false
+    ) {
+        fun toMediaItem(): MediaItem {
+            val metadata = MediaMetadata.Builder()
+                .setTitle(title)
+                .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+            if (isBreak) {
+                metadata.setExtras(
+                    android.os.Bundle().apply { putBoolean(KEY_IS_BREAK, true) }
+                )
+            }
+            return MediaItem.Builder()
+                .setUri(uri)
+                .setMediaId(trackId.toString())
+                .setMediaMetadata(metadata.build())
+                .build()
+        }
+
+        companion object {
+            /** وسم عناصر الفواصل داخل MediaMetadata.extras — يقرأه PlaybackService */
+            const val KEY_IS_BREAK = "sr_is_break"
+
+            /** قراءة وسم الفاصل من عنصر وسائط (خدمة المشغل) */
+            fun MediaItem.isBreakItem(): Boolean =
+                mediaMetadata.extras?.getBoolean(KEY_IS_BREAK, false) == true
+        }
     }
 }

@@ -31,17 +31,22 @@ class ScheduleRepository(private val db: AppDatabase) {
     /**
      * v0.12.0: حفظ إعداد الفواصل المجدولة لجدول ما.
      * تعطيل الفواصل لا يتطلب إعادة ضبط المنبهات — الإعداد يُقرأ لحظة نهاية كل فقرة.
+     * v0.15.0: + مهلة الانتقال (ثواني صمت بعد الفقرة قبل الجينل) + نمط «كل مقطع».
      */
     suspend fun setBreakConfig(
         schedule: RadioScheduleEntity,
         enabled: Boolean,
         trackId: Long?,
-        categoryId: Long?
+        categoryId: Long?,
+        transitionSec: Int = schedule.breakTransitionSec,
+        everyTrack: Boolean = schedule.breakEveryTrack
     ) = dao.update(
         schedule.copy(
             breakEnabled = enabled,
             breakTrackId = trackId,
-            breakCategoryId = categoryId
+            breakCategoryId = categoryId,
+            breakTransitionSec = transitionSec.coerceIn(0, 300),
+            breakEveryTrack = everyTrack
         )
     )
 

@@ -79,6 +79,12 @@ class PcmRingBuffer(private val capacityShorts: Int) {
 
     /**
      * قراءة حتى [len] عينة — تنتظر وصول بيانات حتى [timeoutMs] ثم تعيد ما وجدته.
+     *
+     * v0.15.0 — مناعة ضد المقاطعة (إصلاح انهيار إنهاء البث):
+     * آلية الإيقاف قد تُقاطع خيط الإخراج بعد انتهاء مهلة الانتظار، والمقاطعة
+     * أثناء wait() ترمي InterruptedException — قبل هذا الإصلاح كانت تقتل الخيط
+     * وتُغلق التطبيق. الآن تُلتقط بهدوء وتُعاد القراءة كأن انتهى المهلة.
+     *
      * @return عدد العينات المقروءة (0 إذا انتهى الانتظار بلا بيانات)
      */
     fun read(dest: ShortArray, offset: Int, len: Int, timeoutMs: Long): Int = synchronized(this) {
@@ -86,7 +92,12 @@ class PcmRingBuffer(private val capacityShorts: Int) {
             val deadline = System.currentTimeMillis() + timeoutMs
             var remaining = timeoutMs
             while (count == 0 && remaining > 0) {
-                (this as java.lang.Object).wait(remaining)
+                try {
+                    (this as java.lang.Object).wait(remaining)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt() // حفظ إشارة المقاطعة دون موت الخيط
+                    break
+                }
                 remaining = deadline - System.currentTimeMillis()
             }
         }
@@ -111,6 +122,15 @@ class PcmRingBuffer(private val capacityShorts: Int) {
     /** تفريغ المخزن (عند إعادة الضبط/الإغلاق) */
     fun clear() = synchronized(this) {
         head = 0; tail = 0; count = 0
+        (this as java.lang.Object).notifyAll()
+    }
+
+    /**
+     * v0.15.0: إيقاف انتظار القراءة فوراً من خيط آخر (بلطف) —
+     * يُستخدم عند إنهاء البث لاستيقاظ خيط الإخراج من wait() دون مقاطعة قاسية،
+     * فلا InterruptedException إطلاقاً وينتهي الخيط بنفسه بسلاسة.
+     */
+    fun wakeUp() = synchronized(this) {
         (this as java.lang.Object).notifyAll()
     }
 }

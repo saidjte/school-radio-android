@@ -145,6 +145,15 @@ class RecordingsPlayer(context: Context) {
         _state.value = _state.value.copy(speed = s)
     }
 
+    /**
+     * v0.15.0 — فيدَر قناة المعاينة في الميكسر الاحترافي:
+     * مستوى مستقل لمعاينة الأرشيف (يُضرب بالماستر في الميكسر) —
+     * يُطبق فوراً ويبقى عبر التسجيلات حتى تغييره.
+     */
+    fun setVolume(v: Float) {
+        player.volume = v.coerceIn(0f, 1f)
+    }
+
     /** إيقاف كامل — يُستدعى من الحَكَم فقط (بدء قائمة رئيسية أو بث مباشر) */
     fun stopAll() {
         player.stop()

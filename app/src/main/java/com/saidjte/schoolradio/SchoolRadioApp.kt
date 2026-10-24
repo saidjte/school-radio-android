@@ -13,6 +13,9 @@ class SchoolRadioApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // v0.15.0: حارس الانهيارات أولاً — أي عطل قادم سيُوثَّق في crash_log.txt
+        // (بلاغ «التطبيق يغلق عند إنهاء البث» لم يترك أثراً — لن يتكرر هذا)
+        com.saidjte.schoolradio.core.util.CrashGuard.install(filesDir)
         ServiceLocator.init(this)
         ServiceLocator.appScope.launch {
             runCatching {

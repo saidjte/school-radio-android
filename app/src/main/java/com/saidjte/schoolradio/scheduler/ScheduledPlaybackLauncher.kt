@@ -160,7 +160,22 @@ object ScheduledPlaybackLauncher {
                             // انتهت الفقرة (ولا فاصل) — شاشة العرض تعود إلى الوضع الخامل
                             ServiceLocator.setOnAir(null)
                         } else {
-                            withContext(Dispatchers.Main) { playBreak(controller, event, brk) }
+                            // v0.15.0: مهلة الانتقال — صمت مقصود بعد الفقرة قبل الجينل
+                            // (قابل للضبط من محرر الفواصل) وشاشة العرض تعدّ للمذيع والمشاهدين
+                            if (brk.transitionSec > 0) {
+                                withContext(Dispatchers.Main) {
+                                    ServiceLocator.setOnAir(
+                                        OnAirInfo(
+                                            eventId = event.id,
+                                            eventTitle = "فاصل بين الفقرات",
+                                            noteText = "انطلاق الجينل بعد ${brk.transitionSec} ثانية…",
+                                            imagePath = null
+                                        )
+                                    )
+                                }
+                                kotlinx.coroutines.delay(brk.transitionMs)
+                            }
+                            withContext(Dispatchers.Main) { playBreak(controller, event, brk.item) }
                         }
                     }
                 }
@@ -169,11 +184,11 @@ object ScheduledPlaybackLauncher {
     }
 
     /**
-     * قراءة إعداد الفواصل واختيار جينغل الفاصل إن وُجد.
+     * قراءة إعداد الفواصل واختيار جينغل الفاصل إن وُجد — مع مهلة الانتقال المضبوطة (v0.15.0).
      * يعود null في كل حالات «لا فاصل»: تعطيل الخاصية، لا فقرة تالية اليوم،
      * أو تعذر توفير جينغل (مقطع محذوف/تصنيف فارغ) — فيبقى السلوك القديم بلا أي عطل.
      */
-    private suspend fun resolveScheduledBreak(event: ScheduledEventEntity): PlaybackConnection.QueueItem? {
+    private suspend fun resolveScheduledBreak(event: ScheduledEventEntity): BreakPlan? {
         val locator = ServiceLocator
         val schedule = locator.schedules.scheduleById(event.scheduleId) ?: return null
         if (!schedule.breakEnabled) return null
@@ -209,7 +224,11 @@ object ScheduledPlaybackLauncher {
             ),
             pool
         ) ?: return null
-        return PlaybackConnection.QueueItem(spec.uri, spec.title, spec.trackId)
+        // v0.15.0: مهلة الانتقال مضبوطة على الجدول — تُطبق قبل انطلاق الجينل
+        return BreakPlan(
+            PlaybackConnection.QueueItem(spec.uri, spec.title, spec.trackId),
+            schedule.breakTransitionSec
+        )
     }
 
     /**
@@ -244,4 +263,12 @@ object ScheduledPlaybackLauncher {
             }
         })
     }
+}
+
+/** v0.15.0: خطة الفاصل الآلي — الجينل + مهلة الانتقال قبل انطلاقه */
+private data class BreakPlan(
+    val item: PlaybackConnection.QueueItem,
+    val transitionSec: Int
+) {
+    val transitionMs: Long get() = transitionSec.coerceIn(0, 300) * 1000L
 }

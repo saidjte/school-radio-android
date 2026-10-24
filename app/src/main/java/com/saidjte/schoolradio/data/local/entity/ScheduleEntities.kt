@@ -46,7 +46,14 @@ data class RadioScheduleEntity(
     @ColumnInfo(name = "break_track_id")
     val breakTrackId: Long? = null,
     @ColumnInfo(name = "break_category_id")
-    val breakCategoryId: Long? = null
+    val breakCategoryId: Long? = null,
+    // ===== v0.15.0: مهلة الانتقال + نمط «الجينل مع نهاية كل مقطع» =====
+    /** ثواني الصمت بعد انتهاء كل فقرة قبل انطلاق جينغة الانتقال (0 = فوراً) */
+    @ColumnInfo(name = "break_transition_sec", defaultValue = "0")
+    val breakTransitionSec: Int = 0,
+    /** الفاصل بين كل مقطعين متتاليين (وليس بين الفقرات فقط) */
+    @ColumnInfo(name = "break_every_track", defaultValue = "0")
+    val breakEveryTrack: Boolean = false
 )
 
 /**

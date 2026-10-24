@@ -30,6 +30,8 @@ import com.saidjte.schoolradio.data.local.entity.UserEntity
  * الإصدار 4 = v0.12.0: أعمدة الفواصل المجدولة على radio_schedules (جينغل آلي بين الفقرات).
  * الإصدار 5 = v0.13.0: ربط سكربت المذيع بالفقرة المجدولة (script_id على scheduled_events)
  *   + أساس الأتمتة الموثوقة (خدمة حارسة + منبهات دقيقة مضمونة).
+ * الإصدار 6 = v0.15.0: مهلة الانتقال القابلة للضبط للفواصل + نمط «الجينل مع نهاية كل مقطع»
+ *   (break_transition_sec + break_every_track على radio_schedules).
  * عند أي تعديل مستقبلي: زد الإصدار واكتب Migration() صريحاً (لا fallback في الإنتاج)
  * — بيانات المدارس الحقيقية (مكتبة + جداول + أرشيف) لا يجوز فقدانها أبداً.
  */
@@ -45,7 +47,7 @@ import com.saidjte.schoolradio.data.local.entity.UserEntity
         UserEntity::class,
         RecordingEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -167,6 +169,23 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * ترحيل 5 → 6 (v0.14.0 → v0.15.0): عمودان للفواصل المطورة على radio_schedules —
+         * مهلة الانتقال (ثواني الصمت بعد الفقرة قبل الجينل) + نمط «الجينل مع نهاية كل مقطع».
+         * ADD COLUMN بقيم افتراضية ولا تُكتب صفوف أثناء الترحيل — لا مساس بالبيانات.
+         * SQL هنا يجب أن يطابق حرفياً ما يولّده Room من الكيانات (يُفحص مخطط app/schemas/6.json).
+         */
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `radio_schedules` ADD COLUMN `break_transition_sec` INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "ALTER TABLE `radio_schedules` ADD COLUMN `break_every_track` INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -174,7 +193,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "school-radio.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build().also { INSTANCE = it }
             }
     }

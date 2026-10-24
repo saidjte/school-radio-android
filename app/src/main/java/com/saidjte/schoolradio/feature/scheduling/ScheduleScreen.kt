@@ -36,12 +36,14 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -78,6 +80,7 @@ import com.saidjte.schoolradio.data.local.entity.RecordingEntity
 import com.saidjte.schoolradio.data.local.entity.RadioScheduleEntity
 import com.saidjte.schoolradio.data.local.entity.ScheduledEventEntity
 import com.saidjte.schoolradio.di.ServiceLocator
+import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -512,13 +515,19 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
             tracks = tracks,
             categories = categories,
             onDismiss = { editingBreaks = null },
-            onSave = { enabled, trackId, categoryId ->
+            onSave = { enabled, trackId, categoryId, transitionSec, everyTrack ->
                 scope.launch {
                     // نقرأ الجدول حديثاً — نسخة s قد تكون قديمة لو تغيرت حالة الجدول
                     val fresh = locator.schedules.scheduleById(s.id) ?: s
-                    locator.schedules.setBreakConfig(fresh, enabled, trackId, categoryId)
+                    locator.schedules.setBreakConfig(
+                        fresh, enabled, trackId, categoryId, transitionSec, everyTrack
+                    )
                     snackbar.showSnackbar(
-                        if (enabled) "فُعّلت الفواصل الآلية بين فقرات «${fresh.name}»"
+                        if (enabled) {
+                            val mode = if (everyTrack) "بعد كل مقطع" else "بين الفقرات"
+                            val delay = if (transitionSec > 0) " بمهلة $transitionSec ثانية" else ""
+                            "فُعّلت الفواصل الآلية ($mode$delay) في «${fresh.name}»"
+                        }
                         else "عُطّلت الفواصل في «${fresh.name}»"
                     )
                 }
@@ -568,12 +577,20 @@ internal fun breaksSourceLabel(
 ): String = when {
     !schedule.breakEnabled -> "الفواصل بين الفقرات: معطّلة"
     schedule.breakTrackId != null ->
-        "الفواصل: جينغل «${tracks.firstOrNull { it.id == schedule.breakTrackId }?.title ?: "مقطع محذوف"}»"
+        "الفواصل: جينغل «${tracks.firstOrNull { it.id == schedule.breakTrackId }?.title ?: "مقطع محذوف"}»" +
+            breakTransitionSuffix(schedule)
     schedule.breakCategoryId != null ->
         "الفواصل: عشوائي من «${
             categories.firstOrNull { it.id == schedule.breakCategoryId }?.name ?: "تصنيف محذوف"
-        }»"
+        }»" + breakTransitionSuffix(schedule)
     else -> "الفواصل: مفعّلة بلا جينغل — اختر المصدر"
+}
+
+/** v0.15.0: وصف المهلة ونمط الفواصل لبطاقة الجدول */
+private fun breakTransitionSuffix(schedule: RadioScheduleEntity): String {
+    val mode = if (schedule.breakEveryTrack) " • بعد كل مقطع" else " • بين الفقرات"
+    val delay = if (schedule.breakTransitionSec > 0) " • مهلة ${schedule.breakTransitionSec}ث" else ""
+    return mode + delay
 }
 
 /**
@@ -589,13 +606,24 @@ private fun BreaksEditorDialog(
     tracks: List<AudioTrackEntity>,
     categories: List<CategoryEntity>,
     onDismiss: () -> Unit,
-    onSave: (enabled: Boolean, trackId: Long?, categoryId: Long?) -> Unit
+    onSave: (
+        enabled: Boolean,
+        trackId: Long?,
+        categoryId: Long?,
+        transitionSec: Int,
+        everyTrack: Boolean
+    ) -> Unit
 ) {
     var enabled by remember { mutableStateOf(schedule.breakEnabled) }
     // نمط المصدر — يُستنتج من الإعداد الحالي (افتراضي المقطع المحدد)
     var modeIsTrack by remember { mutableStateOf(schedule.breakCategoryId == null) }
     var selectedTrackId by remember { mutableStateOf(schedule.breakTrackId) }
     var selectedCategoryId by remember { mutableStateOf(schedule.breakCategoryId) }
+    // v0.15.0: مهلة الانتقال + نمط «الجينل مع نهاية كل مقطع»
+    var transitionSec by remember {
+        mutableStateOf(schedule.breakTransitionSec.coerceIn(0, 30).toFloat())
+    }
+    var everyTrack by remember { mutableStateOf(schedule.breakEveryTrack) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -713,6 +741,65 @@ private fun BreaksEditorDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+
+                if (enabled) {
+                    // ===== v0.15.0: مهلة الانتقال القابلة للضبط =====
+                    Spacer(Modifier.height(6.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "مهلة الانتقال قبل الجينل",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Text(
+                        "بعد انتهاء كل فقرة يصمت التطبيق بهذه المدة ثم ينطلق الجينل — " +
+                            "صفر = فور انتهاء الفقرة (النمط الكلاسيكي)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "${transitionSec.roundToInt()} ثانية",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontFeatureSettings = "tnum"
+                            ),
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.width(96.dp)
+                        )
+                        Slider(
+                            value = transitionSec,
+                            onValueChange = { transitionSec = it },
+                            valueRange = 0f..30f,
+                            steps = 29,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "موضع الفواصل",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = !everyTrack,
+                            onClick = { everyTrack = false },
+                            label = { Text("بين الفقرات") }
+                        )
+                        FilterChip(
+                            selected = everyTrack,
+                            onClick = { everyTrack = true },
+                            label = { Text("بعد كل مقطع") }
+                        )
+                    }
+                    Text(
+                        if (everyTrack) "جينل بين كل مقطعين متتاليين حتى داخل الفقرة الواحدة — " +
+                            "مناسب للتلاوات والنشائد المتتابعة"
+                        else "جينل بين كل فقرتين فقط — النمط الإذاعي المعتاد",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
             }
         },
         confirmButton = {
@@ -724,7 +811,9 @@ private fun BreaksEditorDialog(
                     onSave(
                         enabled && sourceReady,
                         if (modeIsTrack) selectedTrackId else null,
-                        if (modeIsTrack) null else selectedCategoryId
+                        if (modeIsTrack) null else selectedCategoryId,
+                        transitionSec.roundToInt(),
+                        everyTrack
                     )
                 }
             ) { Text("حفظ") }

@@ -182,4 +182,75 @@ class BreaksLogicTest {
         assertEquals(4, BreaksLogic.breaksCountFor(5))
         assertEquals(0, BreaksLogic.breaksCountFor(0))
     }
+
+    // ===== v0.15.0: buildQueueTagged + مهلة الانتقال + نمط كل مقطع =====
+
+    @Test
+    fun `القائمة الموسومة تميز الفواصل من الفقرات`() {
+        val segments = listOf(listOf(spec(1), spec(2)), listOf(spec(3)))
+        val tagged = BreaksLogic.buildQueueTagged(
+            segments,
+            BreaksLogic.BreakConfig(enabled = true, trackId = 9),
+            breakPool = listOf(spec(9))
+        )
+        // فقرة1، فقرة2، جينل، فقرة3 — الفاصل موسوم والبقية لا
+        assertEquals(listOf(1L, 2L, 9L, 3L), tagged.map { it.spec.trackId })
+        assertEquals(listOf(false, false, true, false), tagged.map { it.isBreak })
+    }
+
+    @Test
+    fun `نمط كل مقطع يدرج جينلاً بين كل مقطعين متتاليين عبر الفقرات`() {
+        val segments = listOf(listOf(spec(1), spec(2)), listOf(spec(3)))
+        val tagged = BreaksLogic.buildQueueTagged(
+            segments,
+            BreaksLogic.BreakConfig(enabled = true, trackId = 9, everyTrack = true),
+            breakPool = listOf(spec(9))
+        )
+        assertEquals(listOf(1L, 9L, 2L, 9L, 3L), tagged.map { it.spec.trackId })
+        assertEquals(listOf(false, true, false, true, false), tagged.map { it.isBreak })
+    }
+
+    @Test
+    fun `نمط كل مقطع يعمل مع الاختيار العشوائي من تصنيف`() {
+        val segments = listOf(listOf(spec(1), spec(2)))
+        val tagged = BreaksLogic.buildQueueTagged(
+            segments,
+            BreaksLogic.BreakConfig(enabled = true, categoryId = 4, everyTrack = true),
+            breakPool = listOf(spec(9), spec(8)),
+            rng = Random(3)
+        )
+        // مقطعان + جينل واحد بينهما = 3 عناصر
+        assertEquals(3, tagged.size)
+        assertTrue(tagged[0].spec.trackId == 1L && !tagged[0].isBreak)
+        assertTrue(tagged[1].isBreak)
+        assertTrue(tagged[2].spec.trackId == 2L && !tagged[2].isBreak)
+    }
+
+    @Test
+    fun `الفواصل المعطلة تنتج قائمة موسومة بلا فواصل`() {
+        val segments = listOf(listOf(spec(1)), listOf(spec(2)))
+        val tagged = BreaksLogic.buildQueueTagged(
+            segments,
+            BreaksLogic.BreakConfig(enabled = false, trackId = 9),
+            breakPool = listOf(spec(9))
+        )
+        assertEquals(listOf(1L, 2L), tagged.map { it.spec.trackId })
+        assertTrue(tagged.none { it.isBreak })
+    }
+
+    @Test
+    fun `مهلة الانتقال تتحول إلى ميلي ثانية محصورة`() {
+        assertEquals(0L, BreaksLogic.BreakConfig(transitionSec = 0).transitionMs)
+        assertEquals(12_000L, BreaksLogic.BreakConfig(transitionSec = 12).transitionMs)
+        // سقف الأمان 300 ثانية
+        assertEquals(300_000L, BreaksLogic.BreakConfig(transitionSec = 9999).transitionMs)
+        assertEquals(0L, BreaksLogic.BreakConfig(transitionSec = -5).transitionMs)
+    }
+
+    @Test
+    fun `عدد الفواصل في نمط كل مقطع يُحسب من المقاطع لا الفقرات`() {
+        // 3 فقرات لكن 5 مقاطع فعلياً
+        assertEquals(2, BreaksLogic.breaksCountFor(3, filledTracks = 5, everyTrack = false))
+        assertEquals(4, BreaksLogic.breaksCountFor(3, filledTracks = 5, everyTrack = true))
+    }
 }

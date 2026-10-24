@@ -5,6 +5,7 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Process
+import com.saidjte.schoolradio.core.util.CrashGuard
 import com.saidjte.schoolradio.core.util.RecordingLogic
 import com.saidjte.schoolradio.core.util.WaveformLogic
 import com.saidjte.schoolradio.data.local.entity.RecordingEntity
@@ -43,7 +44,12 @@ class RecordingManager(
     /** مزوّد حالة البث الحي — لمنع بدء تسجيل بث بلا بث فعلي */
     private val isLiveProvider: () -> Boolean = { false }
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // v0.15.0: أي استثناء في كوروتين الحفظ (فشل قرص مثلاً) يُسجّل في CrashGuard
+    // بدل أن يتصاعد إلى القاتل الافتراضي ويغلق التطبيق أثناء إنهاء البث
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO +
+            com.saidjte.schoolradio.core.util.CrashGuard.coroutineHandler
+    )
 
     // ===== الحالة المشتركة مع الواجهة =====
     private val _isRecording = MutableStateFlow(false)
@@ -144,8 +150,17 @@ class RecordingManager(
         if (!_isRecording.value && memoRecord == null) return
         _isRecording.value = false
         _recordLevel.value = 0f // v0.12.0: الموجة تعود إلى الصمت فوراً
-        stopMemoCapture()
+        // v0.15.0: إيقاف خيط الفقرة قد ينتظر حتى 400ms — يُنفّذ خارج الخيط
+        // المستدعي (قد يكون الخيط الرئيسي أثناء إنهاء البث) وبدرع runCatching
+        com.saidjte.schoolradio.core.util.CrashGuard.runOnIo {
+            runCatching { stopMemoCapture() }
+                .onFailure { CrashGuard.record("stopMemoCapture", it) }
+            finishRecording()
+        }
+    }
 
+    /** الإغلاق الفعلي والحفظ — على خيط IO دائماً (v0.15.0) */
+    private fun finishRecording() {
         val w = writer
         writer = null
         val finishedSource = source

@@ -60,9 +60,21 @@ object ServiceLocator {
 
     @Volatile private var initialized = false
 
+    // ===== v0.15.0: حالة محرك حدود الفواصل (تقرأها PlaybackService) =====
+    /** هل قائمة الفواصل المجدولة نشطة؟ (تُفعّل توقف الحواف في خدمة المشغل) */
+    val breaksModeActive = MutableStateFlow(false)
+    /** مهلة الانتقال بالميلي ثانية قبل انطلاق الجينل بعد كل فقرة (0 = فوراً) */
+    val breakTransitionMs = MutableStateFlow(0L)
+
     private lateinit var appContext: Context
-    lateinit var appScope: CoroutineScope
-        private set
+    val appScope: CoroutineScope
+        get() = _appScope
+
+    // v0.15.0: أي استثناء خلفي يُسجّل في CrashGuard بدل أن يقتل العملية
+    private val _appScope by lazy {
+        CoroutineScope(SupervisorJob() + Dispatchers.Default +
+            com.saidjte.schoolradio.core.util.CrashGuard.coroutineHandler)
+    }
     lateinit var db: AppDatabase
         private set
     lateinit var settings: SettingsStore
@@ -92,13 +104,49 @@ object ServiceLocator {
     lateinit var scripts: ScriptRepository
         private set
 
+    // v0.15.0: الميكسر الاحترافي — تطبيق القنوات موحّد هنا كي يتماشى كل الشاشات
+    // على نفس القواعد: القناة الفعّالة = الفيدَر × الماستر (والكتم يعامل كصفر)
+    fun applyMixerVolumes(
+        musicFader: Float? = null,
+        master: Float? = null,
+        previewFader: Float? = null,
+        cartFader: Float? = null
+    ) {
+        appScope.launch {
+            val s = settings.settings.first()
+            val masterV = (master ?: s.masterVolume).coerceIn(0f, 1f)
+            val musicV = (musicFader ?: s.defaultVolume).coerceIn(0f, 1f)
+            val previewV = (previewFader ?: s.previewVolume).coerceIn(0f, 1f)
+            val cartV = (cartFader ?: s.cartVolume).coerceIn(0f, 1f)
+            // الموسيقى: نتجنب الكتابة فوق مستوى الخفض أثناء الإعلان الحي
+            val ducking = _micLive.value && s.duckEnabled
+            if (!ducking) playback.setVolume(musicV * masterV)
+            // المعاينة والجينل — إن وُجدت المشغلات (كسولة: لا نُنشئها من هنا)
+            if (_recordingsPlayerInstantiated) recordingsPlayer.setVolume(previewV * masterV)
+            if (_cartPlayerInstantiated) cartPlayer.setVolume(cartV * masterV)
+        }
+    }
+
+    private val _recordingsPlayerInstantiated: Boolean
+        get() = recordingsPlayerRef != null
+    private val _cartPlayerInstantiated: Boolean
+        get() = cartPlayerRef != null
+    @Volatile private var recordingsPlayerRef: RecordingsPlayer? = null
+    @Volatile private var cartPlayerRef: CartPlayer? = null
+
     // مشغل تسجيلات الأرشيف (ExoPlayer مستقل عن مشغل المكتبة الخلفي)
     val recordingsPlayer: RecordingsPlayer by lazy {
         RecordingsPlayer(appContext).also { p ->
+            recordingsPlayerRef = p
             // v0.9.0: معاينة التسجيلات تدخل سلسلة المؤثرات المشتركة (معادل الصوت يعمل عليها أيضاً)
             attachAudioEffects(p.audioSessionId)
             // v0.8.0: نهاية المعاينة طبيعياً → الحَكَم يستأنف ما كان يعمل قبله
             p.onEnded = { coordinator.previewFinished() }
+            // v0.15.0: استرجاع فيدَر قناة المعاينة × الماستر من الإعدادات المحفوظة
+            appScope.launch {
+                val s = settings.settings.first()
+                p.setVolume(s.previewVolume * s.masterVolume)
+            }
         }
     }
 
@@ -111,6 +159,12 @@ object ServiceLocator {
      */
     val cartPlayer: CartPlayer by lazy {
         CartPlayer(appContext).also { p ->
+            cartPlayerRef = p
+            // v0.15.0: استرجاع فيدَر قناة الجينل × الماستر من الإعدادات المحفوظة
+            appScope.launch {
+                val s = settings.settings.first()
+                p.setVolume(s.cartVolume * s.masterVolume)
+            }
             // الجينغل يدخل سلسلة المؤثرات المشتركة أيضاً — المعادل والباص يعملان عليه
             attachAudioEffects(p.audioSessionId)
         }
@@ -241,12 +295,13 @@ object ServiceLocator {
                     if (s.duckEnabled) {
                         if (duck) {
                             // احفظ المستوى الحالي ثم اخفض إلى مستوى الإعلان
+                            // v0.15.0: مستوى الخفض يُضرب بالماستر (اتساق الميكسر)
                             volumeBeforeDuck = playback.state.value.volume
-                                .takeIf { it > 0f } ?: s.defaultVolume
-                            playback.setVolume(s.duckVolume)
+                                .takeIf { it > 0f } ?: (s.defaultVolume * s.masterVolume)
+                            playback.setVolume(s.duckVolume * s.masterVolume)
                         } else {
                             // أعد المستوى السابق بعد انتهاء الإعلان
-                            playback.setVolume(volumeBeforeDuck ?: s.defaultVolume)
+                            playback.setVolume(volumeBeforeDuck ?: (s.defaultVolume * s.masterVolume))
                             volumeBeforeDuck = null
                         }
                     }
@@ -265,7 +320,11 @@ object ServiceLocator {
                     _micLevel.value = 0f
                     coordinator.micStopped()
                     // انتهى البث والتسجيل يعمل؟ أوقف واحفظ فوراً (لا ملفات تالفة)
-                    recordings.onLiveBroadcastStopped()
+                    // v0.15.0: على خيط خلفي — كان يستدعى من الخيط الرئيسي وينتظر
+                    // خيط التسجيل حتى 400ms، وأي استثناء فيه كان يغلق التطبيق
+                    com.saidjte.schoolradio.core.util.CrashGuard.runOnIo {
+                        recordings.onLiveBroadcastStopped()
+                    }
                 }
             },
             // v0.11.0: سلسلة تنظيف صوت المذيع (AGC/حجز الضجيج/إلغاء الصدى)
@@ -311,11 +370,12 @@ object ServiceLocator {
         items: List<PlaybackConnection.QueueItem>,
         startIndex: Int = 0,
         repeatAll: Boolean = false,
-        queueTag: String? = null
+        queueTag: String? = null,
+        transitionDelayMs: Long = 0L
     ) {
         if (items.isEmpty()) return
         coordinator.requestMainQueueStart()
-        playback.playQueue(items, startIndex, repeatAll, queueTag)
+        playback.playQueue(items, startIndex, repeatAll, queueTag, transitionDelayMs)
     }
 
     /**
@@ -361,39 +421,50 @@ object ServiceLocator {
             else -> emptyList()
         }
 
-        // 3) بناء القائمة المتداخلة (فواصل بين الفقرات فقط، بلا تكرار مباشر)
-        val queue = BreaksLogic.buildQueue(
+        // 3) بناء القائمة المتداخلة الموسومة (الواصلة تعرف محرك الحدود مواضع الجينل)
+        val tagged = BreaksLogic.buildQueueTagged(
             segments = segments,
             config = BreaksLogic.BreakConfig(
                 enabled = schedule.breakEnabled,
                 trackId = schedule.breakTrackId,
-                categoryId = schedule.breakCategoryId
+                categoryId = schedule.breakCategoryId,
+                transitionSec = schedule.breakTransitionSec,
+                everyTrack = schedule.breakEveryTrack
             ),
             breakPool = pool
         )
+        val queue = tagged.map { it.spec }
         if (queue.isEmpty()) return "لا يوجد محتوى قابل للتشغيل في «${schedule.name}»"
 
         // 4) الإطلاق عبر البوابة الموحدة + شاشة العرض تعرض البرنامج كاملاً
+        // v0.15.0: العناصر الموسومة isBreak + مهلة الانتقال تُمرر لمحرك الحدود
         playMainQueue(
-            queue.map { PlaybackConnection.QueueItem(it.uri, it.title, it.trackId) },
-            queueTag = "breaks:${schedule.id}"
+            tagged.map {
+                PlaybackConnection.QueueItem(it.spec.uri, it.spec.title, it.spec.trackId, it.isBreak)
+            },
+            queueTag = "breaks:${schedule.id}",
+            transitionDelayMs = schedule.breakTransitionSec * 1000L
         )
         setOnAir(
             OnAirInfo(
                 eventId = events.first().id,
                 eventTitle = "برنامج: ${schedule.name}",
                 noteText = if (schedule.breakEnabled && pool.isNotEmpty())
-                    "تشغيل متواصل مع فواصل آلية بين الفقرات" else "تشغيل متواصل للفقرات",
+                    if (schedule.breakEveryTrack) "تشغيل متواصل — جينل بعد كل مقطع" else "تشغيل متواصل مع فواصل آلية بين الفقرات"
+                    else "تشغيل متواصل للفقرات",
                 imagePath = null
             )
         )
         val breakNote = when {
             !schedule.breakEnabled -> "بلا فواصل (معطّلة في إعداد الجدول)"
             pool.isEmpty() -> "الفواصل مفعّلة لكن لا جينغل متاح — فحص إعداد الفواصل"
+            schedule.breakEveryTrack -> "جينل بعد كل مقطع"
             else -> "مع فواصل آلية بين الفقرات"
         }
+        val transitionNote = if (schedule.breakEnabled && pool.isNotEmpty() && schedule.breakTransitionSec > 0)
+            " • مهلة انتقال ${schedule.breakTransitionSec}ث" else ""
         val skippedNote = if (skipped > 0) " • تخطيت $skipped فقرة بلا محتوى" else ""
-        return "انطلق «${schedule.name}» (${queue.size} مقطع) — $breakNote$skippedNote"
+        return "انطلق «${schedule.name}» (${queue.size} مقطع) — $breakNote$transitionNote$skippedNote"
     }
 
     /** v0.12.0: تحليل محتوى فقرة إلى عناصر تشغيل — null إذا كان غير متاح */
@@ -418,7 +489,6 @@ object ServiceLocator {
         synchronized(this) {
             if (initialized) return
             appContext = context.applicationContext
-            appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
             db = AppDatabase.get(appContext)
             settings = SettingsStore(appContext)
             library = LibraryRepository(appContext, db)
@@ -448,7 +518,8 @@ object ServiceLocator {
                     val s = settings.settings.first()
                     pendingMicGain = s.micGain
                     mic.setMicGain(s.micGain)
-                    playback.applyStartupVolume(s.defaultVolume)
+                    // v0.15.0: مستوى الموسيقى الفعّال = الفيدَر × الماستر
+                    playback.applyStartupVolume(s.defaultVolume * s.masterVolume)
                     val restore = AudioEffects.RestoreData(
                         enabled = s.eqEnabled,
                         presetId = s.eqPresetId,
