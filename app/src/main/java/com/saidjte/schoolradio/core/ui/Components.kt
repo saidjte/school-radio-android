@@ -409,3 +409,49 @@ fun TextAction(
         Text(label)
     }
 }
+
+/**
+ * مؤشر التشغيل الحي (v0.8.0): ثلاثة أعمدة تنبض بأطوال متفاوتة —
+ * لغة المشغلات العصرية للسطر/البطاقة قيد التشغيل.
+ * ثابت بصرياً عند size، خفيف جداً (لوحات Canvas فقط، بلا صور).
+ */
+@Composable
+fun PlayingEqualizer(
+    color: Color = MaterialTheme.colorScheme.primary,
+    modifier: Modifier = Modifier,
+    barWidth: Float = 3f,
+    active: Boolean = true
+) {
+    val transition = rememberInfiniteTransition(label = "eq")
+    val phase by transition.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(650, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "eq-phase"
+    )
+    Box(modifier) {
+        androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
+            val w = size.width
+            val h = size.height
+            val bw = barWidth.dp.toPx()
+            val gap = (w - bw * 3f) / 2f
+            // أطول الأعمدة تتماوج بمراحل مختلفة — إيقاع طبيعي لا ميكانيكي
+            val heights = floatArrayOf(
+                0.45f + 0.55f * (if (active) phase else 0.6f),
+                0.8f + 0.2f * (if (active) 1f - phase else 0.7f),
+                0.5f + 0.5f * (if (active) (phase * 0.7f + 0.3f) % 1f else 0.5f)
+            )
+            for (i in 0 until 3) {
+                val bh = h * heights[i].coerceIn(0.15f, 1f)
+                drawRoundRect(
+                    color = color,
+                    topLeft = Offset(i * (bw + gap), h - bh),
+                    size = androidx.compose.ui.geometry.Size(bw, bh),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(bw / 2f)
+                )
+            }
+        }
+    }
+}

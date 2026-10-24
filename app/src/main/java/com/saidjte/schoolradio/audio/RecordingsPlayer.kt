@@ -13,8 +13,11 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * مشغّل أرشيف التسجيلات — ExoPlayer مستقل عن مشغّل المكتبة الخلفي عمداً:
- * لا يمس جلسة الوسائط ولا إشعار النظام (استماع مراجعة سريع من الشاشة)،
- * ويتوقف تلقائياً إذا بدأ البث المباشر (الميكروفون أولوية في الاستوديو).
+ * لا يمس جلسة الوسائط ولا إشعار النظام (استماع مراجعة سريع من الشاشة).
+ *
+ * v0.8.0: العزلة صارت مُدارة مركزياً عبر PlaybackCoordinator —
+ * كل بدء/إيقاف يمر بالحَكَم (لا تداخل صوتي مع القائمة الرئيسية أو البث المباشر)،
+ * وانتهاء المقطع طبيعياً يُبلّغ عبر [onEnded] ليستأنف الحَكَم ما كان يعمل قبله.
  *
  * التحديث الدوري للموضع: Handler بفاصل 500ms فقط أثناء التشغيل —
  * لا حلقات في الخلفية ولا استهلاك طاقة عند الخمول.
@@ -46,12 +49,16 @@ class RecordingsPlayer(context: Context) {
         }
     }
 
+    /** رد نداء نهاية المقطع طبيعياً — يوصله ServiceLocator بالحَكَم للاستئناف التلقائي */
+    var onEnded: (() -> Unit)? = null
+
     init {
-        // عند انتهاء المقطع طبيعياً: حدّث الحالة (تُعاد الأيقونة إلى «تشغيل»)
+        // عند انتهاء المقطع طبيعياً: حدّث الحالة وأبلغ الحَكَم (استئناف القائمة الرئيسية)
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED) {
                     _state.value = _state.value.copy(isPlaying = false)
+                    onEnded?.invoke()
                 }
             }
         })
@@ -80,7 +87,15 @@ class RecordingsPlayer(context: Context) {
         startPolling()
     }
 
-    /** إيقاف كامل — يُستدعى عند بدء البث المباشر (أولوية الميكروفون) */
+    /** تقديم/ترجيع إلى موضع محدد بالمللي ثانية — لشريط التقدم التفاعلي (v0.8.0) */
+    fun seekTo(positionMs: Long) {
+        player.seekTo(positionMs.coerceAtLeast(0))
+        // دفعة تحديث فورية حتى لا ينتظر شريط التقدم الدورة القادمة
+        _state.value = _state.value.copy(positionMs = player.currentPosition.coerceAtLeast(0))
+        if (player.isPlaying) startPolling()
+    }
+
+    /** إيقاف كامل — يُستدعى من الحَكَم فقط (بدء قائمة رئيسية أو بث مباشر) */
     fun stopAll() {
         player.stop()
         _state.value = State()

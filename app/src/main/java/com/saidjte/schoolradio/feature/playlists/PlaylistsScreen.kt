@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -21,6 +23,7 @@ import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FloatingActionButton
@@ -38,6 +41,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -45,6 +49,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.saidjte.schoolradio.audio.PlaybackConnection
 import com.saidjte.schoolradio.core.ui.AppIcons
 import com.saidjte.schoolradio.core.ui.EmptyStateCard
+import com.saidjte.schoolradio.core.ui.PlayingEqualizer
 import com.saidjte.schoolradio.core.ui.ScreenHeader
 import com.saidjte.schoolradio.data.local.entity.PlaylistEntity
 import com.saidjte.schoolradio.di.ServiceLocator
@@ -61,6 +66,8 @@ fun PlaylistsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
     val scope = rememberCoroutineScope()
 
     val playlists by locator.playlists.playlists.collectAsStateWithLifecycle(initialValue = emptyList())
+    // v0.8.0: حالة المشغل لتمييز القائمة قيد التشغيل وتحديث زرها (تشغيل/إيقاف مؤقت)
+    val playback by locator.playback.state.collectAsStateWithLifecycle()
     var openPlaylistId by remember { mutableStateOf<Long?>(null) }
     var creating by remember { mutableStateOf(false) }
     var renamingId by remember { mutableStateOf<Long?>(null) }
@@ -102,14 +109,25 @@ fun PlaylistsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(playlists, key = { it.id }) { p ->
-                        Card(Modifier.fillMaxWidth()) {
+                        // v0.8.0: هل هذه هي القائمة قيد التشغيل حالياً؟ (مطابقة وسم المصدر)
+                        val isThisPlaying = playback.queueTag == "playlist:${p.id}" && playback.hasQueue
+                        Card(
+                            Modifier.fillMaxWidth(),
+                            colors = if (isThisPlaying) CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                            ) else CardDefaults.cardColors(),
+                            border = if (isThisPlaying) BorderStroke(
+                                1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                            ) else null
+                        ) {
                             Row(
                                 Modifier.padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 androidx.compose.material3.Surface(
                                     shape = androidx.compose.foundation.shape.CircleShape,
-                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                                    color = if (isThisPlaying) MaterialTheme.colorScheme.primaryContainer
+                                    else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
                                 ) {
                                     Icon(
                                         AppIcons.QueueMusic, null,
@@ -118,7 +136,20 @@ fun PlaylistsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                     )
                                 }
                                 Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                                    Text(p.name, style = MaterialTheme.typography.titleMedium)
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            p.name,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        if (isThisPlaying) {
+                                            androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
+                                            PlayingEqualizer(
+                                                modifier = Modifier.size(width = 15.dp, height = 14.dp),
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
                                     Text(
                                         if (p.repeat) "التكرار مفعّل" else "بدون تكرار",
                                         style = MaterialTheme.typography.labelSmall,
@@ -130,17 +161,29 @@ fun PlaylistsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                         val resolved = locator.playlists.resolvedTracks(p.id)
                                         if (resolved.isEmpty()) {
                                             snackbar.showSnackbar("القائمة فارغة أو كل مقاطعها غير متاحة")
+                                        } else if (isThisPlaying && playback.isPlaying) {
+                                            // نفس القائمة تعمل: زر التشغيل صار إيقافاً مؤقتاً
+                                            locator.playback.pause()
+                                        } else if (isThisPlaying) {
+                                            locator.playback.play()
                                         } else {
-                                            locator.playback.playQueue(
+                                            locator.playMainQueue(
                                                 resolved.map {
                                                     PlaybackConnection.QueueItem(it.uri, it.title, it.id)
                                                 },
-                                                repeatAll = p.repeat
+                                                repeatAll = p.repeat,
+                                                queueTag = "playlist:${p.id}"
                                             )
                                             snackbar.showSnackbar("تشغيل «${p.name}» (${resolved.size} مقطعاً)")
                                         }
                                     }
-                                }) { Icon(Icons.Filled.PlayArrow, "تشغيل القائمة") }
+                                }) {
+                                    Icon(
+                                        if (isThisPlaying && playback.isPlaying) AppIcons.Pause
+                                        else Icons.Filled.PlayArrow,
+                                        "تشغيل/إيقاف القائمة"
+                                    )
+                                }
                                 IconButton(onClick = { openPlaylistId = p.id }) {
                                     Icon(Icons.Filled.List, "إدارة العناصر")
                                 }
@@ -247,11 +290,12 @@ private fun PlaylistItemsScreen(
                         if (resolved.isEmpty()) {
                             snackbar.showSnackbar("القائمة فارغة أو كل مقاطعها غير متاحة")
                         } else {
-                            locator.playback.playQueue(
+                            locator.playMainQueue(
                                 resolved.map {
                                     PlaybackConnection.QueueItem(it.uri, it.title, it.id)
                                 },
-                                repeatAll = playlist?.repeat == true
+                                repeatAll = playlist?.repeat == true,
+                                queueTag = "playlist:$playlistId"
                             )
                         }
                     }

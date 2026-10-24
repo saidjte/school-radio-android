@@ -32,6 +32,12 @@ data class PlaybackUiState(
     val queueTitles: List<String> = emptyList(),
     val volume: Float = 1f,
     val repeatQueue: Boolean = false,
+    /** v0.8.0: خلط الترتيب مفعّل؟ */
+    val shuffleEnabled: Boolean = false,
+    /** v0.8.0: وسم مصدر القائمة الحالية — مثل "library" أو "playlist:3" لتمييز ما يشغّله المستخدم */
+    val queueTag: String? = null,
+    /** v0.8.0: معرف المقطع من المكتبة قيد التشغيل (mediaId) — لتمييز السطر النشط */
+    val currentTrackId: Long? = null,
     val errorMessage: String? = null
 )
 
@@ -79,6 +85,7 @@ class PlaybackConnection(private val context: Context) {
         override fun onPlaybackStateChanged(playbackState: Int) = pushState()
         override fun onVolumeChanged(volume: Float) = pushState()
         override fun onRepeatModeChanged(repeatMode: Int) = pushState()
+        override fun onShuffleModeEnabledChanged(enabled: Boolean) = pushState()
 
         override fun onPlayerError(error: PlaybackException) {
             // رسائل عربية واضحة حسب رمز الخطأ
@@ -125,19 +132,30 @@ class PlaybackConnection(private val context: Context) {
             },
             volume = c.volume,
             repeatQueue = c.repeatMode == Player.REPEAT_MODE_ALL,
+            shuffleEnabled = c.shuffleModeEnabled,
+            queueTag = _state.value.queueTag,
+            currentTrackId = c.currentMediaItem?.mediaId?.toLongOrNull(),
             errorMessage = _state.value.errorMessage
         )
     }
 
     // ================== أوامر التشغيل ==================
 
-    /** تشغيل قائمة مقاطع بالترتيب (يستبدل قائمة الانتظار الحالية) */
-    fun playQueue(items: List<QueueItem>, startIndex: Int = 0, repeatAll: Boolean = false) {
+    /**
+     * تشغيل قائمة مقاطع بالترتيب (يستبدل قائمة الانتظار الحالية).
+     * v0.8.0: [queueTag] يعرّف مصدر الطلب (مثل "playlist:2") لتمييز القائمة النشطة في الواجهة.
+     */
+    fun playQueue(
+        items: List<QueueItem>,
+        startIndex: Int = 0,
+        repeatAll: Boolean = false,
+        queueTag: String? = null
+    ) {
         val c = controller ?: return
         if (items.isEmpty()) return
         // تشغيل يدوي من الواجهة — ليس فقرة مجدولة، نمسح معلومات العرض على الهواء
         com.saidjte.schoolradio.di.ServiceLocator.setOnAir(null)
-        _state.value = _state.value.copy(errorMessage = null)
+        _state.value = _state.value.copy(errorMessage = null, queueTag = queueTag)
         c.setMediaItems(items.map { it.toMediaItem() }, startIndex, 0)
         c.repeatMode = if (repeatAll) Player.REPEAT_MODE_ALL else Player.REPEAT_MODE_OFF
         c.prepare()
@@ -152,11 +170,26 @@ class PlaybackConnection(private val context: Context) {
         }
     }
 
+    /** v0.8.0: إيقاف مؤقت صريح — تستخدمه آلية العزلة عند معاينة التسجيلات */
+    fun pause() { controller?.pause() }
+
+    /** v0.8.0: استئناف صريح — تستخدمه آلية العزلة بعد انتهاء المعاينة */
+    fun play() {
+        val c = controller ?: return
+        if (c.playbackState == Player.STATE_IDLE && c.mediaItemCount > 0) c.prepare()
+        c.play()
+    }
+
     fun stopAll() {
         controller?.stop()
         controller?.clearMediaItems()
         com.saidjte.schoolradio.di.ServiceLocator.setOnAir(null)
         _state.value = PlaybackUiState()
+    }
+
+    /** v0.8.0: تفعيل/تعطيل خلط ترتيب قائمة الانتظار */
+    fun setShuffle(enabled: Boolean) {
+        controller?.shuffleModeEnabled = enabled
     }
 
     fun next() { controller?.seekToNextMediaItem() }

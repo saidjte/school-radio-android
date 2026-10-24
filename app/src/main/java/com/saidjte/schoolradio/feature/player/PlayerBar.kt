@@ -172,7 +172,7 @@ fun PlayerBar(
     }
 }
 
-/** مشغل موسع مع شريط تقدم تفاعلي وقائمة الانتظار */
+/** مشغل موسع مع شريط تقدم تفاعلي وقائمة الانتظار وأزرار الخلط/التكرار (v0.8.0) */
 @Composable
 private fun FullPlayerDialog(onDismiss: () -> Unit) {
     val playback = ServiceLocator.playback
@@ -188,17 +188,40 @@ private fun FullPlayerDialog(onDismiss: () -> Unit) {
                     state.currentTitle ?: "—",
                     style = MaterialTheme.typography.titleMedium
                 )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    // v0.8.0: خلط الترتيب — أداة الإذاعة الحية لتنويع المقاطع
+                    IconButton(onClick = { playback.setShuffle(!state.shuffleEnabled) }) {
+                        Icon(
+                            AppIcons.Shuffle, "خلط الترتيب",
+                            tint = if (state.shuffleEnabled) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    // v0.8.0: تكرار القائمة — موجود محركياً منذ v0.4.0 وصار له زر الآن
+                    IconButton(onClick = { playback.setRepeatAll(!state.repeatQueue) }) {
+                        Icon(
+                            AppIcons.Repeat, "تكرار القائمة",
+                            tint = if (state.repeatQueue) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Text(
+                        "${ScheduleLogic.formatDuration(state.positionMs)} / " +
+                            ScheduleLogic.formatDuration(state.durationMs),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.End
+                    )
+                }
                 androidx.compose.material3.Slider(
                     value = if (state.durationMs > 0)
                         state.positionMs.toFloat() / state.durationMs else 0f,
                     onValueChange = { ratio ->
                         playback.seekTo((ratio * state.durationMs).toLong())
                     }
-                )
-                Text(
-                    "${ScheduleLogic.formatDuration(state.positionMs)} / " +
-                        ScheduleLogic.formatDuration(state.durationMs),
-                    style = MaterialTheme.typography.bodySmall
                 )
                 if (state.errorMessage != null) {
                     Row(verticalAlignment = Alignment.CenterVertically) {

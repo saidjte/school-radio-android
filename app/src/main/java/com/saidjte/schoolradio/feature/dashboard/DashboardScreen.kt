@@ -40,6 +40,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -54,6 +55,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -75,6 +77,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.saidjte.schoolradio.audio.AudioRoutingManager
+import com.saidjte.schoolradio.audio.MicPhase
 import com.saidjte.schoolradio.core.theme.gradients
 import com.saidjte.schoolradio.core.theme.status
 import com.saidjte.schoolradio.core.ui.AppIcons
@@ -150,6 +153,8 @@ fun DashboardScreen(
     // حالة الميكروفون والمستوى الحي — من مركز الحالة المشترك (ServiceLocator)
     val mic = locator.mic
     val isLive by locator.micLive.collectAsStateWithLifecycle()
+    // v0.8.0: مرحلة البث (جارٍ البدء/مباشر/جارٍ الإيقاف) لاستجابة زر فورية وسلسة
+    val micPhase by mic.phase.collectAsStateWithLifecycle()
     val micLevelRaw by locator.micLevel.collectAsStateWithLifecycle()
     val micError by locator.micMessage.collectAsStateWithLifecycle()
     val micLevel by animateFloatAsState(
@@ -169,7 +174,8 @@ fun DashboardScreen(
     ) { granted ->
         scope.launch {
             if (granted) {
-                mic.start(route)?.let { snackbar.showSnackbar(it) }
+                // v0.8.0: البدء غير متزامن — النتيجة/الأخطاء عبر رد النداء وآلة الحالات
+                mic.start(route) { err -> err?.let { m -> scope.launch { snackbar.showSnackbar(m) } } }
             } else {
                 snackbar.showSnackbar("بدون صلاحية الميكروفون لا يمكن البث المباشر")
             }
@@ -356,6 +362,7 @@ fun DashboardScreen(
         item {
             LiveBroadcastCard(
                 isLive = isLive,
+                phase = micPhase,
                 level = micLevel,
                 route = route,
                 error = micError,
@@ -365,9 +372,7 @@ fun DashboardScreen(
                 onRouteChange = { route = it },
                 onTalkStart = {
                     if (mic.hasPermission()) {
-                        scope.launch {
-                            mic.start(route)?.let { snackbar.showSnackbar(it) }
-                        }
+                        mic.start(route) { err -> err?.let { m -> scope.launch { snackbar.showSnackbar(m) } } }
                     } else {
                         micPermission.launch(Manifest.permission.RECORD_AUDIO)
                     }
@@ -683,6 +688,7 @@ private fun EventRow(
 @Composable
 private fun LiveBroadcastCard(
     isLive: Boolean,
+    phase: MicPhase,
     level: Float,
     route: AudioRoutingManager.Route,
     error: String?,
@@ -745,9 +751,19 @@ private fun LiveBroadcastCard(
 
             Box(Modifier.size(160.dp).padding(16.dp), contentAlignment = Alignment.Center) {
                 val baseRing = MaterialTheme.colorScheme.primary
+                val startingRing = MaterialTheme.colorScheme.tertiary
                 Canvas(Modifier.fillMaxSize()) {
-                    val ringColor = if (isLive) st.live else baseRing
-                    val alpha = if (isLive) 0.25f + level * 0.75f else pulseAlpha
+                    val transitioning = phase == MicPhase.STARTING || phase == MicPhase.STOPPING
+                    val ringColor = when {
+                        isLive -> st.live
+                        phase == MicPhase.STARTING -> startingRing
+                        else -> baseRing
+                    }
+                    val alpha = when {
+                        isLive -> 0.25f + level * 0.75f
+                        transitioning -> 0.45f
+                        else -> pulseAlpha
+                    }
                     drawCircle(
                         color = ringColor.copy(alpha = alpha),
                         radius = size.minDimension / 2f,
@@ -755,40 +771,69 @@ private fun LiveBroadcastCard(
                         center = Offset(size.width / 2f, size.height / 2f)
                     )
                 }
+                // v0.8.0: إيماءة مستقرة — pointerInput مفهّح بـ Unit مع قراءة الحالة
+                // الأحدث عبر rememberUpdatedState، فلا تُقطع الإيماءة عند تغير الحالة
+                // (النمط القديم كان يعيد تشغيل pointerInput عند انقلاب isLive).
+                val talkStart by rememberUpdatedState(onTalkStart)
+                val talkEnd by rememberUpdatedState(onTalkEnd)
+                val phaseRef by rememberUpdatedState(phase)
                 Surface(
                     modifier = Modifier
                         .size(96.dp)
-                        .pointerInput(isLive) {
+                        .pointerInput(Unit) {
                             detectTapGestures(
                                 onPress = {
                                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    if (!isLive) onTalkStart()
+                                    if (phaseRef == MicPhase.IDLE) talkStart()
                                     try { awaitRelease() } finally {
-                                        if (isLive) {
+                                        // حرر الإصبع أثناء البث أو حتى أثناء البدء؟ أوقف بأمان —
+                                        // آلة الحالات تعالج «الإيقاف أثناء البدء» بلا تسريب
+                                        val p = phaseRef
+                                        if (p == MicPhase.LIVE || p == MicPhase.STARTING) {
                                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            onTalkEnd()
+                                            talkEnd()
                                         }
                                     }
                                 }
                             )
                         },
                     shape = CircleShape,
-                    color = if (isLive) st.live else MaterialTheme.colorScheme.primary,
+                    color = when {
+                        isLive -> st.live
+                        phase == MicPhase.STARTING -> MaterialTheme.colorScheme.tertiary
+                        else -> MaterialTheme.colorScheme.primary
+                    },
                     shadowElevation = 6.dp
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                AppIcons.Mic, null,
-                                tint = Color.White.copy(alpha = 0.9f),
-                                modifier = Modifier.size(26.dp)
-                            )
-                            Text(
-                                if (isLive) "تُبثّ الآن" else "اضغط\nللتحدث",
-                                color = Color.White,
-                                style = MaterialTheme.typography.titleSmall,
-                                textAlign = TextAlign.Center
-                            )
+                            if (phase == MicPhase.STARTING || phase == MicPhase.STOPPING) {
+                                // مؤشر انتقال صغير — استجابة محسوسة خلال ~100-300ms فتح الأجهزة
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(22.dp),
+                                    strokeWidth = 2.5.dp,
+                                    color = Color.White
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    if (phase == MicPhase.STARTING) "جارٍ البدء…" else "جارٍ الإيقاف…",
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    textAlign = TextAlign.Center
+                                )
+                            } else {
+                                Icon(
+                                    AppIcons.Mic, null,
+                                    tint = Color.White.copy(alpha = 0.9f),
+                                    modifier = Modifier.size(26.dp)
+                                )
+                                Text(
+                                    if (isLive) "تُبثّ الآن" else "اضغط\nللتحدث",
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
                         }
                     }
                 }
@@ -887,8 +932,8 @@ private fun LiveBroadcastCard(
                 ).forEach { r ->
                     FilterChip(
                         selected = route == r,
-                        onClick = { if (!isLive) onRouteChange(r) },
-                        enabled = !isLive,
+                        onClick = { if (phase == MicPhase.IDLE) onRouteChange(r) },
+                        enabled = phase == MicPhase.IDLE,
                         label = { Text(r.labelAr) },
                         leadingIcon = {
                             Icon(

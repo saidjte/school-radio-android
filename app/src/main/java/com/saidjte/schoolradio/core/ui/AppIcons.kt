@@ -741,4 +741,39 @@ object AppIcons {
             }
         }
     }
+
+    /** خلط الترتيب (v0.8.0) — مسار Material Icons الرسمي (Apache 2.0) */
+    val Shuffle: ImageVector by lazy {
+        builder("Shuffle") {
+            path(
+                fill = SolidColor(Color.Black),
+                pathFillType = PathFillType.NonZero
+            ) {
+                moveTo(10.59f, 9.17f)
+                lineTo(5.41f, 4f)
+                lineTo(4f, 5.41f)
+                lineToRelative(5.17f, 5.17f)
+                lineToRelative(1.42f, -1.41f)
+                close()
+                moveTo(14.5f, 4f)
+                lineToRelative(2.04f, 2.04f)
+                lineTo(4f, 18.59f)
+                lineTo(5.41f, 20f)
+                lineTo(17.96f, 7.46f)
+                lineTo(20f, 9.5f)
+                verticalLineTo(4f)
+                horizontalLineTo(14.5f)
+                close()
+                moveTo(13.42f, 12.83f)
+                lineToRelative(-1.41f, 1.41f)
+                lineToRelative(3.13f, 3.13f)
+                lineTo(14.5f, 18.5f)
+                horizontalLineTo(20f)
+                verticalLineTo(13f)
+                lineToRelative(-2.04f, 2.04f)
+                lineToRelative(-3.13f, -3.13f)
+                close()
+            }
+        }
+    }
 }

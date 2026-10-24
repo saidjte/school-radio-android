@@ -107,6 +107,9 @@ class AlarmReceiver : BroadcastReceiver() {
 
         // ===== 3) الإطلاق عبر MediaController (الموضوع الرئيسي) =====
         withContext(Dispatchers.Main) {
+            // v0.8.0: الحَكَم الموحّد — أوقف أي معاينة تسجيلات قبل إطلاق الفقرة
+            // (نفس المشغل الرئيسي، لا تداخل صوتي أبداً)
+            ServiceLocator.onScheduledPlaybackStarting()
             val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
             val future = MediaController.Builder(context, token).buildAsync()
             future.addListener({
@@ -138,20 +141,26 @@ class AlarmReceiver : BroadcastReceiver() {
         }
     }
 
-    /** ===== 4) مراقبة النهاية لتوثيق النتيجة ثم تحرير المتحكم ===== */
+    /**
+     * ===== 4) مراقبة النهاية لتوثيق النتيجة ثم تحرير المتحكم =====
+     *
+     * إصلاح v0.8.0: كان isLastItem يُحسب مرة واحدة عند التسجيل (قبل أي انتقال بين
+     * المقاطع، الفهرس لا يزال 0) فلا تُوثّق أي فقرة متعددة المقاطع كـ COMPLETED أبداً.
+     * الصحيح: STATE_ENDED لا يُطلق إلا عند نهاية القائمة *كاملة* — دليل الإكمال بذاته.
+     */
     private fun watchCompletion(controller: MediaController, eventId: Long, dateKey: String) {
-        val lastQueueIndex = controller.mediaItemCount - 1
-        val isLastItem = controller.currentMediaItemIndex >= lastQueueIndex
         controller.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
-                if (state == Player.STATE_ENDED && isLastItem) {
+                if (state == Player.STATE_ENDED) {
+                    controller.removeListener(this)
+                    controller.release()
                     CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
                         ServiceLocator.schedules.markStatus(
                             eventId, dateKey, ExecutionStatus.COMPLETED, "شُغّلت كاملة"
                         )
+                        // انتهت الفقرة — شاشة العرض تعود إلى الوضع الخامل
+                        ServiceLocator.setOnAir(null)
                     }
-                    controller.removeListener(this)
-                    controller.release()
                 }
             }
         })

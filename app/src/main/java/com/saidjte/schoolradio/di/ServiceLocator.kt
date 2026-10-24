@@ -4,6 +4,7 @@ import android.content.Context
 import com.saidjte.schoolradio.audio.AudioRoutingManager
 import com.saidjte.schoolradio.audio.MicrophoneController
 import com.saidjte.schoolradio.audio.PlaybackConnection
+import com.saidjte.schoolradio.audio.PlaybackCoordinator
 import com.saidjte.schoolradio.audio.RecordingManager
 import com.saidjte.schoolradio.audio.RecordingsPlayer
 import com.saidjte.schoolradio.data.backup.BackupRepository
@@ -76,7 +77,27 @@ object ServiceLocator {
         private set
 
     // مشغل تسجيلات الأرشيف (ExoPlayer مستقل عن مشغل المكتبة الخلفي)
-    val recordingsPlayer: RecordingsPlayer by lazy { RecordingsPlayer(appContext) }
+    val recordingsPlayer: RecordingsPlayer by lazy {
+        RecordingsPlayer(appContext).also { p ->
+            // v0.8.0: نهاية المعاينة طبيعياً → الحَكَم يستأنف ما كان يعمل قبله
+            p.onEnded = { coordinator.previewFinished() }
+        }
+    }
+
+    /**
+     * v0.8.0 — حَكَم التشغيل الموحّد: مصدر واحد للحقيقة عند تعارض المصادر الصوتية
+     * (قائمة المكتبة/القوائم، معاينة التسجيلات، البث المباشر).
+     * المنفذ موصول كسولاً لتفادي أي حلقة تهيئة.
+     */
+    val coordinator: PlaybackCoordinator by lazy {
+        PlaybackCoordinator(object : PlaybackCoordinator.PlayerPort {
+            override fun isMainPlaying(): Boolean = playback.state.value.isPlaying
+            override fun pauseMain() = playback.pause()
+            override fun resumeMain() = playback.play()
+            override fun stopPreview() = recordingsPlayer.stopAll()
+            override fun isMicLive(): Boolean = _micLive.value
+        })
+    }
 
     // ===== حالة البث المباشر المشتركة مع الواجهة =====
     private val _micLevel = MutableStateFlow(0f)
@@ -131,8 +152,12 @@ object ServiceLocator {
             onStateChanged = { isLive, message ->
                 _micLive.value = isLive
                 _micMessage.value = message
-                if (!isLive) {
+                if (isLive) {
+                    // v0.8.0: البث المباشر أعلى أولوية — الحَكَم يوقف المعاينة فوراً
+                    coordinator.micStarted()
+                } else {
                     _micLevel.value = 0f
+                    coordinator.micStopped()
                     // انتهى البث والتسجيل يعمل؟ أوقف واحفظ فوراً (لا ملفات تالفة)
                     recordings.onLiveBroadcastStopped()
                 }
@@ -145,6 +170,54 @@ object ServiceLocator {
         val enabledIds = schedules.enabledSchedules().map { it.id }.toSet()
         val events = schedules.allEvents().filter { it.scheduleId in enabledIds }
         scheduler.rescheduleAll(events)
+    }
+
+    // ================== v0.8.0: بوابات التشغيل الموحّدة ==================
+
+    /**
+     * بوابة معاينة التسجيلات — كل الشاشات تستدعي هذه بدل recordingsPlayer مباشرة.
+     * تمر عبر الحَكَم (توقف مؤقت للقائمة الرئيسية إن كانت تعمل) وتُرجع رسالة
+     * عربية جاهزة للعرض إذا منع البدء (البث المباشر يعمل)، أو null عند النجاح.
+     */
+    fun previewToggle(recording: com.saidjte.schoolradio.data.local.entity.RecordingEntity): String? {
+        val currentId = recordingsPlayer.state.value.recordingId
+        val sameRecording = currentId == recording.id
+        if (sameRecording) {
+            // تبديل تشغيل/إيقاف لنفس التسجيل — لا قرار عزلة جديد
+            recordingsPlayer.toggle(recording)
+            return null
+        }
+        return when (coordinator.requestPreviewStart()) {
+            PlaybackCoordinator.PreviewDecision.OK -> {
+                recordingsPlayer.toggle(recording)
+                null
+            }
+            PlaybackCoordinator.PreviewDecision.BLOCKED_LIVE ->
+                "أوقف البث المباشر أولاً للاستماع إلى التسجيل — لا يجوز خلطهما"
+        }
+    }
+
+    /**
+     * بوابة القائمة الرئيسية (مكتبة/قوائم/تشغيل يدوي) — توقف أي معاينة أولاً عبر الحَكَم.
+     * الفقرات المجدولة تستدعي [onScheduledPlaybackStarting] مباشرة.
+     */
+    fun playMainQueue(
+        items: List<PlaybackConnection.QueueItem>,
+        startIndex: Int = 0,
+        repeatAll: Boolean = false,
+        queueTag: String? = null
+    ) {
+        if (items.isEmpty()) return
+        coordinator.requestMainQueueStart()
+        playback.playQueue(items, startIndex, repeatAll, queueTag)
+    }
+
+    /**
+     * بوابة الفقرة المجدولة — تُستدعى من AlarmReceiver قبل إطلاق القائمة
+     * (على خيط رئيسي): توقف معاينة التسجيلات إن كانت تعمل.
+     */
+    fun onScheduledPlaybackStarting() {
+        coordinator.requestMainQueueStart()
     }
 
     fun init(context: Context) {

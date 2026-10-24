@@ -3,14 +3,20 @@ package com.saidjte.schoolradio.feature.scheduling
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -21,6 +27,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -31,6 +38,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,15 +51,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.saidjte.schoolradio.core.theme.gradients
 import com.saidjte.schoolradio.core.theme.status
 import com.saidjte.schoolradio.core.ui.AppIcons
 import com.saidjte.schoolradio.core.ui.EmptyStateCard
 import com.saidjte.schoolradio.core.ui.ScreenHeader
 import com.saidjte.schoolradio.core.ui.SegmentImage
+import com.saidjte.schoolradio.core.ui.diagonalBrush
 import com.saidjte.schoolradio.core.util.EventContentAr
 import com.saidjte.schoolradio.core.util.ScheduleLogic
 import com.saidjte.schoolradio.core.util.SegmentImageStore
@@ -68,6 +80,12 @@ import kotlinx.coroutines.launch
  * وربط بقائمة تشغيل أو مقطع أو **تسجيل من الأرشيف** (v0.5.0)،
  * نص/صورة للفقرة تُعرض على شاشة «على الهواء»، حالة التنفيذ لكل فقرة،
  * وطلب صلاحية المنبهات الدقيقة.
+ */
+/**
+ * شاشة الجدولة (محدّثة v0.8.0):
+ *  - ملخص علوي: جداول مفعلة / فقرات إجمالاً / الفقرة القادمة — بلمحة واحدة
+ *  - الفقرات مرتبة زمنياً، الفقرة القادمة بشارة وقت متدرجة، الأيام كرقائق مصغرة
+ *  - تنبيه المنبهات الدقيقة + بوابة الأدوار كما هي
  */
 @Composable
 fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
@@ -126,10 +144,35 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
             }
         }
     ) { padding ->
+        // v0.8.0: الفقرات مرتبة زمنياً + حساب الفقرة القادمة للتمييز البصري
+        val sortedEvents = events.sortedBy { it.startMinutes }
+        val enabledIds = schedules.filter { it.enabled }.map { it.id }.toSet()
+        val minutesNow = remember(events) { ScheduleLogic.minutesOfDay(System.currentTimeMillis()) }
+        val nextEventId = sortedEvents
+            .firstOrNull { it.scheduleId in enabledIds && it.startMinutes > minutesNow }?.id
+
         LazyColumn(
             Modifier.fillMaxSize().padding(padding).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // ===== ملخص الجدولة (v0.8.0) =====
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ScheduleStat(
+                        "${schedules.count { it.enabled }}", "جدول مفعّل",
+                        Modifier.weight(1f), MaterialTheme.colorScheme.primary
+                    )
+                    ScheduleStat(
+                        "${events.size}", "فقرة مجدولة",
+                        Modifier.weight(1f), MaterialTheme.colorScheme.secondary
+                    )
+                    ScheduleStat(
+                        "${sortedEvents.count { it.scheduleId in enabledIds && it.startMinutes > minutesNow }}",
+                        "متبقية اليوم",
+                        Modifier.weight(1f), MaterialTheme.status.success
+                    )
+                }
+            }
             // ===== تنبيه المنبهات الدقيقة =====
             item {
                 val exactOk = remember { locator.scheduler.canScheduleExact() }
@@ -236,15 +279,23 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                     )
                 }
             }
-            items(events, key = { "event-${it.id}" }) { e ->
-                val scheduleName = schedules.firstOrNull { it.id == e.scheduleId }?.name ?: "—"
+            items(sortedEvents, key = { "event-${it.id}" }) { e ->
                 val lastExecution = executions.firstOrNull { it.eventId == e.id }
+                val isNextUp = e.id == nextEventId
                 val contentLabel = EventContentAr.label(
                     playlistName = e.playlistId?.let { pid -> playlists.firstOrNull { it.id == pid }?.name },
                     trackTitle = e.singleTrackId?.let { tid -> tracks.firstOrNull { it.id == tid }?.title },
                     recordingTitle = e.recordingId?.let { rid -> recordings.firstOrNull { it.id == rid }?.title }
                 )
-                Card(Modifier.fillMaxWidth()) {
+                Card(
+                    Modifier.fillMaxWidth().animateContentSize(),
+                    colors = if (isNextUp) CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+                    ) else CardDefaults.cardColors(),
+                    border = if (isNextUp) BorderStroke(
+                        1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+                    ) else null
+                ) {
                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (e.imagePath != null) {
                             SegmentImage(
@@ -255,15 +306,57 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                             Spacer(Modifier.padding(start = 10.dp))
                         }
                         Column(Modifier.weight(1f)) {
-                            Text(
-                                "${ScheduleLogic.formatMinutes(e.startMinutes)} — ${e.title}",
-                                style = MaterialTheme.typography.titleSmall
-                            )
-                            Text(
-                                "جدول: $scheduleName • الأيام: ${dayMaskLabelAr(e.weekDaysMask)}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                // شارة الوقت — متدرجة للفقرة القادمة (لغة بطاقة «الفقرة التالية» في الرئيسية)
+                                if (isNextUp) {
+                                    Surface(
+                                        shape = MaterialTheme.shapes.small,
+                                        shadowElevation = 3.dp,
+                                        color = Color.Transparent
+                                    ) {
+                                        Box(
+                                            Modifier.background(
+                                                MaterialTheme.gradients.hero.diagonalBrush(),
+                                                MaterialTheme.shapes.small
+                                            )
+                                        ) {
+                                            Text(
+                                                ScheduleLogic.formatMinutes(e.startMinutes),
+                                                Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                                style = MaterialTheme.typography.labelMedium.copy(
+                                                    fontFeatureSettings = "tnum", fontWeight = FontWeight.Bold
+                                                ),
+                                                color = Color.White
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    Surface(
+                                        shape = MaterialTheme.shapes.small,
+                                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                                    ) {
+                                        Text(
+                                            ScheduleLogic.formatMinutes(e.startMinutes),
+                                            Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                            style = MaterialTheme.typography.labelMedium.copy(
+                                                fontFeatureSettings = "tnum", fontWeight = FontWeight.Bold
+                                            ),
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    e.title,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = if (isNextUp) FontWeight.SemiBold else FontWeight.Normal,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            // v0.8.0: الأيام كرقائق مصغرة — أسرع قراءة من النص الطويل
+                            WeekDayPills(e.weekDaysMask)
                             Text(
                                 contentLabel,
                                 style = MaterialTheme.typography.labelSmall,
@@ -402,6 +495,74 @@ fun dayMaskLabelAr(mask: Int): String =
     (1..7).filter { (mask shr (it - 1)) and 1 == 1 }
         .joinToString("، ") { ARABIC_DAYS[it - 1] }
         .ifBlank { "لا أيام" }
+
+/**
+ * رقائق أيام الأسبوع المصغرة (v0.8.0): حرف واحد لكل يوم —
+ * الايام المفعّلة بلون الثيم والمطفأة باهتة، أسرع قراءة من النص الطويل.
+ * ترتيب ISO: الاثنين ← الأحد (نفس ترتيب بتات weekDaysMask).
+ */
+@Composable
+fun WeekDayPills(mask: Int, modifier: Modifier = Modifier) {
+    val dayLetters = listOf("ن", "ث", "ر", "خ", "ج", "س", "ح")
+    Row(
+        modifier,
+        horizontalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        (1..7).forEach { dayIso ->
+            val active = ((mask shr (dayIso - 1)) and 1) == 1
+            Surface(
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp),
+                color = if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            ) {
+                Text(
+                    dayLetters[dayIso - 1],
+                    Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
+                    color = if (active) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * بطاقة إحصاء صغيرة لملخص الجدولة (v0.8.0):
+ * قيمة بارزة بلون دلالي + تسمية — نفس لغة StatChip في الرئيسية لكن أفقية مختصرة.
+ */
+@Composable
+private fun ScheduleStat(
+    value: String,
+    label: String,
+    modifier: Modifier = Modifier,
+    valueColor: Color = MaterialTheme.colorScheme.primary
+) {
+    Surface(
+        modifier = modifier,
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shadowElevation = 1.dp
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                value,
+                style = MaterialTheme.typography.titleLarge,
+                color = valueColor,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
 
 @Composable
 private fun EventEditorDialog(
