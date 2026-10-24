@@ -171,7 +171,10 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                     }
                 }
             }
-            items(schedules, key = { it.id }) { s ->
+            // إصلاح انهيار v0.5.0: مفاتيح LazyColumn يجب أن تكون فريدة في العمود كله
+            // لا داخل كل كتلة — جدولان منفصلان يبدآن الترقيم من 1 فتتصادم المفاتيح
+            // (Key was already used) بمجرد إضافة أول فقرة. بادئة نصية تفصل النطاقين.
+            items(schedules, key = { "schedule-${it.id}" }) { s ->
                 Card(Modifier.fillMaxWidth()) {
                     Row(
                         Modifier.padding(12.dp),
@@ -233,7 +236,7 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                     )
                 }
             }
-            items(events, key = { it.id }) { e ->
+            items(events, key = { "event-${it.id}" }) { e ->
                 val scheduleName = schedules.firstOrNull { it.id == e.scheduleId }?.name ?: "—"
                 val lastExecution = executions.firstOrNull { it.eventId == e.id }
                 val contentLabel = EventContentAr.label(
