@@ -120,6 +120,23 @@ class BackupRepository(
                 put("duckEnabled", s.duckEnabled)
                 put("notificationsEnabled", s.notificationsEnabled)
                 put("currentUserId", s.currentUserId ?: JSONObject.NULL)
+                // v0.9.0..v0.11.0: إعدادات الاستوديو الاحترافية كاملة في النسخة
+                put("micGain", s.micGain.toDouble())
+                put("micMode", s.micMode)
+                put("eqEnabled", s.eqEnabled)
+                put("eqPresetId", s.eqPresetId)
+                put("eqGains", s.eqGains)
+                put("bassStrength", s.bassStrength.toDouble())
+                put("virtStrength", s.virtStrength.toDouble())
+                put("micAgc", s.micAgc)
+                put("micNoiseGate", s.micNoiseGate)
+                put("micEchoCancel", s.micEchoCancel)
+                put("cartVolume", s.cartVolume.toDouble())
+                put("cartLayout", s.cartLayoutJson)
+                put("prompterSpeed", s.prompterSpeed.toDouble())
+                put("prompterFont", s.prompterFont.toDouble())
+                put("prompterMirror", s.prompterMirror)
+                put("prompterGuide", s.prompterGuide)
             })
 
             context.contentResolver.openOutputStream(uri)?.use { os ->
@@ -317,6 +334,7 @@ class BackupRepository(
             }
 
             // ---- استيراد الإعدادات ----
+            // ★ v0.11.0: دالة opt* تُبقي التوافق مع نسخ v1/v2 القديمة (بلا المفاتيح الجديدة)
             root.getJSONObject("settings").let { so ->
                 settings.setSchoolName(so.getString("schoolName"))
                 settings.setThemeMode(so.getInt("themeMode"))
@@ -324,6 +342,24 @@ class BackupRepository(
                 settings.setDuckVolume(so.getDouble("duckVolume").toFloat())
                 settings.setDuckEnabled(so.getBoolean("duckEnabled"))
                 settings.setNotificationsEnabled(so.getBoolean("notificationsEnabled"))
+                settings.setMicGain(so.optDouble("micGain", 1.0).toFloat())
+                settings.setMicMode(so.optString("micMode", "TOGGLE"))
+                settings.setEqEnabled(so.optBoolean("eqEnabled", true))
+                settings.setEqConfig(
+                    so.optInt("eqPresetId", -1),
+                    so.optString("eqGains", "")
+                )
+                settings.setBassStrength(so.optDouble("bassStrength", 0.0).toFloat())
+                settings.setVirtStrength(so.optDouble("virtStrength", 0.0).toFloat())
+                settings.setMicAgc(so.optBoolean("micAgc", true))
+                settings.setMicNoiseGate(so.optBoolean("micNoiseGate", true))
+                settings.setMicEchoCancel(so.optBoolean("micEchoCancel", true))
+                settings.setCartVolume(so.optDouble("cartVolume", 0.85).toFloat())
+                settings.setCartLayoutJson(so.optString("cartLayout", ""))
+                settings.setPrompterSpeed(so.optDouble("prompterSpeed", 55.0).toFloat())
+                settings.setPrompterFont(so.optDouble("prompterFont", 30.0).toFloat())
+                settings.setPrompterMirror(so.optBoolean("prompterMirror", false))
+                settings.setPrompterGuide(so.optBoolean("prompterGuide", true))
             }
 
             // المستخدم الحالي: اربط المعرف القديم بالجديد إن وُجد

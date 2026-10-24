@@ -13,11 +13,14 @@ import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -32,6 +35,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -39,6 +43,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,18 +61,23 @@ import com.saidjte.schoolradio.core.ui.MicQuickToggle
 import com.saidjte.schoolradio.core.ui.RoundedProgressBar
 import com.saidjte.schoolradio.core.util.RecordingLogic
 import com.saidjte.schoolradio.data.scripts.ScriptItem
+import com.saidjte.schoolradio.di.ServiceLocator
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /**
- * قارئ السكربت (Teleprompter) (v0.9.0، محدّث v0.10.0) — أداة المذيع الاحترافية:
+ * قارئ السكربت (Teleprompter) (v0.9.0، محدّث v0.10.0، ترقية احترافية v0.11.0):
  *
  *  - نص بخط ضخم قابل للتكبير (18..64sp) على خلفية داكنة واضحة
- *  - تمرير تلقائي بسرعة قابلة للضبط — المذيع يقرأ والنص يتقدم بهدوء
- *  - تشغيل/إيقاف التمرير بلمسة، وزمن قراءة حي
- *  - وضع الانعكاس الأفقي (Mirror) — لتركيب الهاتف أمام مرآة استوديو حقيقية
- *  - ★ v0.10.0: زر اختصار عائم دائم لفتح/إغلاق الهواء — المذيع يبثّ بلمسة
- *    واحدة دون مغادرة النص، ويبقى ظاهراً حتى مع إخفاء بقية الأدوات
+ *  - تمرير تلقائي بسرعة قابلة للضبط — وتغيير السرعة أثناء التمرير يعمل فوراً
+ *  - ★ v0.11.0: عدّ تنازلي 3-2-1 قبل انطلاق القراءة من البداية — المذيع يتحضر
+ *  - ★ v0.11.0: زمن متبقٍ تقديري محسوب من سرعة التمرير الحية + زمن القراءة المنقضي
+ *  - ★ v0.11.0: خط إرشادي عند موضع القراءة (32٪ من الشاشة) قابل للإخفاء
+ *  - ★ v0.11.0: تفضيلات المذيع (السرعة/الخط/المرآة/الإرشاد) تُحفظ وتُسترجع —
+ *    أجهزة الاستوديو الحقيقية تحفظ إعدادات كل مذيع
+ *  - وضع الانعكاس الأفقي (Mirror) لتركيب الهاتف أمام مرآة استوديو حقيقية
+ *  - زر اختصار عائم دائم لفتح/إغلاق الهواء — بث بلمسة دون مغادرة النص
  *  - الشاشة تبقى مضاء تلقائياً أثناء القراءة (keepScreenOn)
  *
  * لمسة على أي مكان في الشاشة تُظهر/تُخفي عناصر التحكم (الزر العائم يبقى دائماً).
@@ -81,14 +91,29 @@ fun TeleprompterScreen(
     val scrollState = rememberScrollState()
     val density = LocalDensity.current
     val view = LocalView.current
+    val settings = ServiceLocator.settings
 
     var autoScroll by remember { mutableStateOf(false) }
     var speedDpS by remember { mutableStateOf(55f) }      // سرعة التمرير dp/ثانية
     var fontSp by remember { mutableStateOf(30f) }        // حجم الخط
     var mirror by remember { mutableStateOf(false) }      // انعكاس للمرآة
+    var guideLine by remember { mutableStateOf(true) }    // الخط الإرشادي
     var controlsVisible by remember { mutableStateOf(true) }
     var readSeconds by remember { mutableStateOf(0) }
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    /** v0.11.0: عدّ تنازلي قبل انطلاق التمرير (3→2→1 ثم انطلاق) — null = لا عدّ */
+    var countdown by remember { mutableStateOf<Int?>(null) }
+    val scope = rememberCoroutineScope()
+
+    // ===== v0.11.0: استرجاع تفضيلات المذيع المحفوظة (مرة واحدة عند فتح القارئ) =====
+    LaunchedEffect(Unit) {
+        runCatching {
+            val s = settings.settings.first()
+            speedDpS = s.prompterSpeed
+            fontSp = s.prompterFont
+            mirror = s.prompterMirror
+            guideLine = s.prompterGuide
+        }
+    }
 
     /** رسائل زر الهواء العائم — عبر snackbar الشاشة المضيفة إن توفر */
     val quickMicMessage: (String) -> Unit = { msg ->
@@ -131,6 +156,43 @@ fun TeleprompterScreen(
 
     val scrollRatio = if (scrollState.maxValue > 0)
         scrollState.value.toFloat() / scrollState.maxValue else 0f
+
+    // ===== v0.11.0: الزمن المتبقي التقديري — من سرعة التمرير الحالية (يُحدّث لحظياً) =====
+    val remainingSeconds: Long = with(density) {
+        if (scrollState.maxValue <= 0) 0L else {
+            val pxPerSec = (speedDpS.dp.toPx()).coerceAtLeast(1f)
+            ((scrollState.maxValue - scrollState.value) / pxPerSec).toLong()
+        }
+    }
+
+    /** بدء/إيقاف القراءة — مع عدّ تنازلي عند البدء من بداية النص فقط (v0.11.0) */
+    fun togglePlay() {
+        if (countdown != null) {
+            // المستخدم غيّر رأيه أثناء العدّ — ألغِ
+            countdown = null
+            return
+        }
+        if (autoScroll) {
+            autoScroll = false
+            return
+        }
+        if (scrollState.value >= scrollState.maxValue) {
+            scope.launch { scrollState.scrollTo(0) }
+        }
+        if (scrollState.value < scrollState.maxValue * 0.05f) {
+            // انطلاقة جديدة من بداية النص — المذيع يتحضر (3-2-1)
+            scope.launch {
+                for (n in 3 downTo 1) {
+                    countdown = n
+                    kotlinx.coroutines.delay(650)
+                }
+                countdown = null
+                autoScroll = true
+            }
+        } else {
+            autoScroll = true
+        }
+    }
 
     // v0.10.0: يرتفع زر الهواء فوق شريط الأدوات عند ظهوره وينزل عند إخفائه — حركة ناعمة
     val micFloatBottom by animateDpAsState(
@@ -177,7 +239,48 @@ fun TeleprompterScreen(
             }
         }
 
-        // ===== الشريط العلوي: رجوع + العنوان + زمن القراءة =====
+        // ===== v0.11.0: الخط الإرشادي عند موضع القراءة (32٪ من الشاشة) —
+        // خارج طبقة الانعكاس حتى لا يقلب مع النص =====
+        if (guideLine) {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val guideY = maxHeight * 0.32f
+                Box(
+                    Modifier
+                        .align(Alignment.TopStart)
+                        .fillMaxWidth()
+                        .offset(y = guideY)
+                        .height(2.dp)
+                        .background(Color(0xFF5CDAC4).copy(alpha = 0.55f))
+                )
+            }
+        }
+
+        // ===== v0.11.0: عدّ تنازلي 3-2-1 قبل الانطلاق =====
+        countdown?.let { n ->
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color(0x660B100E)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "$n",
+                    color = Color(0xFF5CDAC4),
+                    fontSize = 120.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Text(
+                    "استعد للقراءة…",
+                    color = Color(0xFF9BE3C6),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .offset(y = 96.dp)
+                )
+            }
+        }
+
+        // ===== الشريط العلوي: رجوع + العنوان + زمن القراءة + المتبقي =====
         AnimatedVisibility(
             visible = controlsVisible,
             modifier = Modifier.align(Alignment.TopCenter),
@@ -210,6 +313,14 @@ fun TeleprompterScreen(
                             color = Color(0xFF9BE3C6),
                             style = MaterialTheme.typography.labelSmall
                         )
+                        // v0.11.0: الزمن المتبقي التقديري — يتحدث مع تغيير السرعة أو التمرير
+                        if (scrollState.maxValue > 0 && remainingSeconds > 0) {
+                            Text(
+                                "المتبقي التقديري: ${RecordingLogic.formatElapsed(remainingSeconds * 1000L)}",
+                                color = Color(0xFFB7D9CC),
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
                     }
                 }
             }
@@ -254,17 +365,11 @@ fun TeleprompterScreen(
                         Modifier.fillMaxWidth().padding(top = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // تشغيل/إيقاف التمرير التلقائي
-                        IconButton(
-                            onClick = {
-                                if (scrollState.value >= scrollState.maxValue) {
-                                    scope.launch { scrollState.scrollTo(0) }
-                                }
-                                autoScroll = !autoScroll
-                            }
-                        ) {
+                        // تشغيل/إيقاف التمرير التلقائي — مع العد التنازلي الذكي
+                        IconButton(onClick = ::togglePlay) {
                             Icon(
-                                if (autoScroll) AppIcons.Pause else Icons.Filled.PlayArrow,
+                                if (autoScroll || countdown != null) AppIcons.Pause
+                                else Icons.Filled.PlayArrow,
                                 "تشغيل/إيقاف التمرير",
                                 tint = Color(0xFF5CDAC4)
                             )
@@ -278,6 +383,9 @@ fun TeleprompterScreen(
                         Slider(
                             value = speedDpS,
                             onValueChange = { speedDpS = it },
+                            onValueChangeFinished = {
+                                scope.launch { settings.setPrompterSpeed(speedDpS) }
+                            },
                             valueRange = 15f..150f,
                             modifier = Modifier.weight(1f)
                         )
@@ -289,23 +397,47 @@ fun TeleprompterScreen(
                     ) {
                         // حجم الخط − / +
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { fontSp = (fontSp - 4f).coerceAtLeast(18f) }) {
+                            IconButton(onClick = {
+                                fontSp = (fontSp - 4f).coerceAtLeast(18f)
+                                scope.launch { settings.setPrompterFont(fontSp) }
+                            }) {
                                 Text("أ-", color = Color.White, fontWeight = FontWeight.Bold)
                             }
-                            IconButton(onClick = { fontSp = (fontSp + 4f).coerceAtMost(64f) }) {
+                            IconButton(onClick = {
+                                fontSp = (fontSp + 4f).coerceAtMost(64f)
+                                scope.launch { settings.setPrompterFont(fontSp) }
+                            }) {
                                 Text("أ+", color = Color.White, fontWeight = FontWeight.Bold)
                             }
+                        }
+                        // v0.11.0: الخط الإرشادي
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "الإرشاد",
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                            Switch(
+                                checked = guideLine,
+                                onCheckedChange = {
+                                    guideLine = it
+                                    scope.launch { settings.setPrompterGuide(it) }
+                                }
+                            )
                         }
                         // وضع انعكاس المرآة
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                "وضع المرآة",
+                                "المرآة",
                                 color = Color.White,
                                 style = MaterialTheme.typography.labelMedium
                             )
-                            androidx.compose.material3.Switch(
+                            Switch(
                                 checked = mirror,
-                                onCheckedChange = { mirror = it }
+                                onCheckedChange = {
+                                    mirror = it
+                                    scope.launch { settings.setPrompterMirror(it) }
+                                }
                             )
                         }
                     }

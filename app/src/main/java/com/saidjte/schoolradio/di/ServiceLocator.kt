@@ -3,6 +3,8 @@ package com.saidjte.schoolradio.di
 import android.content.Context
 import com.saidjte.schoolradio.audio.AudioEffects
 import com.saidjte.schoolradio.audio.AudioRoutingManager
+import com.saidjte.schoolradio.audio.CartPlayer
+import com.saidjte.schoolradio.audio.MicProcessing
 import com.saidjte.schoolradio.audio.MicrophoneController
 import com.saidjte.schoolradio.audio.PlaybackConnection
 import com.saidjte.schoolradio.audio.PlaybackCoordinator
@@ -89,6 +91,20 @@ object ServiceLocator {
             attachAudioEffects(p.audioSessionId)
             // v0.8.0: نهاية المعاينة طبيعياً → الحَكَم يستأنف ما كان يعمل قبله
             p.onEnded = { coordinator.previewFinished() }
+        }
+    }
+
+    /**
+     * v0.11.0: مشغل حائط الجينغل — طبقة مزج مستقلة عمداً:
+     * الرقائق تُطلَق فوق القائمة وفوق البث المباشر (النشيد خلف صوت المذيع
+     * سلوك إذاعي طبيعي) — لذلك لا يمر عبر PlaybackCoordinator.
+     * ★ يجب أول وصول له من الخيط الرئيسي (إنشاء ExoPlayer) — الواجهة Compose
+     *   تصل إليه من Compose مباشرة فهذا محقق.
+     */
+    val cartPlayer: CartPlayer by lazy {
+        CartPlayer(appContext).also { p ->
+            // الجينغل يدخل سلسلة المؤثرات المشتركة أيضاً — المعادل والباص يعملان عليه
+            attachAudioEffects(p.audioSessionId)
         }
     }
 
@@ -200,6 +216,12 @@ object ServiceLocator {
 
     private var volumeBeforeDuck: Float? = null
 
+    /**
+     * v0.11.0: آخر لقطة لإعدادات معالجة المذيع — يُحدّثها جامع مستمر من DataStore
+     * ويقرأها البث عند البدء فتُطبق تغييرات الاستوديو على البث التالي مباشرة.
+     */
+    @Volatile private var cachedMicProcessing = MicProcessing()
+
     /** متحكم البث المباشر — الخفض التلقائي موصول هنا مركزياً، ودفعة PCM موصولة بالتسجيل */
     val mic: MicrophoneController by lazy {
         MicrophoneController(
@@ -237,7 +259,9 @@ object ServiceLocator {
                     // انتهى البث والتسجيل يعمل؟ أوقف واحفظ فوراً (لا ملفات تالفة)
                     recordings.onLiveBroadcastStopped()
                 }
-            }
+            },
+            // v0.11.0: سلسلة تنظيف صوت المذيع (AGC/حجز الضجيج/إلغاء الصدى)
+            processingProvider = { cachedMicProcessing }
         ).also { it.setMicGain(pendingMicGain) }
     }
 
@@ -342,6 +366,16 @@ object ServiceLocator {
                         effectsRestored = true
                         AudioEffects.restore(restore)
                     }
+                }
+            }
+            // v0.11.0: جامع دائم لإعدادات معالجة المذيع — البث يقرأ اللقطة الأحدث لحظة البدء
+            appScope.launch {
+                settings.settings.collect { s ->
+                    cachedMicProcessing = MicProcessing(
+                        agc = s.micAgc,
+                        noiseGate = s.micNoiseGate,
+                        echoCancel = s.micEchoCancel
+                    )
                 }
             }
             initialized = true

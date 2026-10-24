@@ -54,6 +54,7 @@ import com.saidjte.schoolradio.core.theme.SchoolRadioTheme
 import com.saidjte.schoolradio.core.ui.AppIcons
 import com.saidjte.schoolradio.data.settings.AppSettings
 import com.saidjte.schoolradio.di.ServiceLocator
+import com.saidjte.schoolradio.feature.cartwall.CartWallScreen
 import com.saidjte.schoolradio.feature.dashboard.DashboardScreen
 import com.saidjte.schoolradio.feature.library.LibraryScreen
 import com.saidjte.schoolradio.feature.onair.OnAirScreen
@@ -194,10 +195,14 @@ private fun AppScaffold() {
                         onOpenOnAir = { nav.navigateSafely(AppRoute.ON_AIR) },
                         onOpenSettings = { nav.navigateSafely(AppRoute.SETTINGS) },
                         onOpenStudio = { nav.navigateSafely(AppRoute.STUDIO) },
-                        onOpenScripts = { nav.navigateSafely(AppRoute.SCRIPTS) }
+                        onOpenScripts = { nav.navigateSafely(AppRoute.SCRIPTS) },
+                        onOpenCartwall = { nav.navigateSafely(AppRoute.CARTWALL) }
                     )
                 }
-                composable(AppRoute.STUDIO) { StudioScreen(snackbar) }
+                composable(AppRoute.STUDIO) {
+                    StudioScreen(snackbar, onOpenCartwall = { nav.navigateSafely(AppRoute.CARTWALL) })
+                }
+                composable(AppRoute.CARTWALL) { CartWallScreen(snackbar) }
                 composable(AppRoute.LIBRARY) { LibraryScreen(snackbar) }
                 composable(AppRoute.PLAYLISTS) { PlaylistsScreen(snackbar) }
                 composable(AppRoute.RECORDINGS) {
@@ -248,6 +253,7 @@ private fun NavHostController.navigateSafely(route: String) {
 object AppRoute {
     const val DASHBOARD = "dashboard"
     const val STUDIO = "studio"
+    const val CARTWALL = "cartwall"
     const val LIBRARY = "library"
     const val PLAYLISTS = "playlists"
     const val RECORDINGS = "recordings"

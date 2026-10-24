@@ -84,7 +84,10 @@ import kotlin.math.roundToInt
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun StudioScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
+fun StudioScreen(
+    snackbar: androidx.compose.material3.SnackbarHostState,
+    onOpenCartwall: () -> Unit = {}
+) {
     val locator = ServiceLocator
     val scope = rememberCoroutineScope()
     val mic = locator.mic
@@ -176,6 +179,18 @@ fun StudioScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
             )
         }
 
+        // ===== v0.11.0: معالجة صوت المذيع =====
+        item {
+            MicProcessingCard(
+                agc = settings.micAgc,
+                noiseGate = settings.micNoiseGate,
+                echoCancel = settings.micEchoCancel,
+                onAgc = { scope.launch { locator.settings.setMicAgc(it) } },
+                onNoiseGate = { scope.launch { locator.settings.setMicNoiseGate(it) } },
+                onEchoCancel = { scope.launch { locator.settings.setMicEchoCancel(it) } }
+            )
+        }
+
         // ===== معادل الصوت =====
         item {
             EqualizerCard(
@@ -200,10 +215,20 @@ fun StudioScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
         item {
             Text(
                 "ملاحظة احترافية: البث المباشر له الأولوية دائماً — عند بدء الإعلان " +
-                    "تتوقف المعاينات ويُخفَض مستوى الموسيقى تلقائياً ثم تُعاد بعد الإنهاء.",
+                    "تتوقف المعاينات ويُخفَض مستوى الموسيقى تلقائياً ثم تُعاد بعد الإنهاء. " +
+                    "أما حائط الجينغل فيعمل فوق كل شيء عمداً — النشيد خلف صوت المذيع سلوك إذاعي طبيعي.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Start
+            )
+        }
+
+        // ===== v0.11.0: وصول سريع لحائط الجينغل =====
+        item {
+            GradientButton(
+                label = "افتح حائط الجينغل",
+                icon = AppIcons.MusicNote,
+                onClick = onOpenCartwall
             )
         }
 
@@ -309,6 +334,80 @@ private fun BroadcastCard(
                 )
             }
         }
+    }
+}
+
+// =====================================================================
+// v0.11.0: بطاقة معالجة صوت المذيع — سلسلة التنظيف القياسية للإذاعات
+// =====================================================================
+
+@Composable
+private fun MicProcessingCard(
+    agc: Boolean,
+    noiseGate: Boolean,
+    echoCancel: Boolean,
+    onAgc: (Boolean) -> Unit,
+    onNoiseGate: (Boolean) -> Unit,
+    onEchoCancel: (Boolean) -> Unit
+) {
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        )
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(AppIcons.GraphicEq, null, tint = MaterialTheme.colorScheme.primary)
+                Column(Modifier.padding(horizontal = 10.dp)) {
+                    Text("معالجة صوت المذيع", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "سلسلة التنظيف القياسية في الإذاعات — تُطبّق عند بدء البث التالي",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            ProcessingSwitch(
+                title = "توحيد الكسب تلقائياً (AGC)",
+                subtitle = "يرفع الصوت الخافت ويخفض الصوت العالي — قناة ميك متوازنة مهما تغيّر بُعد المذيع",
+                checked = agc,
+                onChange = onAgc
+            )
+            ProcessingSwitch(
+                title = "حجز الضجيج الخلفي",
+                subtitle = "يكتم هسهسة القاعة وصوت الحركة أثناء الإعلان",
+                checked = noiseGate,
+                onChange = onNoiseGate
+            )
+            ProcessingSwitch(
+                title = "إلغاء الصدى (AEC)",
+                subtitle = "يمنع صفير التغذية الراجعة عندما تكون مكبرات القاعة قريبة من الهاتف",
+                checked = echoCancel,
+                onChange = onEchoCancel
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProcessingSwitch(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Switch(checked = checked, onCheckedChange = onChange)
     }
 }
 

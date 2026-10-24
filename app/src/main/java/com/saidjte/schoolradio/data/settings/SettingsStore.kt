@@ -34,7 +34,19 @@ data class AppSettings(
     val virtStrength: Float = 0f,          // المؤثر المحيطي 0..1
     val micGain: Float = 1.0f,             // كسب الميكروفون 0..2 (فيدر الميكسر)
     // v0.10.0: نمط البث — "HOLD" استمرار للبث / "TOGGLE" ضغطة للبدء والإنهاء
-    val micMode: String = "TOGGLE"
+    val micMode: String = "TOGGLE",
+    // ===== v0.11.0: معالجة الميكروفون الاحترافية (سلسلة تنظيف صوت المذيع) =====
+    val micAgc: Boolean = true,            // توحيد الكسب تلقائياً (AGC) — صوت ثابت مهما بعد المذيع
+    val micNoiseGate: Boolean = true,      // حجز الضجيج الخلفي (NoiseSuppressor)
+    val micEchoCancel: Boolean = true,     // إلغاء الصدى (AEC) ضد صفير التغذية الراجعة
+    // ===== v0.11.0: حائط الجينغل (Cart Wall) =====
+    val cartVolume: Float = 0.85f,         // فيدَر قناة الجينغل 0..1
+    val cartLayoutJson: String = "",       // تخطيط الرقائق JSON (راجع CartWallStore)
+    // ===== v0.11.0: تفضيلات قارئ السكربت (Teleprompter) =====
+    val prompterSpeed: Float = 55f,        // سرعة التمرير dp/ثانية
+    val prompterFont: Float = 30f,         // حجم خط النص sp
+    val prompterMirror: Boolean = false,   // وضع المرآة
+    val prompterGuide: Boolean = true      // الخط الإرشادي لموضع القراءة
 )
 
 /**
@@ -62,6 +74,16 @@ class SettingsStore(private val context: Context) {
         val MIC_GAIN = floatPreferencesKey("mic_gain")
         // v0.10.0: نمط تشغيل الميكروفون في البث المباشر
         val MIC_MODE = stringPreferencesKey("mic_mode")
+        // v0.11.0: معالجة الميكروفون + الجينغل + تفضيلات السكربت
+        val MIC_AGC = booleanPreferencesKey("mic_agc")
+        val MIC_NOISE_GATE = booleanPreferencesKey("mic_noise_gate")
+        val MIC_ECHO_CANCEL = booleanPreferencesKey("mic_echo_cancel")
+        val CART_VOLUME = floatPreferencesKey("cart_volume")
+        val CART_LAYOUT = stringPreferencesKey("cart_layout_json")
+        val PROMPTER_SPEED = floatPreferencesKey("prompter_speed")
+        val PROMPTER_FONT = floatPreferencesKey("prompter_font")
+        val PROMPTER_MIRROR = booleanPreferencesKey("prompter_mirror")
+        val PROMPTER_GUIDE = booleanPreferencesKey("prompter_guide")
     }
 
     /** معرف المستخدم الحالي (لتوليفه مع جدول users في SessionRepository) */
@@ -84,7 +106,17 @@ class SettingsStore(private val context: Context) {
             bassStrength = p[Keys.BASS_STRENGTH] ?: 0f,
             virtStrength = p[Keys.VIRT_STRENGTH] ?: 0f,
             micGain = p[Keys.MIC_GAIN] ?: 1.0f,
-            micMode = p[Keys.MIC_MODE] ?: "TOGGLE"
+            micMode = p[Keys.MIC_MODE] ?: "TOGGLE",
+            // v0.11.0
+            micAgc = p[Keys.MIC_AGC] ?: true,
+            micNoiseGate = p[Keys.MIC_NOISE_GATE] ?: true,
+            micEchoCancel = p[Keys.MIC_ECHO_CANCEL] ?: true,
+            cartVolume = p[Keys.CART_VOLUME] ?: 0.85f,
+            cartLayoutJson = p[Keys.CART_LAYOUT] ?: "",
+            prompterSpeed = p[Keys.PROMPTER_SPEED] ?: 55f,
+            prompterFont = p[Keys.PROMPTER_FONT] ?: 30f,
+            prompterMirror = p[Keys.PROMPTER_MIRROR] ?: false,
+            prompterGuide = p[Keys.PROMPTER_GUIDE] ?: true
         )
     }
 
@@ -116,4 +148,24 @@ class SettingsStore(private val context: Context) {
 
     /** v0.10.0: حفظ نمط البث المختار (HOLD/TOGGLE) */
     suspend fun setMicMode(v: String) = context.dataStore.edit { it[Keys.MIC_MODE] = v }
+
+    // ===== v0.11.0: معالجة الميكروفون =====
+    suspend fun setMicAgc(v: Boolean) = context.dataStore.edit { it[Keys.MIC_AGC] = v }
+    suspend fun setMicNoiseGate(v: Boolean) = context.dataStore.edit { it[Keys.MIC_NOISE_GATE] = v }
+    suspend fun setMicEchoCancel(v: Boolean) = context.dataStore.edit { it[Keys.MIC_ECHO_CANCEL] = v }
+
+    // ===== v0.11.0: حائط الجينغل =====
+    suspend fun setCartVolume(v: Float) = context.dataStore.edit { it[Keys.CART_VOLUME] = v.coerceIn(0f, 1f) }
+    suspend fun setCartLayoutJson(v: String) = context.dataStore.edit { it[Keys.CART_LAYOUT] = v }
+
+    // ===== v0.11.0: تفضيلات قارئ السكربت =====
+    suspend fun setPrompterSpeed(v: Float) =
+        context.dataStore.edit { it[Keys.PROMPTER_SPEED] = v.coerceIn(15f, 150f) }
+
+    suspend fun setPrompterFont(v: Float) =
+        context.dataStore.edit { it[Keys.PROMPTER_FONT] = v.coerceIn(18f, 64f) }
+
+    suspend fun setPrompterMirror(v: Boolean) = context.dataStore.edit { it[Keys.PROMPTER_MIRROR] = v }
+
+    suspend fun setPrompterGuide(v: Boolean) = context.dataStore.edit { it[Keys.PROMPTER_GUIDE] = v }
 }

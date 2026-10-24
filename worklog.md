@@ -470,3 +470,35 @@ ScheduleScreen تعرض جدولين وأحداثاً في LazyColumn واحد �
 ### التحقق
 - compileDebugKotlin + testDebugUnitTest (42 اختبار) + assembleDebug — ناجح محلياً
 - version.properties: 0.10.0 / versionCode 11
+
+---
+
+## v0.11.0 (versionCode 12) — جلسة البحث والجينغل
+
+### البحث (طلب المستخدم: ابحث في الإنترنت عن التحسينات الممكنة)
+- PlayIt Cartwall/OnAir Radio → Cart Wall: شبكة رقائق لمسية، صفحات، ألوان، Loop، SOLO، وقت متبقٍ
+- JBL Pro/Rodecaster → Auto-ducking sidechain (موجود مسبقاً في v0.9) + سلسلة AGC/Noise Gate/Limiter
+- Teleprompter Pro/BIGVU → عد تنازلي، زمن متبقٍ، خط إرشادي، تغيير السرعة أثناء التمرير، حفظ التفضيلات
+- Radiojar → Breaks/فواصل مجدولة (مؤجل لـ v0.12)
+- Media3 1.10 → PlaybackSpeedControl/ProgressSlider (الترقية مستقبلية)
+
+### التنفيذ
+1. **CartPlayer** (audio/): ExoPlayer مستقل — SOLO بتلاشٍ 60/80ms، REPEAT_MODE_ONE لكل رقاقة، فيدَر مستوى، poller 250ms، يدخل سلسلة المؤثرات المشتركة، لا يمر عبر الحَكَم عمداً (الجينغل فوق البث والموسيقى).
+2. **CartWallStore** (data/cartwall/): CSV "صفحة:موضع:trackId:لون:loop" — مقاوم للتلف، قابل للاختبار JVM خالص (تجنب org.json لأنها stubbed في unit tests).
+3. **CartWallScreen** (feature/cartwall/): شبكة 4×2 × صفحتان، رقاقة بلون/أيقونة/عنوان/بadge تكرار/وقت متبقٍ/شريط تقدم، ضغطة=إطلاق أو تبديل إيقاف، ضغط مطول أو رقاقة فارغة=محرر (بحث في المكتبة + ألوان + Loop + مسح)، فيدَر مستوى الجينغل.
+4. **MicProcessing/Chain** (audio/): AGC+NS+AEC على جلسة AudioRecord عبر processingProvider — جامع دائم في ServiceLocator يقرأ DataStore (تغيير الاستوديو يطبق على البث التالي).
+5. **Teleprompter v0.11**: عد تنازلي ذكي (من بداية النص فقط، قابل للإلغاء)، زمن متبقٍ تقديري من السرعة الحية، خط إرشادي 32% خارج طبقة الانعكاس، حفظ السرعة/الخط/المرآة/الإرشاد.
+6. **النسخ الاحتياطي**: كل إعدادات الاستوديو v0.9..v0.11 (كانت الناقصة: micGain/micMode/eq*) تدخل التصدير والاستيراد عبر opt* للتوافق الرجعي.
+7. إعدادات جديدة: micAgc/micNoiseGate/micEchoCancel/cartVolume/cartLayout/prompterSpeed/Font/Mirror/Guide.
+8. تنقل: route CARTWALL + بطاقتان في الرئيسية (الجينغل/الجدولة) + زر في الاستوديو.
+9. اختبارات: CartWallStoreTest (6 اختبارات: دورة ترميز، تلف، حدود) — المجموع 39.
+
+### إصلاحات أثناء البناء
+- Player.REPEAT_ONE → REPEAT_MODE_ONE (تسمية Media3)
+- CartPadCell → RowScope extension لاستخدام Modifier.weight
+- init.gradle (settingsEvaluated) يتعارض مع FAIL_ON_PROJECT_REPOS في Gradle 8.10.2 → الحل: مرآة داخل settings.gradle.kts محلياً فقط (تُستعاد قبل الرفع) + init.gradle.bak في scripts
+- JDK21 النظامي = JRE بلا javac → setup_env.sh (Temurin 17)
+
+### الحالة
+- محلياً: compileDebugKotlin + 39 اختبار + assembleDebug — SchoolRadio_v0.11.0.apk (16.9MB)
+- CI + Release: انظر التسليم أدناه

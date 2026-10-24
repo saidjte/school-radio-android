@@ -53,7 +53,10 @@ class MicrophoneController(
     private val onLevel: (level: Float) -> Unit = {},
     /** ★ v0.3.0: نقطة تفريغ دفعات PCM — بوابتها يعمل التسجيل المتزامن مع البث (خط أنابيب واحد) */
     private val onPcm: (pcm: ShortArray, count: Int) -> Unit = { _, _ -> },
-    private val onStateChanged: (isLive: Boolean, error: String?) -> Unit = { _, _ -> }
+    private val onStateChanged: (isLive: Boolean, error: String?) -> Unit = { _, _ -> },
+    /** ★ v0.11.0: مصدر تكوين معالجة المذيع الحية (AGC/حجز الضجيج/إلغاء الصدى) —
+     *  يُقرأ لحظة بدء البث فتُطبق التغييرات من الاستوديو على البث التالي مباشرة */
+    private val processingProvider: () -> MicProcessing = { MicProcessing() }
 ) {
     companion object {
         const val SAMPLE_RATE = 48_000
@@ -96,6 +99,9 @@ class MicrophoneController(
     private var audioTrack: AudioTrack? = null
     private var deviceLossCallback: AudioDeviceCallback? = null
     private var lastRoute: AudioRoutingManager.Route = AudioRoutingManager.Route.SPEAKER
+
+    /** v0.11.0: سلسلة معالجة صوت المذيع — دورة حياة عُقدة البث نفسها */
+    private val processingChain = MicProcessingChain()
 
     /** خيط تحكم مخصص ومتسلسل: عمليات البدء/الإيقاف لا تتقاطع أبداً (FIFO) */
     private val controlExecutor = Executors.newSingleThreadExecutor { r ->
@@ -178,6 +184,10 @@ class MicrophoneController(
                 return
             }
             audioRecord = rec
+
+            // v0.11.0: ربط سلسلة معالجة المذيع بجلسة التسجيل قبل بدء الالتقاط —
+            // AGC/حجز الضجيج/إلغاء الصدى تُطبق على الصوت قبل التلاشي والإخراج والتسجيل
+            processingChain.attach(rec.audioSessionId, processingProvider())
 
             val track = try {
                 AudioTrack.Builder()
@@ -343,6 +353,7 @@ class MicrophoneController(
     }
 
     private fun releaseAll() {
+        processingChain.release()
         audioRecord?.run {
             try { stop() } catch (_: Exception) {}
             release()

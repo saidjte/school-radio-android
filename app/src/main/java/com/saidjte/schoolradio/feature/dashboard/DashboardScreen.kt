@@ -123,7 +123,8 @@ fun DashboardScreen(
     onOpenOnAir: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onOpenStudio: () -> Unit = {},
-    onOpenScripts: () -> Unit = {}
+    onOpenScripts: () -> Unit = {},
+    onOpenCartwall: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     val locator = ServiceLocator
@@ -437,6 +438,29 @@ fun DashboardScreen(
                     subtitle = "نصوص المذيع",
                     modifier = Modifier.weight(1f),
                     onClick = onOpenScripts
+                )
+            }
+        }
+
+        // ===== v0.11.0: حائط الجينغل — بوابة سريعة من الرئيسية =====
+        item {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                QuickActionCard(
+                    icon = AppIcons.MusicNote,
+                    title = "حائط الجينغل",
+                    subtitle = "نشيد • فواصل • مؤثرات",
+                    modifier = Modifier.weight(1f),
+                    onClick = onOpenCartwall
+                )
+                QuickActionCard(
+                    icon = AppIcons.Event,
+                    title = "الجدولة",
+                    subtitle = "فقرات آلية",
+                    modifier = Modifier.weight(1f),
+                    onClick = onNavigateToSchedule
                 )
             }
         }
