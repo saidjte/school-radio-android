@@ -305,9 +305,17 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
     }
 
     // ===== v0.19.0: محرر القص اليدوي — بداية ونهاية بمعاينة فورية =====
+    // v0.20.0: واجهة موحدة TrimTarget + شكل موجي تفاعلي داخل المحرر
     trimming?.let { track ->
         TrimEditorDialog(
-            track = track,
+            target = TrimTarget(
+                title = track.title,
+                uri = track.uri,
+                durationMs = track.durationMs,
+                trimStartMs = track.trimStartMs,
+                trimEndMs = track.trimEndMs,
+                trimManual = track.trimManual
+            ),
             onDismiss = { trimming = null },
             onSave = { s, e ->
                 scope.launch {

@@ -52,4 +52,51 @@ object WaveformLogic {
         history.add(value)
         while (history.size > capacity) history.removeAt(0)
     }
+
+    // =====================================================================
+    // v0.20.0 — مغلف الشكل الموجي لمحرر القص اليدوي
+    // =====================================================================
+
+    /**
+     * تحويل قمم النوافذ الخام (قمة سعة 16bit لكل نافذة 20ms) إلى مغلف عرضي
+     * من [columns] عموداً جاهزاً للرسم على Canvas.
+     *
+     * القرارات الإذاعية:
+     *  - التجميع بـ«القمة القصوى» لا المتوسط: الطنين أو النبضة القصيرة لا تختفي
+     *    عند ضغط دقائق طويلة في بضع عشرات من الأعمدة — ما يهم المذيع أين *الصوت*
+     *    لا أين متوسط الطاقة.
+     *  - التطبيع على القمة الكلية للملف ثم جذر تربيعي (إدراك بشري — نفس فلسفة
+     *    الموجة الحية أعلاه): الأجزاء الهادئة تبقى مرئية والقوية لا تتشبع.
+     *  - ملف صامت كلياً (قمة صفر) يعيد أصفاراً — لا قسمة على صفر أبداً.
+     *
+     * @param windowPeaks قمة كل نافذة زمنية (0..32767) — قد تكون فارغة
+     * @param columns عدد أعمدة العرض المطلوبة (96 عموداً نموذجياً في الحوار)
+     * @return مصفوفة بارتفاع [columns] قيم 0..1 (فارغة إن كان الإدخال فارغاً)
+     */
+    fun envelope(windowPeaks: IntArray, columns: Int): FloatArray {
+        if (columns <= 0 || windowPeaks.isEmpty()) return FloatArray(0)
+        val out = FloatArray(columns)
+        var globalMax = 0
+        // تجميع القمم القصوى داخل كل خانة عرض
+        val buckets = IntArray(columns)
+        for (i in windowPeaks.indices) {
+            val idx = (i.toLong() * columns / windowPeaks.size).toInt().coerceIn(0, columns - 1)
+            val p = if (windowPeaks[i] < 0) 0 else windowPeaks[i]
+            if (p > buckets[idx]) buckets[idx] = p
+            if (p > globalMax) globalMax = p
+        }
+        if (globalMax <= 0) return out // ملف صامت كلياً — كل الأعمدة أصفار
+        for (c in 0 until columns) {
+            val linear = buckets[c].toFloat() / globalMax
+            out[c] = sqrt(linear.toDouble()).toFloat().coerceIn(0f, 1f)
+        }
+        return out
+    }
+
+    /**
+     * تحويل موضع أفقي داخل الموجة (0..1) إلى زمن بالميلي ثانية — عكس خرائط السحب
+     * في محرر القص. يتسامح مع القيم خارج المجال بالتقييد داخل حدود الملف.
+     */
+    fun msAtFraction(fraction: Float, durationMs: Long): Long =
+        (fraction.toDouble().coerceIn(0.0, 1.0) * durationMs).toLong().coerceIn(0L, durationMs)
 }

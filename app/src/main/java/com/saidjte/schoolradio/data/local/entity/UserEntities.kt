@@ -63,6 +63,12 @@ enum class RecordingSource(val labelAr: String) {
  *    لذلك تُحفظ لقطة (اسم + دور) المسجِّل مُطبَّعة (denormalized) عند لحظة التسجيل.
  *  - الصيغة AAC-LC داخل حاوية MP4 — أعلى جودة مقبولة بأقل حجم (128kbps مونو
  *    ≈ 57MB/ساعة) ويشغّلها أي مشغل بما فيها ExoPlayer في التطبيق نفسه.
+ *
+ * v0.20.0 — القص اليدوي للتسجيلات (نفس نمط audio_tracks):
+ *  - trim_start_ms/trim_end_ms: نقطتا القص المختارتان من محرر الموجة
+ *    (صفر = من بداية الملف؛ نهاية صفر = حتى آخر الملف).
+ *  - trim_manual: وسم السلطة اليدوية — القص قرار المذيع الصريح ولا يمسّه
+ *    أي تحليل آلي مستقبلاً، ويطبق في كل مسارات التشغيل (المعاينة والفقرة المجدولة).
  */
 @Entity(tableName = "recordings")
 data class RecordingEntity(
@@ -76,7 +82,10 @@ data class RecordingEntity(
     val source: String = RecordingSource.PTT.name,
     @ColumnInfo(name = "recorded_by_name") val recordedByName: String? = null,
     @ColumnInfo(name = "recorded_by_role") val recordedByRole: String? = null,
-    @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis()
+    @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(name = "trim_start_ms") val trimStartMs: Long = 0,
+    @ColumnInfo(name = "trim_end_ms") val trimEndMs: Long = 0,
+    @ColumnInfo(name = "trim_manual") val trimManual: Boolean = false
 ) {
     fun sourceEnum(): RecordingSource =
         RecordingSource.entries.firstOrNull { it.name == source } ?: RecordingSource.PTT

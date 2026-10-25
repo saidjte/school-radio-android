@@ -71,9 +71,12 @@ import com.saidjte.schoolradio.core.ui.ScreenHeader
 import com.saidjte.schoolradio.core.ui.StatusBadge
 import com.saidjte.schoolradio.core.util.AppFormat
 import com.saidjte.schoolradio.core.util.RecordingLogic
+import com.saidjte.schoolradio.core.util.TrimLogic
 import com.saidjte.schoolradio.data.local.entity.RecordingEntity
 import com.saidjte.schoolradio.data.local.entity.UserRole
 import com.saidjte.schoolradio.di.ServiceLocator
+import com.saidjte.schoolradio.feature.library.TrimEditorDialog
+import com.saidjte.schoolradio.feature.library.TrimTarget
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -121,6 +124,8 @@ fun RecordingsScreen(
     var deleteTarget by remember { mutableStateOf<RecordingEntity?>(null) }
     // v0.14.0: تسجيل بانتظار صلاحية التصدير (أندرويد 9- فقط)
     var pendingExport by remember { mutableStateOf<RecordingEntity?>(null) }
+    // v0.20.0: تسجيل تحت القص اليدوي (محرر الموجة)
+    var trimming by remember { mutableStateOf<RecordingEntity?>(null) }
 
     val context = androidx.compose.ui.platform.LocalContext.current
 
@@ -296,6 +301,8 @@ fun RecordingsScreen(
                         },
                         onRename = { renameTarget = rec },
                         onDelete = { deleteTarget = rec },
+                        // v0.20.0: القص اليدوي فوق الشكل الموجي — متاح للجميع مثل المكتبة
+                        onTrim = { trimming = rec },
                         // v0.14.0: مشاركة/تصدير — متاحان للجميع (ليسا تدميراً)
                         onShare = { doShare(rec) },
                         onExport = { exportOrRequest(rec) },
@@ -358,6 +365,37 @@ fun RecordingsScreen(
                     snackbar.showSnackbar("عُدّل عنوان التسجيل")
                 }
                 renameTarget = null
+            }
+        )
+    }
+
+    // ===== v0.20.0: محرر القص اليدوي للتسجيلات — نفس محرر المكتبة + الشكل الموجي =====
+    trimming?.let { rec ->
+        TrimEditorDialog(
+            target = TrimTarget(
+                title = rec.title,
+                uri = rec.filePath,
+                durationMs = rec.durationMs,
+                trimStartMs = rec.trimStartMs,
+                trimEndMs = rec.trimEndMs,
+                trimManual = rec.trimManual
+            ),
+            onDismiss = { trimming = null },
+            onSave = { s, e ->
+                scope.launch {
+                    val err = locator.recordingsRepo.applyManualTrim(rec, s, e)
+                    snackbar.showSnackbar(
+                        err ?: TrimLogic.message(s, e, rec.title)
+                    )
+                }
+                trimming = null
+            },
+            onClear = {
+                scope.launch {
+                    locator.recordingsRepo.clearManualTrim(rec.id)
+                    snackbar.showSnackbar(TrimLogic.CLEAR_MESSAGE)
+                }
+                trimming = null
             }
         )
     }
@@ -538,7 +576,8 @@ private fun RecordingRow(
     onDelete: () -> Unit,
     onSchedule: () -> Unit = {},
     onShare: () -> Unit = {},
-    onExport: () -> Unit = {}
+    onExport: () -> Unit = {},
+    onTrim: () -> Unit = {}
 ) {
     val isCurrent = playing.recordingId == recording.id
     val isPlayingNow = isCurrent && playing.isPlaying
@@ -636,6 +675,12 @@ private fun RecordingRow(
                             text = { Text("تصدير إلى Downloads") },
                             leadingIcon = { Icon(AppIcons.Download, null, Modifier.size(20.dp)) },
                             onClick = { menuOpen = false; onExport() }
+                        )
+                        // v0.20.0: القص اليدوي فوق الشكل الموجي — متاح للجميع مثل المكتبة
+                        DropdownMenuItem(
+                            text = { Text("قص يدوي…") },
+                            leadingIcon = { Icon(AppIcons.Tune, null, Modifier.size(20.dp)) },
+                            onClick = { menuOpen = false; onTrim() }
                         )
                         if (canManage) {
                             HorizontalDivider(Modifier.padding(vertical = 4.dp))

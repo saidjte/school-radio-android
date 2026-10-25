@@ -6,6 +6,7 @@ import android.os.Looper
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import com.saidjte.schoolradio.core.util.TrimLogic
 import com.saidjte.schoolradio.data.local.entity.RecordingEntity
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,7 +31,13 @@ class RecordingsPlayer(context: Context) {
         val positionMs: Long = 0,
         val durationMs: Long = 0,
         /** v0.9.0: سرعة التشغيل الحالية (0.5..2.0) — تبقى بين المقاطع حتى تغييرها */
-        val speed: Float = 1f
+        val speed: Float = 1f,
+        /**
+         * v0.20.0: إزاحة بداية القص المطبّقة على التسجيل الحالي (0 = بلا قص).
+         * مع Clipping تكون المواضع نسبية للجزء المختار — هذا الحقل يوثّقها
+         * للواجهة وللتشخيص دون تغيير أي منطق عرض (0:00 = بداية الجزء المختار).
+         */
+        val trimStartMs: Long = 0
     )
 
     private val player: ExoPlayer = ExoPlayer.Builder(context.applicationContext).build()
@@ -107,7 +114,24 @@ class RecordingsPlayer(context: Context) {
             _state.value = State() // صفّر الاختيار
             return "ملف هذا التسجيل غير موجود على الجهاز — ربما حُذف أو نُقل"
         }
-        player.setMediaItem(MediaItem.fromUri(android.net.Uri.fromFile(file)))
+        // v0.20.0: القص اليدوي (محرر الموجة) يطبّق هنا أيضاً — يبدأ من نقطة البداية
+        // ويتوقف عند نقطة النهاية (STATE_ENDED عند حافة القص يُطلق onEnded طبيعياً).
+        // حدود أمان ضد قيم تالفة: البداية لا تتجاوز المدة مطروحاً منها أقل جزء مسموع.
+        val safeStart = if (recording.durationMs > 0)
+            recording.trimStartMs.coerceIn(
+                0L, (recording.durationMs - TrimLogic.MIN_SEGMENT_MS).coerceAtLeast(0L)
+            ) else recording.trimStartMs.coerceAtLeast(0L)
+        val safeEnd = recording.trimEndMs.coerceAtLeast(0L)
+        val clip = MediaItem.ClippingConfiguration.Builder()
+            .setStartPositionMs(safeStart)
+            .setEndPositionMs(if (safeEnd > safeStart) safeEnd else androidx.media3.common.C.TIME_UNSET)
+            .build()
+        player.setMediaItem(
+            MediaItem.Builder()
+                .setUri(android.net.Uri.fromFile(file))
+                .setClippingConfiguration(clip)
+                .build()
+        )
         player.prepare()
         player.play()
         // ★ الإصلاح الجوهري: ربط الحالة بالتسجيل الجديد فوراً —
@@ -115,7 +139,9 @@ class RecordingsPlayer(context: Context) {
         _state.value = _state.value.copy(
             recordingId = recording.id,
             positionMs = 0,
-            durationMs = recording.durationMs, // القيمة المسجلة — تُصححها المدة الفعلية عند الجاهزية
+            // القيمة المسجلة — تُصححها المدة الفعلية عند الجاهزية (مع القص: مدة الجزء المختار)
+            durationMs = if (safeEnd > safeStart) safeEnd - safeStart else recording.durationMs,
+            trimStartMs = safeStart,
             isPlaying = true
         )
         startPolling()

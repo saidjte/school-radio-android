@@ -73,7 +73,15 @@ object ScheduledPlaybackLauncher {
                         failNote = "ملف التسجيل «${rec.title}» غير موجود على الجهاز"
                         emptyList()
                     }
-                    else -> listOf(PlaybackConnection.QueueItem(rec.filePath, rec.title, rec.id))
+                    else ->
+                        // v0.20.0: القص اليدوي للتسجيلات يُورَّث للفقرة المجدولة —
+                        // ينطلق من نقطة البداية ويتوقف عند النهاية مثل أي مقطع مكتبة
+                        listOf(
+                            PlaybackConnection.QueueItem(
+                                rec.filePath, rec.title, rec.id,
+                                false, rec.trimStartMs, rec.trimEndMs, rec.trimManual
+                            )
+                        )
                 }
             }
             event.singleTrackId != null -> {

@@ -50,6 +50,19 @@ interface RecordingDao {
     @Query("UPDATE recordings SET title = :title WHERE id = :id")
     suspend fun rename(id: Long, title: String)
 
+    /** v0.20.0: حفظ قص يدوي (بداية + نهاية) مع وسم السلطة اليدوية */
+    @Query(
+        "UPDATE recordings SET trim_start_ms = :startMs, trim_end_ms = :endMs, " +
+            "trim_manual = 1 WHERE id = :id"
+    )
+    suspend fun setManualTrim(id: Long, startMs: Long, endMs: Long)
+
+    /** v0.20.0: إزالة كل القص — يعود التسجيل للتشغيل الكامل */
+    @Query(
+        "UPDATE recordings SET trim_start_ms = 0, trim_end_ms = 0, trim_manual = 0 WHERE id = :id"
+    )
+    suspend fun clearTrim(id: Long)
+
     @Delete
     suspend fun delete(recording: RecordingEntity)
 

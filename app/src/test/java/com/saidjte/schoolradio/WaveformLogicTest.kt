@@ -72,4 +72,63 @@ class WaveformLogicTest {
         val expectedOldest = (100 - WaveformLogic.HISTORY_BARS) / 100f
         assertEquals(expectedOldest, window.first(), 1e-4f)
     }
+
+    // =====================================================================
+    // v0.20.0 — مغلف الشكل الموجي لمحرر القص
+    // =====================================================================
+
+    @Test
+    fun `المغلف الفارغ يعيد مصفوفة فارغة بأمان`() {
+        assertTrue(WaveformLogic.envelope(IntArray(0), 96).isEmpty())
+        assertTrue(WaveformLogic.envelope(intArrayOf(100, 200), 0).isEmpty())
+        assertTrue(WaveformLogic.envelope(intArrayOf(100, 200), -3).isEmpty())
+    }
+
+    @Test
+    fun `المغلف يرسم ملفا صامتا كل الأعمدة أصفار بلا قسمة على صفر`() {
+        val out = WaveformLogic.envelope(IntArray(500) { 0 }, 96)
+        assertEquals(96, out.size)
+        assertTrue(out.all { it == 0f })
+    }
+
+    @Test
+    fun `المغلف يطبع على القمة الكلية — القمة القصوى تصل واحدا`() {
+        // قمة واحدة كبيرة وسط قيم صغيرة
+        val peaks = IntArray(1000) { if (it == 500) 30000 else 3000 }
+        val out = WaveformLogic.envelope(peaks, 100)
+        assertEquals(100, out.size)
+        assertEquals(1f, out.max(), 1e-4f)
+        // عمود غير القمة أقل بكثير (جذر النسبة 3000/30000 = ~0.316)
+        val other = out[10]
+        assertTrue("القيم غير القصوى أقل من الواحد: $other", other in 0.25f..0.35f)
+    }
+
+    @Test
+    fun `المغلف يجمع بالقمة القصوى لا المتوسط — النبضة القصيرة لا تختفي`() {
+        // خانة عرض واحدة تحتوي قيمة صفرية + نبضة عالية → العمود يعكس النبضة
+        val peaks = IntArray(200) { 10 } // 200 نافذة → عمودان عند columns=2
+        peaks[0] = 20000 // نبضة قصيرة جداً في بداية الخانة الأولى
+        val out = WaveformLogic.envelope(peaks, 2)
+        // الخانة الأولى يجب أن تعكس القمة 20000 (وأول عمود هو القمة الكلية → 1.0)
+        assertEquals(1f, out[0], 1e-4f)
+        // الخانة الثانية منخفضة (كل قيمها 10 → جذر نسبة صغيرة)
+        assertTrue("الخانة الهادئة أقل بكثير: ${out[1]}", out[1] < 0.1f)
+    }
+
+    @Test
+    fun `قيم سالبة أو فوضوية في القمم تعالج بأمان`() {
+        val peaks = intArrayOf(-5, 100, -200, 400)
+        val out = WaveformLogic.envelope(peaks, 4)
+        assertEquals(4, out.size)
+        assertTrue(out.all { it >= 0f })
+        assertTrue(out.all { it <= 1f })
+    }
+
+    @Test
+    fun `msAtFraction يحول موضع اللمس إلى زمن داخل الحدود`() {
+        assertEquals(0L, WaveformLogic.msAtFraction(-0.5f, 60_000L))
+        assertEquals(60_000L, WaveformLogic.msAtFraction(1.7f, 60_000L))
+        assertEquals(30_000L, WaveformLogic.msAtFraction(0.5f, 60_000L))
+        assertEquals(0L, WaveformLogic.msAtFraction(0.5f, 0L))
+    }
 }

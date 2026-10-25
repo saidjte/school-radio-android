@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
@@ -31,68 +32,95 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.saidjte.schoolradio.audio.SilenceAnalyzer
+import com.saidjte.schoolradio.audio.WaveformExtractor
 import com.saidjte.schoolradio.core.ui.AppIcons
 import com.saidjte.schoolradio.core.util.ScheduleLogic
 import com.saidjte.schoolradio.core.util.TrimLogic
-import com.saidjte.schoolradio.data.local.entity.AudioTrackEntity
+import com.saidjte.schoolradio.core.util.WaveformLogic
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * v0.19.0 — محرر القص اليدوي للمقاطع.
+ * v0.20.0 — هدف موحّد لمحرر القص: مقطع مكتبة أو تسجيل أرشيف (أي صوت يقبل القص).
+ * فصل الهدف عن الكيان يمنع تكرار المحرر ويجعل إضافته لمصدر ثالث مستقبلاً سطراً واحداً.
+ */
+data class TrimTarget(
+    val title: String,
+    /** مسار content:// أو مسار نظام مباشر — يقرأه مستخرج الموجة ومشغل المعاينة */
+    val uri: String,
+    val durationMs: Long,
+    val trimStartMs: Long,
+    val trimEndMs: Long,
+    val trimManual: Boolean
+)
+
+/** عدد أعمدة الموجة داخل الحوار — 96 عموداً يكفي دقة القراءة على أعرض الهواتف */
+private const val WAVE_COLUMNS = 96
+
+/**
+ * v0.19.0 — محرر القص اليدوي للمقاطع — v0.20.0 يتوسع للتسجيلات ويكتسب الشكل الموجي.
  *
- * المذيع يسمع النشيد ويعرف أين يبدأ وأين ينتهي بلا مقدمات — هذا المحرر يمنحه
- * التحكم الكامل: منزلق بداية ومنزلق نهاية مع شريط مرئي للجزء المشغَّل،
+ * المذيع يسمع/يرى النشيد ويعرف أين يبدأ وأين ينتهي بلا مقدمات — هذا المحرر يمنحه
+ * التحكم الكامل: معرض شكل موجي حقيقي (فك تشفير الملف كاملاً عبر MediaCodec)
+ * بمقبضَين قابلَين للسحب ونقرة تنقل أقرب مقبض، مع منزلقي بداية/نهاية للضبط الدقيق،
  * معاينة فورية للجزء المختار، واقتراح آلي للفراغ الأول (قياس v0.18.0 نفسه)
- * كنقطة انطلاق سريعة. الحفظ يوسم المقطع بوضع «السلطة اليدوية»: قصه يُطبَّق
+ * كنقطة انطلاق سريعة. الحفظ يوسم الهدف بوضع «السلطة اليدوية»: قصه يُطبَّق
  * في كل مسارات التشغيل ولا يمسّه التحليل الآلي بعدها أبداً.
  *
  * لماذا مشغل معاينة محلي؟ المعاينة داخل الحوار يجب ألا تعكّر قائمة الهواء
  * الحالية (المشغل الرئيسي) — ExoPlayer مؤقت يُحرَّر مع إغلاق الحوار.
+ * ولماذا الموجة في خيط IO؟ فك تشفير دقائق كاملة عملية ثقيلة — الواجهة
+ * تظل حية (منزلقات/معاينة) حتى يكتمل الرسم.
  */
 @Composable
 fun TrimEditorDialog(
-    track: AudioTrackEntity,
+    target: TrimTarget,
     onDismiss: () -> Unit,
     /** حفظ القص (بداية، نهاية) — التحقق النهائي في المستودع */
     onSave: (startMs: Long, endMs: Long) -> Unit,
-    /** إزالة كل القص — يظهر فقط للمقاطع المقصوصة سابقاً */
+    /** إزالة كل القص — يظهر فقط للأهداف المقصوصة سابقاً */
     onClear: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
     // المدة: من قاعدة البيانات أو تُستكشف من الملف نفسه عند أول فتح
-    var duration by remember { mutableStateOf(track.durationMs) }
+    var duration by remember { mutableStateOf(target.durationMs) }
     var probing by remember { mutableStateOf(false) }
 
     // نقطتا القص الحاليتان — تعملان محلياً حتى الحفظ
-    var startMs by remember { mutableStateOf(track.trimStartMs.coerceAtLeast(0L)) }
+    var startMs by remember { mutableStateOf(target.trimStartMs.coerceAtLeast(0L)) }
     var endMs by remember {
         mutableStateOf(
-            if (track.trimEndMs > 0) track.trimEndMs else track.durationMs
+            if (target.trimEndMs > 0) target.trimEndMs else target.durationMs
         )
     }
     var hint by remember { mutableStateOf<String?>(null) }
     var previewing by remember { mutableStateOf(false) }
 
+    // v0.20.0: مغلف الموجة — null أثناء الاستخراج أو عند الفشل
+    var waveEnvelope by remember { mutableStateOf<FloatArray?>(null) }
+    var waveLoading by remember { mutableStateOf(true) }
+
     // مدة مجهولة؟ استكشفها من الملف مرة واحدة عند فتح المحرر
-    LaunchedEffect(track.id) {
+    LaunchedEffect(target.uri) {
         if (duration <= 0) {
             probing = true
             val d = withContext(Dispatchers.IO) {
                 val retriever = android.media.MediaMetadataRetriever()
                 try {
-                    if (track.uri.startsWith("content://"))
-                        retriever.setDataSource(context, android.net.Uri.parse(track.uri))
-                    else retriever.setDataSource(track.uri)
+                    if (target.uri.startsWith("content://"))
+                        retriever.setDataSource(context, android.net.Uri.parse(target.uri))
+                    else retriever.setDataSource(target.uri)
                     retriever.extractMetadata(
                         android.media.MediaMetadataRetriever.METADATA_KEY_DURATION
                     )?.toLongOrNull() ?: 0L
@@ -109,6 +137,20 @@ fun TrimEditorDialog(
         }
     }
 
+    // v0.20.0: استخراج الشكل الموجي في الخلفية — الواجهة كاملة الوظائف حتى يكتمل
+    LaunchedEffect(target.uri) {
+        val peaks = withContext(Dispatchers.IO) {
+            runCatching { WaveformExtractor.extract(context, target.uri) }.getOrNull()
+        }
+        waveEnvelope = peaks?.windowPeaks?.let {
+            if (it.isNotEmpty()) WaveformLogic.envelope(it, WAVE_COLUMNS) else null
+        }
+        if (waveEnvelope != null && peaks != null && !peaks.complete) {
+            hint = "المدة أطول من 15 دقيقة — الموجة تعرض أول 15 دقيقة فقط"
+        }
+        waveLoading = false
+    }
+
     // مشغل المعاينة المحلي — يُحرَّر مع الحوار
     var player by remember { mutableStateOf<androidx.media3.exoplayer.ExoPlayer?>(null) }
     DisposableEffect(Unit) {
@@ -121,6 +163,31 @@ fun TrimEditorDialog(
     fun stopPreview() {
         player?.stop()
         previewing = false
+    }
+
+    /** ضبط البداية مع فرض الفجوة الدنيا — يوحّد المنزلقات والمقابض الموجية والنقر */
+    fun setStart(nv: Long) {
+        stopPreview()
+        startMs = if (endMs - nv >= TrimLogic.MIN_SEGMENT_MS) nv.coerceAtLeast(0L)
+        else (endMs - TrimLogic.MIN_SEGMENT_MS).coerceAtLeast(0L)
+    }
+
+    /** ضبط النهاية مع فرض الفجوة الدنيا */
+    fun setEnd(nv: Long) {
+        stopPreview()
+        endMs = if (nv - startMs >= TrimLogic.MIN_SEGMENT_MS) nv
+        else startMs + TrimLogic.MIN_SEGMENT_MS
+    }
+
+    /** إغلاق سحب المقبض الموجي — تقريب 100ms واحترام حدود الملف */
+    fun finishWaveDrag() {
+        startMs = TrimLogic.snap(startMs)
+        endMs = TrimLogic.snap(endMs)
+        if (duration > 0) endMs = endMs.coerceAtMost(duration)
+        if (endMs - startMs < TrimLogic.MIN_SEGMENT_MS) {
+            val (s, e) = TrimLogic.normalize(startMs, endMs, duration)
+            startMs = s; endMs = e
+        }
     }
 
     /** معاينة الجزء المختار فقط — Clipping بنفس آلية التشغيل الفعلي */
@@ -143,7 +210,7 @@ fun TrimEditorDialog(
             .build()
         p.setMediaItem(
             androidx.media3.common.MediaItem.Builder()
-                .setUri(track.uri)
+                .setUri(target.uri)
                 .setClippingConfiguration(clip)
                 .build()
         )
@@ -158,7 +225,7 @@ fun TrimEditorDialog(
         probing = true
         scope.launch {
             val trim = withContext(Dispatchers.IO) {
-                runCatching { SilenceAnalyzer.leadingSilenceMs(context, track.uri) }.getOrDefault(0L)
+                runCatching { SilenceAnalyzer.leadingSilenceMs(context, target.uri) }.getOrDefault(0L)
             }
             if (trim > 0) {
                 val (s, e) = TrimLogic.normalize(trim, endMs, duration)
@@ -172,22 +239,22 @@ fun TrimEditorDialog(
     }
 
     val validationError = if (duration > 0) TrimLogic.validate(startMs, endMs, duration) else "المدة غير معروفة"
-    val hasTrim = TrimLogic.hasAnyTrim(track.trimStartMs, track.trimEndMs, track.trimManual)
+    val hasTrim = TrimLogic.hasAnyTrim(target.trimStartMs, target.trimEndMs, target.trimManual)
 
     AlertDialog(
         onDismissRequest = { stopPreview(); onDismiss() },
         title = {
             Column {
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(AppIcons.Tune, null, Modifier.padding(end = 6.dp))
                     Text("قص يدوي", fontWeight = FontWeight.SemiBold)
                 }
                 Text(
-                    track.title,
+                    target.title,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         },
@@ -196,26 +263,40 @@ fun TrimEditorDialog(
                 Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                // ===== الشريط المرئي: الأصل كاملاً والجزء المشغَّل مظلل =====
-                BoxWithConstraints(
-                    Modifier.fillMaxWidth().height(26.dp)
-                ) {
-                    val w = maxWidth
-                    Box(
-                        Modifier.fillMaxWidth().height(26.dp)
-                            .clip(RoundedCornerShape(7.dp))
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+                // ===== v0.20.0: الشكل الموجي — الصوت بالعين قبل الأذن =====
+                if (waveEnvelope != null) {
+                    TrimWaveformView(
+                        envelope = waveEnvelope,
+                        startMs = startMs,
+                        endMs = endMs,
+                        durationMs = duration,
+                        onStartChange = { setStart(it) },
+                        onEndChange = { setEnd(it) },
+                        onHandleEngaged = { stopPreview() },
+                        onDragFinished = { finishWaveDrag() }
                     )
-                    if (duration > 0) {
-                        val startFrac = (startMs.toFloat() / duration).coerceIn(0f, 1f)
-                        val endFrac = (endMs.toFloat() / duration).coerceIn(0f, 1f)
-                        Box(
-                            Modifier
-                                .offset(x = w * startFrac)
-                                .width(w * (endFrac - startFrac).coerceAtLeast(0.01f))
-                                .height(26.dp)
-                                .clip(RoundedCornerShape(7.dp))
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.6f))
+                } else {
+                    // بديل تقريبي: الشريط المسطح أثناء الاستخراج أو عند تعذر الرسم
+                    ApproxTrimBar(startMs, endMs, duration)
+                    if (waveLoading) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            LinearProgressIndicator(
+                                Modifier.width(64.dp).height(4.dp)
+                            )
+                            Text(
+                                "جارٍ رسم الموجة…",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        Text(
+                            "تعذر رسم الموجة لهذا الملف — المنزلقات أدناه تعمل كما هي",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -232,11 +313,7 @@ fun TrimEditorDialog(
                 Slider(
                     value = startMs.toFloat(),
                     onValueChange = { v ->
-                        stopPreview()
-                        val nv = v.toLong().coerceAtLeast(0L)
-                        // فرض الفجوة الدنيا: البداية لا تتجاوز النهاية
-                        startMs = if (endMs - nv >= TrimLogic.MIN_SEGMENT_MS) nv
-                        else (endMs - TrimLogic.MIN_SEGMENT_MS).coerceAtLeast(0L)
+                        setStart(v.toLong())
                     },
                     onValueChangeFinished = { startMs = TrimLogic.snap(startMs) },
                     valueRange = 0f..(if (duration > 0) duration.toFloat() else 1f),
@@ -248,11 +325,7 @@ fun TrimEditorDialog(
                 Slider(
                     value = endMs.toFloat(),
                     onValueChange = { v ->
-                        stopPreview()
-                        val nv = v.toLong()
-                        // فرض الفجوة الدنيا: النهاية لا تنزل تحت البداية
-                        endMs = if (nv - startMs >= TrimLogic.MIN_SEGMENT_MS) nv
-                        else startMs + TrimLogic.MIN_SEGMENT_MS
+                        setEnd(v.toLong())
                     },
                     onValueChangeFinished = {
                         endMs = TrimLogic.snap(endMs)
@@ -293,8 +366,10 @@ fun TrimEditorDialog(
 
                 if (hasTrim) {
                     Text(
-                        "هذا المقطع مقصوص حالياً" +
-                            if (track.trimManual) " يدوياً" else " آلياً (الفراغ الأول)" +
+                        (if (target.trimManual)
+                            "القص الحالي يدوي"
+                        else
+                            "القص الحالي آلي (الفراغ الأول)") +
                             " — الحفظ يستبدل القص السابق، و«إزالة القص» يعيده كاملاً",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -319,4 +394,34 @@ fun TrimEditorDialog(
             }
         }
     )
+}
+
+/**
+ * الشريط التقريبي القديم (v0.19.0) — يبقى بديلاً كاملاً للوظائف حين لا تتوفر
+ * موجة (ملف تالف/صيغة نادرة/أثناء الاستخراج): الجزء المشغَّل مظلل على شريط مسطح.
+ */
+@Composable
+private fun ApproxTrimBar(startMs: Long, endMs: Long, duration: Long) {
+    BoxWithConstraints(
+        Modifier.fillMaxWidth().height(26.dp)
+    ) {
+        val w = maxWidth
+        Box(
+            Modifier.fillMaxWidth().height(26.dp)
+                .clip(RoundedCornerShape(7.dp))
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+        )
+        if (duration > 0) {
+            val startFrac = (startMs.toFloat() / duration).coerceIn(0f, 1f)
+            val endFrac = (endMs.toFloat() / duration).coerceIn(0f, 1f)
+            Box(
+                Modifier
+                    .offset(x = w * startFrac)
+                    .width(w * (endFrac - startFrac).coerceAtLeast(0.01f))
+                    .height(26.dp)
+                    .clip(RoundedCornerShape(7.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.6f))
+            )
+        }
+    }
 }
