@@ -59,7 +59,7 @@ object ScheduledPlaybackLauncher {
         val queue: List<PlaybackConnection.QueueItem> = when {
             event.playlistId != null ->
                 locator.playlists.resolvedTracks(event.playlistId).map {
-                    PlaybackConnection.QueueItem(it.uri, it.title, it.id)
+                    PlaybackConnection.QueueItem.of(it)
                 }
             event.recordingId != null -> {
                 // تسجيل من أرشيف التسجيلات — نتحقق من وجود الملف على القرص أولاً
@@ -79,7 +79,7 @@ object ScheduledPlaybackLauncher {
             event.singleTrackId != null -> {
                 val t = locator.library.trackById(event.singleTrackId)
                 if (t != null && t.isAvailable) {
-                    listOf(PlaybackConnection.QueueItem(t.uri, t.title, t.id))
+                    listOf(PlaybackConnection.QueueItem.of(t))
                 } else {
                     failNote = "المقطع المرتبط بهذه الفقرة غير متاح — أعد ربطه من المكتبة"
                     emptyList()
@@ -208,12 +208,12 @@ object ScheduledPlaybackLauncher {
             schedule.breakTrackId != null ->
                 locator.library.trackById(schedule.breakTrackId)
                     ?.takeIf { it.isAvailable }
-                    ?.let { listOf(BreaksLogic.PlaySpec(it.uri, it.title, it.id)) }
+                    ?.let { listOf(BreaksLogic.PlaySpec(it.uri, it.title, it.id, it.trimStartMs)) }
                     ?: emptyList()
             schedule.breakCategoryId != null ->
                 locator.library.tracks.first()
                     .filter { it.categoryId == schedule.breakCategoryId && it.isAvailable }
-                    .map { BreaksLogic.PlaySpec(it.uri, it.title, it.id) }
+                    .map { BreaksLogic.PlaySpec(it.uri, it.title, it.id, it.trimStartMs) }
             else -> emptyList()
         }
         val spec = BreaksLogic.resolveBreakSpec(
@@ -226,7 +226,7 @@ object ScheduledPlaybackLauncher {
         ) ?: return null
         // v0.15.0: مهلة الانتقال مضبوطة على الجدول — تُطبق قبل انطلاق الجينل
         return BreakPlan(
-            PlaybackConnection.QueueItem(spec.uri, spec.title, spec.trackId),
+            PlaybackConnection.QueueItem(spec.uri, spec.title, spec.trackId, false, spec.trimStartMs),
             schedule.breakTransitionSec
         )
     }

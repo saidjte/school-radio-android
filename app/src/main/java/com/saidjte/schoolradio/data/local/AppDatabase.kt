@@ -47,7 +47,7 @@ import com.saidjte.schoolradio.data.local.entity.UserEntity
         UserEntity::class,
         RecordingEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -186,6 +186,24 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * ترحيل 6 → 7 (v0.17.0 → v0.18.0): عمودان لقص الفراغ الأول على audio_tracks —
+         * مدة الصمت المقيسة في بداية الملف (trim_start_ms) + وسم المرور على التحليل
+         * (silence_analyzed) لفحص خلفي تدريجي للمكتبة القائمة دون تعطيل الإقلاع.
+         * ADD COLUMN بقيم افتراضية ولا تُكتب صفوف أثناء الترحيل — لا مساس بالبيانات.
+         * SQL هنا يجب أن يطابق حرفياً ما يولّده Room من الكيانات (يُفحص مخطط app/schemas/7.json).
+         */
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `audio_tracks` ADD COLUMN `trim_start_ms` INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "ALTER TABLE `audio_tracks` ADD COLUMN `silence_analyzed` INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -193,7 +211,10 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "school-radio.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(
+                        MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
+                        MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7
+                    )
                     .build().also { INSTANCE = it }
             }
     }

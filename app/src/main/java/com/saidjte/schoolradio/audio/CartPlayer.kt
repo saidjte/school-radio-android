@@ -95,7 +95,14 @@ class CartPlayer(context: Context) {
      * الضغط الثانية على نفس الرقاقة العاملة = إيقافها (سلوك أجهزة الاستوديو).
      * @return null عند النجاح أو رسالة عربية للعرض (ملف مفقود مثلاً)
      */
-    fun fire(padKey: String, uri: String, title: String, loop: Boolean, volume: Float): String? {
+    fun fire(
+        padKey: String,
+        uri: String,
+        title: String,
+        loop: Boolean,
+        volume: Float,
+        trimStartMs: Long = 0
+    ): String? {
         val javaFile = java.io.File(uri)
         val mediaUri = if (uri.startsWith("content://") || uri.startsWith("file://")) {
             android.net.Uri.parse(uri)
@@ -115,7 +122,23 @@ class CartPlayer(context: Context) {
         fadeJob?.cancel()
         player.repeatMode = if (loop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
         player.volume = _state.value.volume // نبدأ من الفيدَر الحالي
-        player.setMediaItem(MediaItem.fromUri(mediaUri))
+        // v0.18.0: قص الفراغ الأول — الرقاقة تنطلق من أول نغمة (إعداد مستخدم)
+        val mediaItem = if (
+            trimStartMs > 0 &&
+            com.saidjte.schoolradio.di.ServiceLocator.trimSilenceEnabled.value
+        ) {
+            MediaItem.Builder()
+                .setUri(mediaUri)
+                .setClippingConfiguration(
+                    MediaItem.ClippingConfiguration.Builder()
+                        .setStartPositionMs(trimStartMs)
+                        .build()
+                )
+                .build()
+        } else {
+            MediaItem.fromUri(mediaUri)
+        }
+        player.setMediaItem(mediaItem)
         player.prepare()
         player.play()
         _state.value = _state.value.copy(

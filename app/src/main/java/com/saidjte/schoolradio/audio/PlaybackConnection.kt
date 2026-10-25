@@ -263,12 +263,15 @@ class PlaybackConnection(private val context: Context) {
      * عنصر قائمة انتظار مبسط للمشغل.
      * v0.15.0: [isBreak] يميز عناصر الجينل (الفواصل) — تُحمل داخل Metadata.extras
      * ليتعرف عليها محرك الحدود في PlaybackService ويطبق مهلة الانتقال قبلها.
+     * v0.18.0: [trimStartMs] قص الفراغ الأول — يتحول إلى ClippingConfiguration
+     * عند بناء MediaItem إذا كان إعداد «قص الفراغ الأول» مفعّلاً (تجاهل = تشغيل كما هو).
      */
     data class QueueItem(
         val uri: String,
         val title: String,
         val trackId: Long,
-        val isBreak: Boolean = false
+        val isBreak: Boolean = false,
+        val trimStartMs: Long = 0
     ) {
         fun toMediaItem(): MediaItem {
             val metadata = MediaMetadata.Builder()
@@ -279,11 +282,21 @@ class PlaybackConnection(private val context: Context) {
                     android.os.Bundle().apply { putBoolean(KEY_IS_BREAK, true) }
                 )
             }
-            return MediaItem.Builder()
+            val builder = MediaItem.Builder()
                 .setUri(uri)
                 .setMediaId(trackId.toString())
                 .setMediaMetadata(metadata.build())
-                .build()
+            // v0.18.0: القفز فوق الصمت الأول (إعداد مستخدم — الإيقاف = تجاهل القص)
+            if (trimStartMs > 0 &&
+                com.saidjte.schoolradio.di.ServiceLocator.trimSilenceEnabled.value
+            ) {
+                builder.setClippingConfiguration(
+                    MediaItem.ClippingConfiguration.Builder()
+                        .setStartPositionMs(trimStartMs)
+                        .build()
+                )
+            }
+            return builder.build()
         }
 
         companion object {
@@ -293,6 +306,16 @@ class PlaybackConnection(private val context: Context) {
             /** قراءة وسم الفاصل من عنصر وسائط (خدمة المشغل) */
             fun MediaItem.isBreakItem(): Boolean =
                 mediaMetadata.extras?.getBoolean(KEY_IS_BREAK, false) == true
+
+            /**
+             * v0.18.0: بناء عنصر من كيان مقطع المكتبة — يورّث قص الفراغ الأول
+             * المقيس تلقائياً. البديل الأنظف عن تمرير الحقول يدوياً في كل نداء.
+             */
+            fun of(
+                track: com.saidjte.schoolradio.data.local.entity.AudioTrackEntity,
+                isBreak: Boolean = false
+            ): QueueItem =
+                QueueItem(track.uri, track.title, track.id, isBreak, track.trimStartMs)
         }
     }
 }

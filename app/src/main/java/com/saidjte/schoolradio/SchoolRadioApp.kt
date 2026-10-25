@@ -26,6 +26,9 @@ class SchoolRadioApp : Application() {
                 // تظهر مباشرة في محرر الفواصل والحائط الصوتي دون أي استيراد يدوي
                 ServiceLocator.library.ensureBundledJingles()
                 ServiceLocator.library.refreshAvailability()
+                // v0.18.0: فحص خلفي تدريجي لقص الفراغ الأول — دفعة محدودة
+                // (المتبقي يُغطى في إقلاعات قادمة، لا يلمس زمن الإقلاع إطلاقاً)
+                ServiceLocator.library.scanPendingSilence()
                 // عند بدء العملية: أعد ضبط المنبهات (يغطي أيضًا الحالة بعد القتل القسري)
                 val enabled = ServiceLocator.schedules.enabledSchedules().map { it.id }.toSet()
                 val events = ServiceLocator.schedules.allEvents().filter { it.scheduleId in enabled }

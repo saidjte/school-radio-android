@@ -172,7 +172,7 @@ fun PlaylistsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                         } else {
                                             locator.playMainQueue(
                                                 resolved.map {
-                                                    PlaybackConnection.QueueItem(it.uri, it.title, it.id)
+                                                    PlaybackConnection.QueueItem.of(it)
                                                 },
                                                 repeatAll = p.repeat,
                                                 queueTag = "playlist:${p.id}"
@@ -340,7 +340,7 @@ private fun PlaylistItemsScreen(
                         } else {
                             locator.playMainQueue(
                                 resolved.map {
-                                    PlaybackConnection.QueueItem(it.uri, it.title, it.id)
+                                    PlaybackConnection.QueueItem.of(it)
                                 },
                                 repeatAll = playlist?.repeat == true,
                                 queueTag = "playlist:$playlistId"

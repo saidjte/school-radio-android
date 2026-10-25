@@ -24,7 +24,13 @@ import kotlin.random.Random
 object BreaksLogic {
 
     /** عنصر تشغيل مجرد — فصل المنطق عن PlaybackConnection (اختبار JVM بلا وسائط) */
-    data class PlaySpec(val uri: String, val title: String, val trackId: Long)
+    /** v0.18.0: [trimStartMs] قص الفراغ الأول المقيس للجينل/المقطع — يمر للمشغل */
+    data class PlaySpec(
+        val uri: String,
+        val title: String,
+        val trackId: Long,
+        val trimStartMs: Long = 0
+    )
 
     /**
      * v0.15.0 — عنصر قائمة التشغيل مع وسم «فاصل»: يحتاجه محرك التشغيل

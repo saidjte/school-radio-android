@@ -54,5 +54,9 @@ data class AudioTrackEntity(
     @ColumnInfo(name = "size_bytes") val sizeBytes: Long = 0,
     @ColumnInfo(name = "added_at") val addedAt: Long = System.currentTimeMillis(),
     /** هل ما زال الملف متاحاً؟ (يُحدَّث عند فشل الوصول) */
-    @ColumnInfo(name = "is_available") val isAvailable: Boolean = true
+    @ColumnInfo(name = "is_available") val isAvailable: Boolean = true,
+    // v0.18.0: قص الفراغ الأول — عدد الميلي ثانية الصامتة في بداية الملف
+    @ColumnInfo(name = "trim_start_ms") val trimStartMs: Long = 0,
+    /** هل مرّ التحليل الصوتي على هذا المقطع؟ (0 = لم يُحلَّل بعد) */
+    @ColumnInfo(name = "silence_analyzed") val silenceAnalyzed: Boolean = false
 )

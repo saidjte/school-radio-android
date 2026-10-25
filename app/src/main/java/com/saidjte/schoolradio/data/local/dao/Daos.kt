@@ -103,6 +103,25 @@ interface AudioTrackDao {
     /** v0.14.0: كشف الجينلات المزروعة من التطبيق — يمنع الزرع المزدوج عند كل إقلاع */
     @Query("SELECT COUNT(*) FROM audio_tracks WHERE document_id = :docId")
     suspend fun countByDocumentId(docId: String): Int
+
+    // ===== v0.18.0: قص الفراغ الأول =====
+
+    /** المقاطع التي لم يمر عليها محلّل الصمت بعد — لفحص الخلفي التدريجي */
+    @Query(
+        "SELECT * FROM audio_tracks WHERE silence_analyzed = 0 AND is_available = 1 " +
+            "ORDER BY added_at DESC LIMIT :limit"
+    )
+    suspend fun pendingSilenceScan(limit: Int): List<AudioTrackEntity>
+
+    /** حفظ نتيجة التحليل: مدة القص + وسم المرور */
+    @Query(
+        "UPDATE audio_tracks SET trim_start_ms = :trimMs, silence_analyzed = 1 WHERE id = :id"
+    )
+    suspend fun setSilenceTrim(id: Long, trimMs: Long)
+
+    /** إعادة فتح التحليل (زر «قص الفراغ الأول» يدوياً) */
+    @Query("UPDATE audio_tracks SET silence_analyzed = 0 WHERE id = :id")
+    suspend fun resetSilenceAnalysis(id: Long)
 }
 
 // =====================================================================

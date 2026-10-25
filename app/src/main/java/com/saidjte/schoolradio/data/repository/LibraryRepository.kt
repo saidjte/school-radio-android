@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.media.MediaMetadataRetriever
 import android.provider.OpenableColumns
+import com.saidjte.schoolradio.audio.SilenceAnalyzer
 import com.saidjte.schoolradio.data.bundled.BundledJingles
 import com.saidjte.schoolradio.data.local.AppDatabase
 import com.saidjte.schoolradio.data.local.entity.AudioTrackEntity
@@ -91,12 +92,15 @@ class LibraryRepository(
     /**
      * استيراد عدة ملفات في عملية واحدة.
      * تستخرج الاسم والمدة والحجم، وتطلب صلاحية وصول دائمة لكل مستند.
+     * v0.18.0: يُقرر تحليل الفراغ الأول للملفات المستوردة بعد الإدراج مباشرة
+     * (خلفياً — لا يعطل الاستيراد ولا رسالة التأكيد).
      * @return قائمة العناوين المستوردة (لرسالة التأكيد)
      */
     suspend fun importUris(uris: List<Uri>, categoryId: Long?): Int =
         withContext(Dispatchers.IO) {
             val cr = context.contentResolver
             var imported = 0
+            val importedIds = mutableListOf<Long>()
             for (uri in uris) {
                 try {
                     // صلاحية دائمة حتى يبقى الملف قابلاً للتشغيل بعد إعادة التشغيل
@@ -110,7 +114,7 @@ class LibraryRepository(
                 val name = queryDisplayName(cr, uri) ?: "مقطع ${imported + 1}"
                 val duration = queryDuration(cr, uri)
                 val size = querySize(cr, uri)
-                trackDao.insert(
+                val newId = trackDao.insert(
                     AudioTrackEntity(
                         title = name.substringBeforeLast('.').ifBlank { name },
                         uri = uri.toString(),
@@ -121,10 +125,42 @@ class LibraryRepository(
                         isAvailable = true
                     )
                 )
+                if (newId > 0) importedIds += newId
                 imported++
             }
+            // v0.18.0: تحليل فوري للجديد (خيط IO — عادة أجزاء من الثانية لكل ملف)
+            for (id in importedIds) analyzeSilenceById(id)
             imported
         }
+
+    // ================== v0.18.0: قص الفراغ الأول ==================
+
+    /**
+     * تحليل الفراغ الأول لمقطع واحد وبدء تخزين النتيجة.
+     * آمن تماماً: فشل التحليل يعني «لا قص» — لا يرفع استثناء أبداً.
+     * @return المدة المقيسة بالميلي ثانية (0 = لا فراغ يُذكر)
+     */
+    suspend fun analyzeSilenceById(trackId: Long): Long = withContext(Dispatchers.IO) {
+        val track = trackDao.byId(trackId) ?: return@withContext 0L
+        if (!track.isAvailable) return@withContext 0L
+        val trim = SilenceAnalyzer.leadingSilenceMs(context, track.uri)
+        trackDao.setSilenceTrim(trackId, trim)
+        trim
+    }
+
+    /**
+     * فحص خلفي تدريجي: يحلّل دفعة من المقاطع التي لم تُحلَّل بعد.
+     * يُستدعى من إقلاع التطبيق وبعد الاستيراد — بحد أقصى للدفعة حتى لا يلمس الإقلاع.
+     * @return عدد المقاطع المحلَّلة في هذه الدفعة
+     */
+    suspend fun scanPendingSilence(limit: Int = 12): Int = withContext(Dispatchers.IO) {
+        val pending = trackDao.pendingSilenceScan(limit)
+        for (t in pending) {
+            val trim = SilenceAnalyzer.leadingSilenceMs(context, t.uri)
+            trackDao.setSilenceTrim(t.id, trim)
+        }
+        pending.size
+    }
 
     suspend fun rename(track: AudioTrackEntity, newTitle: String) {
         trackDao.update(track.copy(title = newTitle))
@@ -158,6 +194,8 @@ class LibraryRepository(
                 newUri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
         } catch (_: SecurityException) { /* كما سبق */ }
         trackDao.update(track.copy(uri = newUri.toString(), isAvailable = true))
+        // v0.18.0: ملف جديد = فراغ أول جديد — أعِد فتح التحليل ليغطيه الفحص الخلفي
+        trackDao.resetSilenceAnalysis(track.id)
     }
 
     suspend fun trackById(id: Long): AudioTrackEntity? = trackDao.byId(id)
@@ -206,7 +244,7 @@ class LibraryRepository(
             }
 
             val durationMs = queryDurationForFile(outFile)
-            trackDao.insert(
+            val newId = trackDao.insert(
                 AudioTrackEntity(
                     title = j.title,
                     uri = Uri.fromFile(outFile).toString(),
@@ -216,6 +254,10 @@ class LibraryRepository(
                     sizeBytes = outFile.length()
                 )
             )
+            // v0.18.0: الجينلات المدمجة صغيرة — نحلل فراغها الأول فوراً (غير مانع للإقلاع)
+            if (newId > 0) {
+                runCatching { analyzeSilenceById(newId) }
+            }
         }
     }
 

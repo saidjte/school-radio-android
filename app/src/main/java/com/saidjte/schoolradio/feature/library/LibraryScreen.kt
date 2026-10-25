@@ -202,7 +202,7 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
              *  فتعمل أزرار التالي/السابق عبر كل مقاطع القائمة، وتتوقف أي معاينة تسجيل فوراً */
             fun playFromLibrary(track: AudioTrackEntity) {
                 val queue = visible.filter { it.isAvailable }.map {
-                    com.saidjte.schoolradio.audio.PlaybackConnection.QueueItem(it.uri, it.title, it.id)
+                    com.saidjte.schoolradio.audio.PlaybackConnection.QueueItem.of(it)
                 }
                 val startIndex = queue.indexOfFirst { it.trackId == track.id }
                 locator.playMainQueue(
@@ -256,7 +256,17 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                     snackbar.showSnackbar("حُذف «${track.title}» من المكتبة (بقي الملف الأصلي كما هو)")
                                 }
                             },
-                            onRelink = { relinking = track }
+                            onRelink = { relinking = track },
+                            // v0.18.0: تحليل يدوي لقص الفراغ الأول مع رسالة النتيجة
+                            onTrim = {
+                                scope.launch {
+                                    val trim = locator.library.analyzeSilenceById(track.id)
+                                    snackbar.showSnackbar(
+                                        com.saidjte.schoolradio.core.util.SilenceLogic
+                                            .message(trim, track.title)
+                                    )
+                                }
+                            }
                         )
                     }
                     item { androidx.compose.foundation.layout.Spacer(Modifier.padding(40.dp)) }
@@ -342,7 +352,8 @@ private fun TrackRow(
     onPlay: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
-    onRelink: () -> Unit
+    onRelink: () -> Unit,
+    onTrim: () -> Unit = {}
 ) {
     // v0.8.0: المقطع قيد التشغيل يُميّز بلون وتحريك — وأزراره تعكس الحالة الفعلية
     val isPlayingNow = isCurrent && isPlaying
@@ -428,6 +439,14 @@ private fun TrackRow(
                         expanded = menuOpen,
                         onDismissRequest = { menuOpen = false }
                     ) {
+                        // v0.18.0: قياس الفراغ الأول يدوياً — النتيجة تظهر snackbar
+                        DropdownMenuItem(
+                            text = { Text("قص الفراغ الأول") },
+                            leadingIcon = {
+                                Icon(AppIcons.Cut, null, Modifier.size(20.dp))
+                            },
+                            onClick = { menuOpen = false; onTrim() }
+                        )
                         DropdownMenuItem(
                             text = { Text("تعديل") },
                             leadingIcon = { Icon(Icons.Filled.Edit, null, Modifier.size(20.dp)) },

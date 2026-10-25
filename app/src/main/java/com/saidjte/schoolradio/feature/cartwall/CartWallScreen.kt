@@ -178,7 +178,9 @@ fun CartWallScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                     uri = track.uri,
                                     title = track.title,
                                     loop = pad.loop,
-                                    volume = cartState.volume
+                                    volume = cartState.volume,
+                                    // v0.18.0: قص الفراغ الأول المقيس لهذا المقطع
+                                    trimStartMs = track.trimStartMs
                                 )?.let { message(it) }
                             } else {
                                 message("مقطع هذا الجينغل لم يعد في المكتبة — اضغط مطولاً لإعادة الربط")

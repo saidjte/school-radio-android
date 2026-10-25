@@ -49,7 +49,9 @@ data class AppSettings(
     val prompterSpeed: Float = 55f,        // سرعة التمرير dp/ثانية
     val prompterFont: Float = 30f,         // حجم خط النص sp
     val prompterMirror: Boolean = false,   // وضع المرآة
-    val prompterGuide: Boolean = true      // الخط الإرشادي لموضع القراءة
+    val prompterGuide: Boolean = true,     // الخط الإرشادي لموضع القراءة
+    // ===== v0.18.0: قص الفراغ الأول من المقاطع (أو تجاهله) =====
+    val trimSilence: Boolean = true        // true = قفز فوق الصمت الأول، false = تشغيل الملف كما هو
 )
 
 /**
@@ -90,6 +92,8 @@ class SettingsStore(private val context: Context) {
         val PROMPTER_FONT = floatPreferencesKey("prompter_font")
         val PROMPTER_MIRROR = booleanPreferencesKey("prompter_mirror")
         val PROMPTER_GUIDE = booleanPreferencesKey("prompter_guide")
+        // v0.18.0: قص الفراغ الأول
+        val TRIM_SILENCE = booleanPreferencesKey("trim_silence")
     }
 
     /** معرف المستخدم الحالي (لتوليفه مع جدول users في SessionRepository) */
@@ -124,7 +128,8 @@ class SettingsStore(private val context: Context) {
             prompterSpeed = p[Keys.PROMPTER_SPEED] ?: 55f,
             prompterFont = p[Keys.PROMPTER_FONT] ?: 30f,
             prompterMirror = p[Keys.PROMPTER_MIRROR] ?: false,
-            prompterGuide = p[Keys.PROMPTER_GUIDE] ?: true
+            prompterGuide = p[Keys.PROMPTER_GUIDE] ?: true,
+            trimSilence = p[Keys.TRIM_SILENCE] ?: true
         )
     }
 
@@ -180,4 +185,7 @@ class SettingsStore(private val context: Context) {
     suspend fun setPrompterMirror(v: Boolean) = context.dataStore.edit { it[Keys.PROMPTER_MIRROR] = v }
 
     suspend fun setPrompterGuide(v: Boolean) = context.dataStore.edit { it[Keys.PROMPTER_GUIDE] = v }
+
+    // ===== v0.18.0: قص الفراغ الأول من المقاطع =====
+    suspend fun setTrimSilence(v: Boolean) = context.dataStore.edit { it[Keys.TRIM_SILENCE] = v }
 }

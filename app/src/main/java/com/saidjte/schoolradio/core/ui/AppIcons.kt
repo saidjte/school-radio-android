@@ -982,4 +982,52 @@ object AppIcons {
             }
         }
     }
+
+    /** مقص القص (Material content-cut) — v0.18.0 قص الفراغ الأول */
+    val Cut: ImageVector by lazy {
+        builder("Cut") {
+            path(
+                fill = SolidColor(Color.Black),
+                pathFillType = PathFillType.NonZero
+            ) {
+                moveTo(9.64f, 7.64f)
+                curveToRelative(0.23f, -0.5f, 0.36f, -1.05f, 0.36f, -1.64f)
+                curveToRelative(0f, -2.21f, -1.79f, -4f, -4f, -4f)
+                reflectiveCurveTo(2f, 3.79f, 2f, 6f)
+                reflectiveCurveToRelative(1.79f, 4f, 4f, 4f)
+                curveToRelative(0.59f, 0f, 1.14f, -0.13f, 1.64f, -0.36f)
+                lineTo(10f, 12f)
+                lineToRelative(-2.36f, 2.36f)
+                curveTo(7.14f, 14.13f, 6.59f, 14f, 6f, 14f)
+                curveToRelative(-2.21f, 0f, -4f, 1.79f, -4f, 4f)
+                reflectiveCurveToRelative(1.79f, 4f, 4f, 4f)
+                reflectiveCurveToRelative(4f, -1.79f, 4f, -4f)
+                curveToRelative(0f, -0.59f, -0.13f, -1.14f, -0.36f, -1.64f)
+                lineTo(12f, 14f)
+                lineToRelative(7f, 7f)
+                horizontalLineToRelative(3f)
+                verticalLineToRelative(-1f)
+                lineTo(9.64f, 7.64f)
+                close()
+                moveTo(6f, 8f)
+                curveToRelative(-1.1f, 0f, -2f, -0.9f, -2f, -2f)
+                reflectiveCurveToRelative(0.9f, -2f, 2f, -2f)
+                reflectiveCurveToRelative(2f, 0.9f, 2f, 2f)
+                reflectiveCurveToRelative(-0.9f, 2f, -2f, 2f)
+                close()
+                moveTo(12f, 10.5f)
+                curveToRelative(-0.28f, 0f, -0.5f, 0.22f, -0.5f, 0.5f)
+                reflectiveCurveToRelative(0.22f, 0.5f, 0.5f, 0.5f)
+                reflectiveCurveToRelative(0.5f, -0.22f, 0.5f, -0.5f)
+                reflectiveCurveToRelative(-0.22f, -0.5f, -0.5f, -0.5f)
+                close()
+                moveTo(19f, 3f)
+                lineToRelative(-6f, 6f)
+                lineToRelative(2f, 2f)
+                lineToRelative(7f, -7f)
+                verticalLineTo(3f)
+                close()
+            }
+        }
+    }
 }

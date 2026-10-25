@@ -201,6 +201,32 @@ fun SettingsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                         onValueChange = { scope.launch { locator.settings.setDuckVolume(it) } }
                     )
                 }
+
+                HorizontalDivider()
+
+                // v0.18.0: قص الفراغ الأول من المقاطع (أو تجاهله)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("قص الفراغ الأول من المقاطع")
+                        Text(
+                            "يقفز المشغل فوق الصمت في بداية المقاطع والجينلات لتنطلق من أول نغمة — أطفئه لتشغيلها كما هي (تجاهل القص)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = settings.trimSilence,
+                        onCheckedChange = {
+                            scope.launch {
+                                locator.settings.setTrimSilence(it)
+                                snackbar.showSnackbar(
+                                    if (it) "سُيُقص الفراغ الأول من المقاطع"
+                                    else "سُيتجاهل القص — المقاطع تعمل من بدايتها كما هي"
+                                )
+                            }
+                        }
+                    )
+                }
             }
         }
 

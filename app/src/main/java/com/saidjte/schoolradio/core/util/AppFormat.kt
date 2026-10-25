@@ -44,4 +44,11 @@ object AppFormat {
     /** «الأربعاء 24 أكتوبر 2026» — بلا وقت، لشاشات العرض */
     fun dateDay(ms: Long): String =
         westernDigits(SimpleDateFormat("EEEE d MMMM yyyy", AR_NAMES).format(Date(ms)))
+
+    /** v0.18.0: عدد صحيح بأرقام مغربية مضمونة (مثل 1250 → "1250") */
+    fun number(v: Long): String = Locale.US.let { String.format(it, "%d", v) }
+
+    /** v0.18.0: عدد عشري بمنزلة واحدة بأرقام مغربية (مثل 1.8 → "1.8") */
+    fun numberOneDecimal(v: Double): String =
+        String.format(Locale.US, "%.1f", v).trimEnd('0', '.').ifEmpty { "0" }
 }

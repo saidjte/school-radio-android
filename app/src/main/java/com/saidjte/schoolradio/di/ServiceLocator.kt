@@ -66,6 +66,10 @@ object ServiceLocator {
     /** مهلة الانتقال بالميلي ثانية قبل انطلاق الجينل بعد كل فقرة (0 = فوراً) */
     val breakTransitionMs = MutableStateFlow(0L)
 
+    // v0.18.0: إعداد «قص الفراغ الأول» كلقطة حية — يقرأه QueueItem.toMediaItem
+    // متزامناً عند بناء عناصر الوسائط (بلا تعليق) ويحدّثه جامع الإعدادات الدائم
+    val trimSilenceEnabled = MutableStateFlow(true)
+
     private lateinit var appContext: Context
     val appScope: CoroutineScope
         get() = _appScope
@@ -417,12 +421,16 @@ object ServiceLocator {
             schedule.breakTrackId != null ->
                 library.trackById(schedule.breakTrackId)
                     ?.takeIf { it.isAvailable }
-                    ?.let { listOf(BreaksLogic.PlaySpec(it.uri, it.title, it.id)) }
+                    ?.let {
+                        listOf(
+                            BreaksLogic.PlaySpec(it.uri, it.title, it.id, it.trimStartMs)
+                        )
+                    }
                     ?: emptyList()
             schedule.breakCategoryId != null ->
                 library.tracks.first()
                     .filter { it.categoryId == schedule.breakCategoryId && it.isAvailable }
-                    .map { BreaksLogic.PlaySpec(it.uri, it.title, it.id) }
+                    .map { BreaksLogic.PlaySpec(it.uri, it.title, it.id, it.trimStartMs) }
             else -> emptyList()
         }
 
@@ -445,7 +453,10 @@ object ServiceLocator {
         // v0.15.0: العناصر الموسومة isBreak + مهلة الانتقال تُمرر لمحرك الحدود
         playMainQueue(
             tagged.map {
-                PlaybackConnection.QueueItem(it.spec.uri, it.spec.title, it.spec.trackId, it.isBreak)
+                PlaybackConnection.QueueItem(
+                    it.spec.uri, it.spec.title, it.spec.trackId,
+                    it.isBreak, it.spec.trimStartMs
+                )
             },
             queueTag = "breaks:${schedule.id}",
             transitionDelayMs = schedule.breakTransitionSec * 1000L
@@ -476,7 +487,7 @@ object ServiceLocator {
     private suspend fun resolveEventContent(e: ScheduledEventEntity): List<BreaksLogic.PlaySpec>? = when {
         e.playlistId != null ->
             playlists.resolvedTracks(e.playlistId)
-                .map { BreaksLogic.PlaySpec(it.uri, it.title, it.id) }
+                .map { BreaksLogic.PlaySpec(it.uri, it.title, it.id, it.trimStartMs) }
                 .takeIf { it.isNotEmpty() }
         e.recordingId != null ->
             recordingsRepo.byId(e.recordingId)
@@ -485,7 +496,7 @@ object ServiceLocator {
         e.singleTrackId != null ->
             library.trackById(e.singleTrackId)
                 ?.takeIf { it.isAvailable }
-                ?.let { listOf(BreaksLogic.PlaySpec(it.uri, it.title, it.id)) }
+                ?.let { listOf(BreaksLogic.PlaySpec(it.uri, it.title, it.id, it.trimStartMs)) }
         else -> null
     }
 
@@ -547,6 +558,8 @@ object ServiceLocator {
                         noiseGate = s.micNoiseGate,
                         echoCancel = s.micEchoCancel
                     )
+                    // v0.18.0: لقطة حية لإعداد قص الفراغ الأول
+                    trimSilenceEnabled.value = s.trimSilence
                 }
             }
             initialized = true
