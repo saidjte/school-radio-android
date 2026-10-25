@@ -59,7 +59,11 @@ object ScheduledPlaybackLauncher {
         val queue: List<PlaybackConnection.QueueItem> = when {
             event.playlistId != null ->
                 locator.playlists.resolvedTracks(event.playlistId).map {
-                    PlaybackConnection.QueueItem.of(it)
+                    // v0.23.0: مقاطع البث البعيدة تحصل على تدفق طازج (روابطها تنتهي صلاحيتها)
+                    PlaybackConnection.QueueItem(
+                        locator.remote.playableUriFor(it), it.title, it.id,
+                        false, it.trimStartMs, it.trimEndMs, it.trimManual
+                    )
                 }
             event.recordingId != null -> {
                 // تسجيل من أرشيف التسجيلات — نتحقق من وجود الملف على القرص أولاً
@@ -87,7 +91,13 @@ object ScheduledPlaybackLauncher {
             event.singleTrackId != null -> {
                 val t = locator.library.trackById(event.singleTrackId)
                 if (t != null && t.isAvailable) {
-                    listOf(PlaybackConnection.QueueItem.of(t))
+                    listOf(
+                        // v0.23.0: مقطع بث بعيد — تدفق طازج قبل الإطلاق
+                        PlaybackConnection.QueueItem(
+                            locator.remote.playableUriFor(t), t.title, t.id,
+                            false, t.trimStartMs, t.trimEndMs, t.trimManual
+                        )
+                    )
                 } else {
                     failNote = "المقطع المرتبط بهذه الفقرة غير متاح — أعد ربطه من المكتبة"
                     emptyList()
@@ -109,6 +119,10 @@ object ScheduledPlaybackLauncher {
             // الحَكَم الموحّد — أوقف أي معاينة تسجيلات قبل إطلاق الفقرة
             // (نفس المشغل الرئيسي، لا تداخل صوتي أبداً)
             ServiceLocator.onScheduledPlaybackStarting()
+            // v0.23.0: حماية صريحة — وضع الفواصل (breaks:) لقوائم يدوية لا يجوز أن
+            // يبقى نشطاً فوق الفقرات المجدولة (إلا تعطلت نهايتها على محرك الحدود)
+            ServiceLocator.breaksModeActive.value = false
+            ServiceLocator.breakTransitionMs.value = 0L
             val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
             val future = MediaController.Builder(context, token).buildAsync()
             future.addListener({
@@ -164,12 +178,17 @@ object ScheduledPlaybackLauncher {
                             if (brk != null) "شُغّلت كاملة • انطلق الفاصل الآلي" else "شُغّلت كاملة"
                         )
                         if (brk == null) {
-                            withContext(Dispatchers.Main) { controller.release() }
-                            // انتهت الفقرة (ولا فاصل) — شاشة العرض تعود إلى الوضع الخامل
-                            ServiceLocator.setOnAir(null)
+                            // v0.23.0: تفريغ قائمة المشغل المشترك أيضاً — كانت تبقى ملتصقة
+                            // بعد نهاية الفقرة فتمنع شاشة العرض من العودة للساعة الخاملة
+                            // (stopAll يمس MediaController — على الموضوع الرئيسي حصراً)
+                            withContext(Dispatchers.Main) {
+                                controller.release()
+                                ServiceLocator.playback.stopAll()
+                            }
                         } else {
                             // v0.15.0: مهلة الانتقال — صمت مقصود بعد الفقرة قبل الجينل
-                            // (قابل للضبط من محرر الفواصل) وشاشة العرض تعدّ للمذيع والمشاهدين
+                            // v0.23.0: شاشة العرض تعدّ تنازلياً حياً للانطلاق عبر
+                            // breakStartsAtMs (لوحة «انطلاق الفاصل بعد …»)
                             if (brk.transitionSec > 0) {
                                 withContext(Dispatchers.Main) {
                                     ServiceLocator.setOnAir(
@@ -177,7 +196,10 @@ object ScheduledPlaybackLauncher {
                                             eventId = event.id,
                                             eventTitle = "فاصل بين الفقرات",
                                             noteText = "انطلاق الجينل بعد ${brk.transitionSec} ثانية…",
-                                            imagePath = null
+                                            imagePath = null,
+                                            isBreak = true,
+                                            breakStartsAtMs = System.currentTimeMillis() + brk.transitionMs,
+                                            breakTitle = brk.item.title
                                         )
                                     )
                                 }
@@ -245,9 +267,10 @@ object ScheduledPlaybackLauncher {
             pool
         ) ?: return null
         // v0.15.0: مهلة الانتقال مضبوطة على الجدول — تُطبق قبل انطلاق الجينل
+        // v0.23.0: العنصر موسوم isBreak — شاشة العرض تعرض عدّه كباقي الجينلات
         return BreakPlan(
             PlaybackConnection.QueueItem(
-                spec.uri, spec.title, spec.trackId, false,
+                spec.uri, spec.title, spec.trackId, true,
                 spec.trimStartMs, spec.trimEndMs, spec.manualTrim
             ),
             schedule.breakTransitionSec
@@ -268,12 +291,15 @@ object ScheduledPlaybackLauncher {
         controller.repeatMode = Player.REPEAT_MODE_OFF
         controller.prepare()
         controller.play()
+        // v0.23.0: لوحة الفاصل الحية — العدّ من متبقّي المشغل (isBreak + breakTitle)
         ServiceLocator.setOnAir(
             OnAirInfo(
                 eventId = event.id,
                 eventTitle = "فاصل بين الفقرات",
                 noteText = brk.title,
-                imagePath = null
+                imagePath = null,
+                isBreak = true,
+                breakTitle = brk.title
             )
         )
         controller.addListener(object : Player.Listener {
@@ -281,7 +307,8 @@ object ScheduledPlaybackLauncher {
                 if (state == Player.STATE_ENDED) {
                     controller.removeListener(this)
                     controller.release()
-                    ServiceLocator.setOnAir(null)
+                    // v0.23.0: تفريغ المشغل المشترك — العدّ الزائف «00:00» لا يبقى على الشاشة
+                    ServiceLocator.playback.stopAll()
                 }
             }
         })

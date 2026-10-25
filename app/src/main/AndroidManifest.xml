@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- ===== v0.23.0: استيراد وتشغيل مباشر من يوتوب/ساوندكلاود/Google Drive =====
+         المطلوب فقط للبث والتنزيل عند طلب المستخدم — كل شيء آخر يعمل offline كما كان -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- ===== الصوت ===== -->
     <!-- البث المباشر عبر الميكروفون (اضغط للتحدث) -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />

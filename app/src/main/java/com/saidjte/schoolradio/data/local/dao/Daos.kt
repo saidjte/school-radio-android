@@ -108,10 +108,11 @@ interface AudioTrackDao {
 
     /** المقاطع التي لم يمر عليها محلّل الصمت بعد — لفحص الخلفي التدريجي.
      *  v0.19.0: المقاطع ذات القص اليدوي (trim_manual = 1) مستثناة أبداً —
-     *  قرار المذيع الصريح لا يجوز أن يمسّه التحليل الآلي. */
+     *  قرار المذيع الصريح لا يجوز أن يمسّه التحليل الآلي.
+     *  v0.23.0: مقاطع البث البعيدة مستثناة — التحليل MediaCodec يحتاج ملفاً محلياً. */
     @Query(
         "SELECT * FROM audio_tracks WHERE silence_analyzed = 0 AND trim_manual = 0 AND is_available = 1 " +
-            "ORDER BY added_at DESC LIMIT :limit"
+            "AND is_remote = 0 ORDER BY added_at DESC LIMIT :limit"
     )
     suspend fun pendingSilenceScan(limit: Int): List<AudioTrackEntity>
 

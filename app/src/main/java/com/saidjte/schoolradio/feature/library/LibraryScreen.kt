@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -43,6 +44,7 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -96,6 +98,8 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
     // v0.10.0: إدارة التصنيفات — إضافة سريعة + حوار إدارة كامل
     var addCategoryOpen by remember { mutableStateOf(false) }
     var manageCategoriesOpen by remember { mutableStateOf(false) }
+    // v0.23.0: حوار الاستيراد من الإنترنت (يوتوب/ساوندكلاود/Drive/مباشر)
+    var importLinkOpen by remember { mutableStateOf(false) }
 
     // استيراد ملفات متعددة من المستندات (بلا صلاحيات تخزين شامل)
     val importLauncher = rememberLauncherForActivityResult(
@@ -189,12 +193,23 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                 }
             }
             // v0.10.0: زر إدارة التصنيفات — إعادة تسمية وحذف بعدد المقاطع لكل تصنيف
-            TextButton(
-                onClick = { manageCategoriesOpen = true },
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-            ) {
-                Icon(Icons.Filled.Edit, null, Modifier.size(15.dp))
-                Text("إدارة التصنيفات", style = MaterialTheme.typography.labelMedium)
+            // v0.23.0: + زر «استيراد من رابط» بجانبه
+            Row {
+                TextButton(
+                    onClick = { manageCategoriesOpen = true },
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                ) {
+                    Icon(Icons.Filled.Edit, null, Modifier.size(15.dp))
+                    Text("إدارة التصنيفات", style = MaterialTheme.typography.labelMedium)
+                }
+                Spacer(Modifier.width(8.dp))
+                TextButton(
+                    onClick = { importLinkOpen = true },
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                ) {
+                    Icon(AppIcons.CloudUpload, null, Modifier.size(15.dp))
+                    Text("استيراد من رابط", style = MaterialTheme.typography.labelMedium)
+                }
             }
 
             val visible = filtered.filter {
@@ -202,17 +217,23 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
             }
 
             /** v0.8.0: التشغيل الموحّد عبر الحَكَم — يقاطع المقطع المطلوب ضمن قائمة المكتبة المرئية
-             *  فتعمل أزرار التالي/السابق عبر كل مقاطع القائمة، وتتوقف أي معاينة تسجيل فوراً */
+             *  فتعمل أزرار التالي/السابق عبر كل مقاطع القائمة، وتتوقف أي معاينة تسجيل فوراً
+             *  v0.23.0: مقاطع البث البعيدة تجلب تدفقاً طازجاً قبل الإدراج (روابطها تنتهي) */
             fun playFromLibrary(track: AudioTrackEntity) {
-                val queue = visible.filter { it.isAvailable }.map {
-                    com.saidjte.schoolradio.audio.PlaybackConnection.QueueItem.of(it)
+                scope.launch {
+                    val queue = visible.filter { it.isAvailable }.map { t ->
+                        val uri = locator.remote.playableUriFor(t)
+                        com.saidjte.schoolradio.audio.PlaybackConnection.QueueItem(
+                            uri, t.title, t.id, false, t.trimStartMs, t.trimEndMs, t.trimManual
+                        )
+                    }
+                    val startIndex = queue.indexOfFirst { it.trackId == track.id }
+                    locator.playMainQueue(
+                        items = queue,
+                        startIndex = if (startIndex >= 0) startIndex else 0,
+                        queueTag = "library"
+                    )
                 }
-                val startIndex = queue.indexOfFirst { it.trackId == track.id }
-                locator.playMainQueue(
-                    items = queue,
-                    startIndex = if (startIndex >= 0) startIndex else 0,
-                    queueTag = "library"
-                )
             }
 
             if (visible.isEmpty()) {
@@ -260,6 +281,20 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                 }
                             },
                             onRelink = { relinking = track },
+                            // v0.23.0: تنزيل مقطع البث إلى ملف محلي دائم
+                            onDownload = {
+                                scope.launch {
+                                    try {
+                                        val msg = locator.remote.downloadToLibrary(track)
+                                        snackbar.showSnackbar(msg)
+                                    } catch (e: Exception) {
+                                        snackbar.showSnackbar(
+                                            (e as? com.saidjte.schoolradio.data.remote.RemoteImportException)?.message
+                                                ?: "فشل التنزيل — تحقق من الاتصال وحاول مجدداً"
+                                        )
+                                    }
+                                }
+                            },
                             // v0.18.0: تحليل يدوي لقص الفراغ الأول مع رسالة النتيجة
                             // v0.19.0: المقطع المقصوص يدوياً لا يمسّه التحليل الآلي
                             onTrim = {
@@ -380,6 +415,55 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
         )
     }
 
+    // ===== v0.23.0: استيراد من الإنترنت — تشغيل مباشر أو تنزيل دائم =====
+    if (importLinkOpen) {
+        ImportLinkDialog(
+            defaultCategoryId = selectedCategoryId,
+            onDismiss = { importLinkOpen = false },
+            onPlayNow = { preview, catId ->
+                scope.launch {
+                    try {
+                        val track = locator.remote.saveRemoteTrack(preview, catId)
+                        val uri = locator.remote.playableUriFor(track, preview.streamUrl)
+                        locator.playMainQueue(
+                            listOf(
+                                com.saidjte.schoolradio.audio.PlaybackConnection.QueueItem(
+                                    uri, track.title, track.id, false,
+                                    track.trimStartMs, track.trimEndMs, track.trimManual
+                                )
+                            ),
+                            queueTag = "library"
+                        )
+                        snackbar.showSnackbar(
+                            "«${track.title}» يعمل الآن بالبث المباشر — نزّله لاحقاً للعمل دون إنترنت"
+                        )
+                    } catch (e: Exception) {
+                        snackbar.showSnackbar(
+                            (e as? com.saidjte.schoolradio.data.remote.RemoteImportException)?.message
+                                ?: "تعذّر بدء التشغيل المباشر"
+                        )
+                    }
+                    importLinkOpen = false
+                }
+            },
+            onDownload = { preview, catId ->
+                scope.launch {
+                    try {
+                        val track = locator.remote.saveRemoteTrack(preview, catId)
+                        val msg = locator.remote.downloadToLibrary(track, preview.streamUrl)
+                        snackbar.showSnackbar(msg)
+                    } catch (e: Exception) {
+                        snackbar.showSnackbar(
+                            (e as? com.saidjte.schoolradio.data.remote.RemoteImportException)?.message
+                                ?: "فشل التنزيل — تحقق من الاتصال وحاول مجدداً"
+                        )
+                    }
+                    importLinkOpen = false
+                }
+            }
+        )
+    }
+
     // ===== فحص إعادة الربط — منتقي واحد يفتح مرة لكل طلب =====
     androidx.compose.runtime.LaunchedEffect(relinking?.id) {
         if (relinking != null) relinkLauncher.launch(arrayOf("audio/*"))
@@ -398,7 +482,8 @@ private fun TrackRow(
     onDelete: () -> Unit,
     onRelink: () -> Unit,
     onTrim: () -> Unit = {},
-    onManualTrim: () -> Unit = {}
+    onManualTrim: () -> Unit = {},
+    onDownload: () -> Unit = {}
 ) {
     // v0.8.0: المقطع قيد التشغيل يُميّز بلون وتحريك — وأزراره تعكس الحالة الفعلية
     val isPlayingNow = isCurrent && isPlaying
@@ -450,6 +535,21 @@ private fun TrackRow(
                         }
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        // v0.23.0: شارة «بث» — مقطع يعمل من الإنترنت لا من ملف محلي
+                        if (track.isRemote) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.16f),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    "بث",
+                                    Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                            }
+                            Text("  •  ", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         if (categoryName != null) {
                             Text(
                                 categoryName,
@@ -484,6 +584,18 @@ private fun TrackRow(
                         expanded = menuOpen,
                         onDismissRequest = { menuOpen = false }
                     ) {
+                        // v0.23.0: تنزيل مقطع البث إلى ملف محلي — العمل دون إنترنت للأبد
+                        if (track.isRemote) {
+                            DropdownMenuItem(
+                                text = { Text("تنزيل للعمل دون اتصال") },
+                                leadingIcon = {
+                                    Icon(AppIcons.Download, null, Modifier.size(20.dp))
+                                },
+                                onClick = { menuOpen = false; onDownload() }
+                            )
+                        }
+                        // القص يحتاج ملفاً محلياً — مخفي عن مقاطع البث (يتاح بعد التنزيل)
+                        if (!track.isRemote) {
                         // v0.18.0: قياس الفراغ الأول يدوياً — النتيجة تظهر snackbar
                         DropdownMenuItem(
                             text = { Text("قص الفراغ الأول") },
@@ -500,6 +612,7 @@ private fun TrackRow(
                             },
                             onClick = { menuOpen = false; onManualTrim() }
                         )
+                        }
                         DropdownMenuItem(
                             text = { Text("تعديل") },
                             leadingIcon = { Icon(Icons.Filled.Edit, null, Modifier.size(20.dp)) },

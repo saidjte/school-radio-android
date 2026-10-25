@@ -38,6 +38,11 @@ data class PlaybackUiState(
     val queueTag: String? = null,
     /** v0.8.0: معرف المقطع من المكتبة قيد التشغيل (mediaId) — لتمييز السطر النشط */
     val currentTrackId: Long? = null,
+    /**
+     * v0.23.0: هل العنصر الحالي فاصلاً (جينل)؟ — شاشة العرض تستعمله لعرض
+     * لوحة عدّ الفاصل حتى مع جينلات القوائم الموسومة (breaks:) دون معلومات على الهواء.
+     */
+    val currentIsBreak: Boolean = false,
     /** v0.14.0: متبقي المقطع الحالي (مدة − موضع) للمؤقت التنازلي على شاشة العرض */
     val remainingMs: Long = 0,
     /**
@@ -171,6 +176,9 @@ class PlaybackConnection(private val context: Context) {
             shuffleEnabled = c.shuffleModeEnabled,
             queueTag = _state.value.queueTag,
             currentTrackId = c.currentMediaItem?.mediaId?.toLongOrNull(),
+            // v0.23.0: قراءة وسم الفاصل من عنصر الوسائط الحالي (جينلات القوائم/الفاصل المجدول)
+            currentIsBreak = c.currentMediaItem?.mediaMetadata?.extras
+                ?.getBoolean(QueueItem.KEY_IS_BREAK, false) == true,
             errorMessage = _state.value.errorMessage
         )
     }

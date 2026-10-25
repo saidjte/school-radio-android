@@ -46,7 +46,13 @@ data class OnAirInfo(
     val noteText: String? = null,
     val imagePath: String? = null,
     val scriptId: Long? = null,
-    val scriptTitle: String? = null
+    val scriptTitle: String? = null,
+    /** v0.23.0: هذه فقرة فاصل بين الفقرات — شاشة العرض تُظهر لوحة عدّ الفاصل */
+    val isBreak: Boolean = false,
+    /** v0.23.0: أثناء مهلة الانتقال — لحظة (epoch) انطلاق الجينل لعدّ حي على الشاشة */
+    val breakStartsAtMs: Long? = null,
+    /** v0.23.0: اسم الجينل — يظهر في لوحة الفاصل أثناء مهلة الانتقال والتشغيل */
+    val breakTitle: String? = null
 )
 
 /**
@@ -106,6 +112,10 @@ object ServiceLocator {
 
     // v0.9.0: مستودع السكربتات الإذاعية (الإعلانات والنصوص)
     lateinit var scripts: ScriptRepository
+        private set
+
+    // v0.23.0: خدمة الاستيراد من الإنترنت (يوتوب/ساوندكلاود/Drive/روابط مباشرة)
+    lateinit var remote: com.saidjte.schoolradio.data.remote.RemoteMediaService
         private set
 
     // v0.16.0: الميكسر — تطبيق القنوات موحّد هنا. المستويات الممرّرة «فعّالة»
@@ -424,7 +434,8 @@ object ServiceLocator {
                     ?.let {
                         listOf(
                             BreaksLogic.PlaySpec(
-                                it.uri, it.title, it.id,
+                                // v0.23.0: جينل بعيد؟ يجدَّد تدفقه هنا قبل الإدراج
+                                remote.playableUriFor(it), it.title, it.id,
                                 it.trimStartMs, it.trimEndMs, it.trimManual
                             )
                         )
@@ -435,7 +446,8 @@ object ServiceLocator {
                     .filter { it.categoryId == schedule.breakCategoryId && it.isAvailable }
                     .map {
                         BreaksLogic.PlaySpec(
-                            it.uri, it.title, it.id,
+                            // v0.23.0: جينلات بعيدة في التصنيف تجدَّد تدفقاتها
+                            remote.playableUriFor(it), it.title, it.id,
                             it.trimStartMs, it.trimEndMs, it.trimManual
                         )
                     }
@@ -498,7 +510,8 @@ object ServiceLocator {
             playlists.resolvedTracks(e.playlistId)
                 .map {
                     BreaksLogic.PlaySpec(
-                        it.uri, it.title, it.id,
+                        // v0.23.0: مقاطع البث البعيدة تحتاج تدفقاً طازجاً (روابطها تنتهي)
+                        remote.playableUriFor(it), it.title, it.id,
                         it.trimStartMs, it.trimEndMs, it.trimManual
                     )
                 }
@@ -513,7 +526,8 @@ object ServiceLocator {
                 ?.let {
                     listOf(
                         BreaksLogic.PlaySpec(
-                            it.uri, it.title, it.id,
+                            // v0.23.0: مقطع بث بعيد — يجدَّد تدفقه هنا
+                            remote.playableUriFor(it), it.title, it.id,
                             it.trimStartMs, it.trimEndMs, it.trimManual
                         )
                     )
@@ -529,6 +543,8 @@ object ServiceLocator {
             db = AppDatabase.get(appContext)
             settings = SettingsStore(appContext)
             library = LibraryRepository(appContext, db)
+            // v0.23.0: خدمة الاستيراد من الإنترنت — تحتاج المكتبة لتحليل الفراغ بعد التنزيل
+            remote = com.saidjte.schoolradio.data.remote.RemoteMediaService(appContext, db, library)
             playlists = PlaylistRepository(db)
             schedules = ScheduleRepository(db)
             backup = BackupRepository(appContext, db, settings)

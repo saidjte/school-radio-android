@@ -66,5 +66,13 @@ data class AudioTrackEntity(
      * المقطع الموسوم لا يمسّه التحليل الآلي للفراغ أبداً، وقصه يُطبَّق
      * دائماً حتى لو عُطّل مفتاح «قص الفراغ الأول» العام.
      */
-    @ColumnInfo(name = "trim_manual") val trimManual: Boolean = false
+    @ColumnInfo(name = "trim_manual") val trimManual: Boolean = false,
+    /**
+     * v0.23.0: مقطع بث من الإنترنت (يوتوب/ساوندكلاود/Drive/رابط مباشر) —
+     * [uri] يحمل رابط التدفق بدل ملف محلي، والتنزيل المحلي يحوله لمقطع عادي
+     * (isRemote = 0) يعمل دون إنترنت للأبد.
+     */
+    @ColumnInfo(name = "is_remote") val isRemote: Boolean = false,
+    /** v0.23.0: الرابط الأصلي للمنصة — مرجع إعادة استخراج التدفقات المنتهية (يوتوب/ساوندكلاود) */
+    @ColumnInfo(name = "source_url") val sourceUrl: String? = null
 )

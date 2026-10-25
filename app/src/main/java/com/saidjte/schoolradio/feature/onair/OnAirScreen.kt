@@ -60,6 +60,7 @@ import com.saidjte.schoolradio.core.ui.RoundedProgressBar
 import com.saidjte.schoolradio.core.ui.SegmentImage
 import com.saidjte.schoolradio.core.util.AppFormat
 import com.saidjte.schoolradio.core.util.AirCountdown
+import com.saidjte.schoolradio.core.util.BreakCountdown
 import com.saidjte.schoolradio.core.util.ScheduleLogic
 import com.saidjte.schoolradio.di.ServiceLocator
 import kotlinx.coroutines.delay
@@ -130,6 +131,24 @@ fun OnAirScreen(onExit: () -> Unit) {
         .minByOrNull { it.startMinutes }
     val nextEventIn = remember(nextEvent, nowTick) {
         nextEvent?.let { AirCountdown.mmss(AirCountdown.secondsUntil(it.startMinutes, nowTick)) }
+    }
+
+    // ===== v0.23.0: الفاصل بين الفقرات — لوحة العد التنازلي الحية على شاشة العرض =====
+    // مرحلة الفاصل: انتظار (مهلة قبل الجينل) / تشغيل (الجينل يعمل) / لا شيء
+    val breakPhase = BreakCountdown.phase(
+        onAirIsBreak = onAir?.isBreak == true,
+        currentIsBreak = playback.currentIsBreak,
+        breakStartsAtMs = onAir?.breakStartsAtMs,
+        nowMs = nowTick
+    )
+    // نبضة سريعة (250ms) أثناء مهلة الانتقال فقط — عدّ انسيابي على الشاشة الكبيرة
+    val breakTick by produceState(System.currentTimeMillis(),
+        breakPhase == BreakCountdown.Phase.WAITING
+    ) {
+        while (true) {
+            value = System.currentTimeMillis()
+            delay(250)
+        }
     }
 
     val onDark = Color.White
@@ -249,6 +268,60 @@ fun OnAirScreen(onExit: () -> Unit) {
             }
 
             if (playback.hasQueue) {
+                // ===== v0.23.0: لوحة مهلة الانتقال — «انطلاق الفاصل بعد …» بعدّ حي =====
+                if (breakPhase == BreakCountdown.Phase.WAITING) {
+                    val waitSec = BreakCountdown.waitSecondsLeft(
+                        onAir?.breakStartsAtMs ?: breakTick, breakTick
+                    )
+                    Surface(
+                        Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
+                        color = Color(0xFFFFB74D).copy(alpha = 0.10f)
+                    ) {
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 34.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = Color(0xFFFFB74D).copy(alpha = 0.16f)
+                            ) {
+                                Text(
+                                    "فاصل بين الفقرات",
+                                    Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                                    color = Color(0xFFFFD180),
+                                    style = MaterialTheme.typography.labelLarge
+                                )
+                            }
+                            Spacer(Modifier.height(18.dp))
+                            Text(
+                                "انطلاق الفاصل بعد",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = onDark.copy(alpha = 0.85f)
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                AirCountdown.mmss(waitSec),
+                                style = MaterialTheme.typography.displayMedium.copy(
+                                    fontSize = 84.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFeatureSettings = "tnum"
+                                ),
+                                color = Color(0xFFFFB74D)
+                            )
+                            if (!onAir?.breakTitle.isNullOrBlank()) {
+                                Spacer(Modifier.height(14.dp))
+                                Text(
+                                    "الجينل: ${onAir?.breakTitle}",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = airTeal
+                                )
+                            }
+                        }
+                    }
+                } else {
                 // ===== صورة الفقرة (إن وُجدت) — منطقة العرض الأكبر بإطار أنيق =====
                 val img = onAir?.imagePath
                 if (img != null) {
@@ -378,7 +451,57 @@ fun OnAirScreen(onExit: () -> Unit) {
                     }
                     Spacer(Modifier.height(18.dp))
                 }
+                } // نهاية فرع «ليس انتظار فاصل» — لوحة الانتقال تُغني عن صورة ونص الفقرة
 
+                // ===== v0.23.0: بطاقة الفاصل الجاري — «ينتهي الفاصل بعد …» =====
+                if (breakPhase == BreakCountdown.Phase.PLAYING) {
+                    // لون دلالي خاص بالفواصل (قصيرة): أحمر في آخر 5 ثوانٍ، كهرماني قبلها
+                    val breakUrgency = BreakCountdown.urgency(playback.remainingMs, playback.isPlaying)
+                    val breakColor = when (breakUrgency) {
+                        AirCountdown.Urgency.FINAL -> Color(0xFFFF5A5F)
+                        else -> Color(0xFFFFB74D)
+                    }
+                    Surface(
+                        Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        color = breakColor.copy(alpha = 0.12f)
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                AppIcons.Alarm, null,
+                                tint = breakColor,
+                                modifier = Modifier.size(26.dp)
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    "ينتهي الفاصل بعد",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = onDark.copy(alpha = 0.6f)
+                                )
+                                Text(
+                                    onAir?.breakTitle ?: playback.currentTitle ?: "فاصل بين الفقرات",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = airTeal,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                )
+                            }
+                            Text(
+                                AirCountdown.mmss(playback.remainingMs / 1000),
+                                style = MaterialTheme.typography.displaySmall.copy(
+                                    fontSize = 44.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFeatureSettings = "tnum"
+                                ),
+                                color = breakColor
+                            )
+                        }
+                    }
+                } else {
                 // ===== v0.14.0: المؤقت التنازلي للفقرة — واضح من آخر القاعة =====
                 // لون دلالي: زمردي عادي / كهرماني في آخر دقيقة / أحمر في آخر 15 ثانية
                 val urgency = AirCountdown.urgency(playback.remainingMs, playback.isPlaying)
@@ -428,6 +551,7 @@ fun OnAirScreen(onExit: () -> Unit) {
                         )
                     }
                 }
+                } // نهاية فرع بطاقة الفقرة العادية
 
                 // ===== شريط التقدم بأطراف دائرية + الزمن =====
                 RoundedProgressBar(

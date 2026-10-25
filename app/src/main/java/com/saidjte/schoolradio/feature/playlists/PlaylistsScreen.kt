@@ -172,7 +172,12 @@ fun PlaylistsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                         } else {
                                             locator.playMainQueue(
                                                 resolved.map {
-                                                    PlaybackConnection.QueueItem.of(it)
+                                                    // v0.23.0: مقاطع البث البعيدة تجلب تدفقاً طازجاً
+                                                    PlaybackConnection.QueueItem(
+                                                        locator.remote.playableUriFor(it),
+                                                        it.title, it.id, false,
+                                                        it.trimStartMs, it.trimEndMs, it.trimManual
+                                                    )
                                                 },
                                                 repeatAll = p.repeat,
                                                 queueTag = "playlist:${p.id}"
@@ -340,7 +345,12 @@ private fun PlaylistItemsScreen(
                         } else {
                             locator.playMainQueue(
                                 resolved.map {
-                                    PlaybackConnection.QueueItem.of(it)
+                                    // v0.23.0: مقاطع البث البعيدة تجلب تدفقاً طازجاً
+                                    PlaybackConnection.QueueItem(
+                                        locator.remote.playableUriFor(it),
+                                        it.title, it.id, false,
+                                        it.trimStartMs, it.trimEndMs, it.trimManual
+                                    )
                                 },
                                 repeatAll = playlist?.repeat == true,
                                 queueTag = "playlist:$playlistId"

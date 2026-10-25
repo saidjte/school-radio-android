@@ -37,6 +37,8 @@ import com.saidjte.schoolradio.data.local.entity.UserEntity
  *   نقطة نهاية يحددها المذيع من المحرر + وسم سلطة يمنع التحليل الآلي من المساس بالقص.
  * الإصدار 9 = v0.20.0: القص اليدوي لتسجيلات الأرشيف (trim_start_ms + trim_end_ms +
  *   trim_manual على recordings) + معرض شكل موجي داخل محرر القص.
+ * الإصدار 10 = v0.23.0: استيراد من الإنترنت (is_remote + source_url على audio_tracks)
+ *   — مقاطع بث من يوتوب/ساوندكلاود/Drive مع تنزيل محلي يحولها لملفات دائمة.
  * عند أي تعديل مستقبلي: زد الإصدار واكتب Migration() صريحاً (لا fallback في الإنتاج)
  * — بيانات المدارس الحقيقية (مكتبة + جداول + أرشيف) لا يجوز فقدانها أبداً.
  */
@@ -52,7 +54,7 @@ import com.saidjte.schoolradio.data.local.entity.UserEntity
         UserEntity::class,
         RecordingEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -250,6 +252,24 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * ترحيل 9 → 10 (v0.22.0 → v0.23.0): عمودان للاستيراد من الإنترنت على audio_tracks —
+         * راية «مقطع بث» (is_remote) والرابط الأصلي للمنصة (source_url) الذي تتم منه
+         * إعادة استخراج التدفقات المنتهية (روابط يوتوب/ساوندكلاود تعيش ساعات فقط).
+         * ADD COLUMN بقيم افتراضية ولا تُكتب صفوف أثناء الترحيل — لا مساس بالبيانات.
+         * SQL هنا يجب أن يطابق حرفياً ما يولّده Room من الكيانات (يُفحص مخطط app/schemas/10.json).
+         */
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `audio_tracks` ADD COLUMN `is_remote` INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "ALTER TABLE `audio_tracks` ADD COLUMN `source_url` TEXT"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -260,7 +280,7 @@ abstract class AppDatabase : RoomDatabase() {
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
                         MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
-                        MIGRATION_8_9
+                        MIGRATION_8_9, MIGRATION_9_10
                     )
                     .build().also { INSTANCE = it }
             }

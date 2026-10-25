@@ -145,6 +145,8 @@ class LibraryRepository(
         val track = trackDao.byId(trackId) ?: return@withContext 0L
         if (!track.isAvailable) return@withContext 0L
         if (track.trimManual) return@withContext 0L // وسم السلطة: لا تحليل آلي فوق قص يدوي
+        // v0.23.0: مقاطع البث البعيدة بلا ملف محلي — التحليل بعد التنزيل فقط
+        if (track.isRemote) return@withContext 0L
         val trim = SilenceAnalyzer.leadingSilenceMs(context, track.uri)
         trackDao.setSilenceTrim(trackId, trim)
         trim

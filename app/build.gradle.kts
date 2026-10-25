@@ -119,6 +119,10 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("androidx.media3:media3-session:1.5.1")
 
+    // ===== v0.23.0: استخراج تدفقات يوتوب/ساوندكلاود (محرك NewPipe المفتوح) =====
+    // يحدّث نفسه مع تغيّرات المنصتين عبر إصداراته الدورية — تحديث الإصدار هنا فقط
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")
+
     // ===== Coroutines =====
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
