@@ -100,6 +100,9 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
     var manageCategoriesOpen by remember { mutableStateOf(false) }
     // v0.23.0: حوار الاستيراد من الإنترنت (يوتوب/ساوندكلاود/Drive/مباشر)
     var importLinkOpen by remember { mutableStateOf(false) }
+    // v0.25.0: تنزيلات الإنترنت الحية — التقدم يظهر في الحوار وفي صفوف المكتبة
+    val downloads by locator.remote.downloads.collectAsStateWithLifecycle()
+    var activeDownloadTrackId by remember { mutableStateOf<Long?>(null) }
 
     // استيراد ملفات متعددة من المستندات (بلا صلاحيات تخزين شامل)
     val importLauncher = rememberLauncherForActivityResult(
@@ -208,7 +211,7 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                 ) {
                     Icon(AppIcons.CloudUpload, null, Modifier.size(15.dp))
-                    Text("استيراد من رابط", style = MaterialTheme.typography.labelMedium)
+                    Text("استيراد من الإنترنت", style = MaterialTheme.typography.labelMedium)
                 }
             }
 
@@ -282,8 +285,10 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                             },
                             onRelink = { relinking = track },
                             // v0.23.0: تنزيل مقطع البث إلى ملف محلي دائم
+                            // v0.25.0: مع إعلان البداية — التقدم يظهر حياً في الصف نفسه
                             onDownload = {
                                 scope.launch {
+                                    snackbar.showSnackbar("بدأ تنزيل «${track.title}» — التقدم يظهر تحت الصف")
                                     try {
                                         val msg = locator.remote.downloadToLibrary(track)
                                         snackbar.showSnackbar(msg)
@@ -313,7 +318,8 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                 }
                             },
                             // v0.19.0: فتح محرر القص اليدوي
-                            onManualTrim = { trimming = track }
+                            onManualTrim = { trimming = track },
+                            downloadProgress = downloads[track.id]
                         )
                     }
                     item { androidx.compose.foundation.layout.Spacer(Modifier.padding(40.dp)) }
@@ -415,10 +421,11 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
         )
     }
 
-    // ===== v0.23.0: استيراد من الإنترنت — تشغيل مباشر أو تنزيل دائم =====
+    // ===== v0.23.0: استيراد من الإنترنت — بحث ورابط + تشغيل مباشر أو تنزيل دائم =====
     if (importLinkOpen) {
         ImportLinkDialog(
             defaultCategoryId = selectedCategoryId,
+            activeDownload = activeDownloadTrackId?.let { downloads[it] },
             onDismiss = { importLinkOpen = false },
             onPlayNow = { preview, catId ->
                 scope.launch {
@@ -450,6 +457,9 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                 scope.launch {
                     try {
                         val track = locator.remote.saveRemoteTrack(preview, catId)
+                        // v0.25.0: إعلان البداية فوراً + ربط التقدم الحي بالحوار والصف
+                        activeDownloadTrackId = track.id
+                        snackbar.showSnackbar("بدأ تنزيل «${track.title}»…")
                         val msg = locator.remote.downloadToLibrary(track, preview.streamUrl)
                         snackbar.showSnackbar(msg)
                     } catch (e: Exception) {
@@ -458,6 +468,7 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                 ?: "فشل التنزيل — تحقق من الاتصال وحاول مجدداً"
                         )
                     }
+                    activeDownloadTrackId = null
                     importLinkOpen = false
                 }
             }
@@ -483,7 +494,8 @@ private fun TrackRow(
     onRelink: () -> Unit,
     onTrim: () -> Unit = {},
     onManualTrim: () -> Unit = {},
-    onDownload: () -> Unit = {}
+    onDownload: () -> Unit = {},
+    downloadProgress: com.saidjte.schoolradio.data.remote.RemoteMediaService.DownloadProgress? = null
 ) {
     // v0.8.0: المقطع قيد التشغيل يُميّز بلون وتحريك — وأزراره تعكس الحالة الفعلية
     val isPlayingNow = isCurrent && isPlaying
@@ -585,12 +597,21 @@ private fun TrackRow(
                         onDismissRequest = { menuOpen = false }
                     ) {
                         // v0.23.0: تنزيل مقطع البث إلى ملف محلي — العمل دون إنترنت للأبد
+                        // v0.25.0: أثناء التنزيل يتحول البند لمؤشر نسبة معطّل (لا تنزيل مزدوج)
                         if (track.isRemote) {
+                            val dlRunning = downloadProgress?.isRunning == true
                             DropdownMenuItem(
-                                text = { Text("تنزيل للعمل دون اتصال") },
+                                text = {
+                                    Text(
+                                        if (dlRunning)
+                                            "جارٍ التنزيل… " + (downloadProgress?.fraction?.let { "${(it * 100).toInt()}%" } ?: "")
+                                        else "تنزيل للعمل دون اتصال"
+                                    )
+                                },
                                 leadingIcon = {
                                     Icon(AppIcons.Download, null, Modifier.size(20.dp))
                                 },
+                                enabled = !dlRunning,
                                 onClick = { menuOpen = false; onDownload() }
                             )
                         }
@@ -642,6 +663,30 @@ private fun TrackRow(
                     strokeWidth = 3
                 )
                 androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
+            }
+            // v0.25.0: شريط تقدم التنزيل الحي — يُرى من مكانه بلا فتح قوائم
+            if (downloadProgress != null && downloadProgress.isRunning) {
+                androidx.compose.foundation.layout.Spacer(Modifier.height(6.dp))
+                val frac = downloadProgress.fraction
+                if (frac != null) {
+                    RoundedProgressBar(
+                        progress = frac,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+                        strokeWidth = 4
+                    )
+                } else {
+                    androidx.compose.material3.LinearProgressIndicator(
+                        Modifier.fillMaxWidth().padding(horizontal = 14.dp)
+                    )
+                }
+                Text(
+                    "جارٍ التنزيل… " + com.saidjte.schoolradio.data.remote.DownloadLogic
+                        .statusLine(downloadProgress.downloadedBytes, downloadProgress.totalBytes),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(horizontal = 14.dp)
+                )
+                androidx.compose.foundation.layout.Spacer(Modifier.height(6.dp))
             }
         }
     }

@@ -270,9 +270,17 @@ object StreamResolver {
     /**
      * تنزيل التدفق إلى ملف محلي — بعد التحميل يصبح المقطع ملكاً للمكتبة
      * يعمل دون إنترنت للأبد (فلسفة التطبيق offline-first).
+     *
+     * v0.25.0: معايرة التقدم الحي عبر [onProgress] (البايتات المنزلة، الكلي إن عُرف)
+     * + رسالة 403 إرشادية تفسر سبب الرفض (انتهاء صلاحية رابط التدفق) بدل رمز غامض.
+     *
      * @return حجم الملف بالبايت
      */
-    suspend fun downloadToFile(url: String, outFile: File): Long = withContext(Dispatchers.IO) {
+    suspend fun downloadToFile(
+        url: String,
+        outFile: File,
+        onProgress: (downloaded: Long, total: Long) -> Unit = { _, _ -> }
+    ): Long = withContext(Dispatchers.IO) {
         val conn = URL(url).openConnection() as HttpURLConnection
         try {
             conn.connectTimeout = 15_000
@@ -281,7 +289,11 @@ object StreamResolver {
             conn.setRequestProperty("User-Agent", BROWSER_UA)
             val code = conn.responseCode
             if (code !in 200..399) {
-                throw RemoteImportException("فشل التنزيل (رمز $code) — حاول مجدداً بعد قليل")
+                throw RemoteImportException(
+                    if (code == 403 || code == 410)
+                        "الخادم رفض التدفق ($code) — انتهت صلاحية الرابط غالباً؛ أعد المحاولة فتُجدد آلياً أو أعد الاستيراد"
+                    else "فشل التنزيل (رمز $code) — حاول مجدداً بعد قليل"
+                )
             }
             val ct = (conn.getHeaderField("Content-Type") ?: "").lowercase()
             if ("text/html" in ct) {
@@ -289,9 +301,28 @@ object StreamResolver {
                     "الخادم أعاد صفحة بدل الملف — غالباً انتهت صلاحية التدفق؛ أعد الاستيراد من الرابط الأصلي"
                 )
             }
+            // الحجم الكلي إن أعلنه الخادم — يُغذي شريط التقدم بالنسبة
+            val total = conn.contentLengthLong
+            onProgress(0L, total.toLong())
             val tmp = File(outFile.parentFile, outFile.name + ".part")
             conn.inputStream.use { input ->
-                tmp.outputStream().use { out -> input.copyTo(out, 64 * 1024) }
+                tmp.outputStream().use { out ->
+                    val buf = ByteArray(64 * 1024)
+                    var downloaded = 0L
+                    var lastReported = 0L
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        out.write(buf, 0, n)
+                        downloaded += n
+                        // خنق الإبلاغ: كل 256KB — بلا إغراق لإعادة رسم الواجهة
+                        if (DownloadLogic.shouldReport(lastReported, downloaded)) {
+                            lastReported = downloaded
+                            onProgress(downloaded, total.toLong())
+                        }
+                    }
+                    onProgress(downloaded, total.toLong())
+                }
             }
             if (tmp.length() == 0L) {
                 tmp.delete()
