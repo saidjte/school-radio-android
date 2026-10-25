@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -35,7 +36,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -54,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.saidjte.schoolradio.core.ui.AppIcons
+import com.saidjte.schoolradio.core.ui.BigVuMeter
 import com.saidjte.schoolradio.core.ui.LiveWaveform
 import com.saidjte.schoolradio.core.ui.MicQuickToggle
 import com.saidjte.schoolradio.core.ui.RoundedProgressBar
@@ -61,6 +65,7 @@ import com.saidjte.schoolradio.core.ui.SegmentImage
 import com.saidjte.schoolradio.core.util.AppFormat
 import com.saidjte.schoolradio.core.util.AirCountdown
 import com.saidjte.schoolradio.core.util.BreakCountdown
+import com.saidjte.schoolradio.core.util.OnAirDisplayLogic
 import com.saidjte.schoolradio.core.util.ScheduleLogic
 import com.saidjte.schoolradio.di.ServiceLocator
 import kotlinx.coroutines.delay
@@ -105,6 +110,13 @@ fun OnAirScreen(onExit: () -> Unit) {
     )
     val airTeal = Color(0xFF5CDAC4)
 
+    // ===== v0.24.0: مؤقت ترتيل المذيع — لحظة فتح الميكروفون تُحفظ لبدء العد =====
+    // إن فُتحت الشاشة والمايك حي أصلاً يبدأ العد من اللحظة الحالية (سقف معقول).
+    var micStartedAt by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(micLive) {
+        micStartedAt = if (micLive) System.currentTimeMillis() else null
+    }
+
     // إبقاء الشاشة مضاءة طوال بقاء شاشة العرض مفتوحة
     DisposableEffect(Unit) {
         view.keepScreenOn = true
@@ -126,11 +138,12 @@ fun OnAirScreen(onExit: () -> Unit) {
     val todayEvents by remember {
         locator.schedules.todayEventsFlow()
     }.collectAsStateWithLifecycle(initialValue = emptyList())
-    val nextEvent = todayEvents
-        .filter { it.startMinutes > ScheduleLogic.minutesOfDay(nowTick) }
-        .minByOrNull { it.startMinutes }
-    val nextEventIn = remember(nextEvent, nowTick) {
-        nextEvent?.let { AirCountdown.mmss(AirCountdown.secondsUntil(it.startMinutes, nowTick)) }
+    // ===== v0.24.0: الفقرات المجدولة القادمة — أولها بعدّ حي والبقية بمواعيدها =====
+    val upcomingEvents = remember(todayEvents, nowTick) {
+        OnAirDisplayLogic.upcomingEvents(
+            todayEvents.map { OnAirDisplayLogic.UpcomingEvent(it.title, it.startMinutes) },
+            ScheduleLogic.minutesOfDay(nowTick)
+        )
     }
 
     // ===== v0.23.0: الفاصل بين الفقرات — لوحة العد التنازلي الحية على شاشة العرض =====
@@ -149,6 +162,11 @@ fun OnAirScreen(onExit: () -> Unit) {
             value = System.currentTimeMillis()
             delay(250)
         }
+    }
+
+    // ===== v0.24.0: عناوين الفقرات القادمة من قائمة التشغيل الجارية =====
+    val upcomingTitles = remember(playback.queueTitles, playback.queueIndex) {
+        OnAirDisplayLogic.upcomingQueueTitles(playback.queueTitles, playback.queueIndex)
     }
 
     val onDark = Color.White
@@ -260,9 +278,59 @@ fun OnAirScreen(onExit: () -> Unit) {
                         active = true,
                         modifier = Modifier
                             .weight(1f)
-                            .height(40.dp),
+                            .height(52.dp),
                         color = Color(0xFFFF8A85)
                     )
+                }
+                Spacer(Modifier.height(14.dp))
+            }
+
+            // ===== v0.24.0: مؤقت ترتيل المذيع — عدّ زمن الحديث المباشر بلون دلالي =====
+            if (micLive) {
+                val elapsedSec = OnAirDisplayLogic.pacingElapsedSec(micStartedAt, nowTick)
+                val paceUrgency = OnAirDisplayLogic.pacingUrgency(elapsedSec)
+                val paceColor = when (paceUrgency) {
+                    AirCountdown.Urgency.NORMAL -> airTeal
+                    AirCountdown.Urgency.SOON -> Color(0xFFFFB74D)
+                    AirCountdown.Urgency.FINAL -> Color(0xFFFF5A5F)
+                }
+                Surface(
+                    Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    color = paceColor.copy(alpha = 0.12f)
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(AppIcons.Mic, null, tint = paceColor, modifier = Modifier.size(30.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "مؤقت الترتيل — زمن حديثك المباشر",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = onDark.copy(alpha = 0.65f)
+                            )
+                            Text(
+                                when (paceUrgency) {
+                                    AirCountdown.Urgency.NORMAL -> "توقيتك مريح — واصل"
+                                    AirCountdown.Urgency.SOON -> "اقتربت من زمن الترتيل — اختم قريباً"
+                                    AirCountdown.Urgency.FINAL -> "تجاوزت زمن الترتيل — اختم الآن"
+                                },
+                                style = MaterialTheme.typography.titleSmall,
+                                color = paceColor
+                            )
+                        }
+                        Text(
+                            AirCountdown.mmss(elapsedSec),
+                            style = MaterialTheme.typography.displaySmall.copy(
+                                fontSize = 40.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFeatureSettings = "tnum"
+                            ),
+                            color = paceColor
+                        )
+                    }
                 }
                 Spacer(Modifier.height(14.dp))
             }
@@ -553,6 +621,54 @@ fun OnAirScreen(onExit: () -> Unit) {
                 }
                 } // نهاية فرع بطاقة الفقرة العادية
 
+                // ===== v0.24.0: الفقرات القادمة — يعرف الجميع ما بعدها من آخر القاعة =====
+                if (upcomingTitles.isNotEmpty() && breakPhase != BreakCountdown.Phase.WAITING) {
+                    Spacer(Modifier.height(14.dp))
+                    Surface(
+                        Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        color = onDark.copy(alpha = 0.07f)
+                    ) {
+                        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                            Text(
+                                "الفقرات القادمة",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = onDark.copy(alpha = 0.6f)
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            upcomingTitles.forEachIndexed { i, title ->
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = if (i == 0) airTeal else onDark.copy(alpha = 0.14f)
+                                    ) {
+                                        Text(
+                                            "${i + 1}",
+                                            Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                                            color = if (i == 0) Color(0xFF062A25) else onDark,
+                                            style = MaterialTheme.typography.labelMedium
+                                        )
+                                    }
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(
+                                        if (i == 0) "التالي: $title" else title,
+                                        style = if (i == 0) MaterialTheme.typography.titleMedium
+                                        else MaterialTheme.typography.bodyMedium,
+                                        color = if (i == 0) onDark else onDark.copy(alpha = 0.75f),
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // ===== شريط التقدم بأطراف دائرية + الزمن =====
                 RoundedProgressBar(
                     progress = if (playback.durationMs > 0)
@@ -582,18 +698,35 @@ fun OnAirScreen(onExit: () -> Unit) {
                     )
                 }
 
-                // ===== v0.12.0: نبض المقطع الحي — موجة الموسيقى/الجينغل كما تُسمع الآن =====
-                // تجعل الفواصل المجدولة (Breaks) مرئية على شاشة العرض لا مسموعة فقط
+                // ===== v0.24.0: مؤشر VU الكبير — عمودا موسيقى/ميكروفون بمؤشر قمة =====
+                // + موجة أوسع (132dp بدل 46dp) تُقرأ من آخر القاعة بوضوح
                 Spacer(Modifier.height(14.dp))
-                LiveWaveform(
-                    level = onAirMediaLevel,
-                    active = playback.isPlaying,
-                    modifier = Modifier
+                Row(
+                    Modifier
                         .fillMaxWidth()
-                        .height(46.dp),
-                    color = airTeal,
-                    trackColor = onDark.copy(alpha = 0.14f)
-                )
+                        .height(132.dp)
+                ) {
+                    BigVuMeter(
+                        mediaLevel = onAirMediaLevel,
+                        micLevel = onAirMicLevel,
+                        mediaActive = playback.isPlaying,
+                        micActive = micLive,
+                        modifier = Modifier
+                            .width(118.dp)
+                            .fillMaxHeight(),
+                        onDark = onDark
+                    )
+                    Spacer(Modifier.width(14.dp))
+                    LiveWaveform(
+                        level = onAirMediaLevel,
+                        active = playback.isPlaying,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                        color = airTeal,
+                        trackColor = onDark.copy(alpha = 0.14f)
+                    )
+                }
 
                 // ===== تحكم سريع: أزرار دائرية زجاجية + تشغيل بارز =====
                 Row(
@@ -674,31 +807,46 @@ fun OnAirScreen(onExit: () -> Unit) {
                     color = onDark.copy(alpha = 0.65f)
                 )
                 Spacer(Modifier.height(20.dp))
-                // ===== v0.14.0: عدّ تنازلي حي للفقرة القادمة — شاشة العرض تعرف موعد الانطلاق =====
-                if (nextEvent != null && nextEventIn != null) {
+                // ===== v0.14.0 + v0.24.0: القادم من جدول اليوم — الفقرة التالية بعدّ حي =====
+                // ثم بقية قائمة القادم بمواعيدها (حتى ثلاث فقرات) لترى القاعة كامل البرنامج
+                if (upcomingEvents.isNotEmpty()) {
                     Surface(
                         shape = RoundedCornerShape(18.dp),
                         color = Color(0xFF5CDAC4).copy(alpha = 0.10f)
                     ) {
                         Column(
-                            Modifier.padding(horizontal = 22.dp, vertical = 12.dp),
+                            Modifier.padding(horizontal = 22.dp, vertical = 14.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
+                            val first = upcomingEvents.first()
                             Text(
-                                "الفقرة القادمة: ${nextEvent.title}",
+                                "الفقرة القادمة: ${first.title}",
                                 style = MaterialTheme.typography.titleMedium,
                                 color = onDark.copy(alpha = 0.85f),
                                 textAlign = TextAlign.Center
                             )
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                "تبدأ بعد $nextEventIn",
+                                "تبدأ بعد " +
+                                    AirCountdown.mmss(AirCountdown.secondsUntil(first.startMinutes, nowTick)),
                                 style = MaterialTheme.typography.headlineSmall.copy(
                                     fontWeight = FontWeight.Bold,
                                     fontFeatureSettings = "tnum"
                                 ),
                                 color = Color(0xFF5CDAC4)
                             )
+                            if (upcomingEvents.size > 1) {
+                                Spacer(Modifier.height(10.dp))
+                                upcomingEvents.drop(1).forEach { ev ->
+                                    Text(
+                                        "${ScheduleLogic.formatMinutes(ev.startMinutes)} — ${ev.title}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = onDark.copy(alpha = 0.6f),
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Spacer(Modifier.height(3.dp))
+                                }
+                            }
                         }
                     }
                 } else {
