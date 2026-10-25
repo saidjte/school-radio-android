@@ -38,7 +38,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.saidjte.schoolradio.BuildConfig
+import com.saidjte.schoolradio.audio.AudioEffects
 import com.saidjte.schoolradio.core.ui.AppIcons
+import com.saidjte.schoolradio.core.ui.EqualizerCard
 import com.saidjte.schoolradio.data.backup.BackupRepository
 import com.saidjte.schoolradio.data.settings.AppSettings
 import com.saidjte.schoolradio.di.ServiceLocator
@@ -229,6 +231,37 @@ fun SettingsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                 }
             }
         }
+
+        // ===== v0.22.0: معادل الصوت — نفس مكوّن الاستوديو (الحالة مشتركة ومتزامنة) =====
+        val fx by AudioEffects.state.collectAsStateWithLifecycle()
+        fun persistEq() {
+            val d = AudioEffects.snapshot()
+            scope.launch {
+                locator.settings.setEqConfig(d.presetId, d.gains)
+                locator.settings.setEqEnabled(d.enabled)
+                locator.settings.setBassStrength(d.bass)
+                locator.settings.setVirtStrength(d.virt)
+            }
+        }
+        EqualizerCard(
+            fx = fx,
+            onEnabled = { AudioEffects.setEnabled(it); persistEq() },
+            onPreset = { AudioEffects.setPreset(it); persistEq() },
+            onRadioPreset = { AudioEffects.applyRadioPreset(it); persistEq() },
+            onBand = { index, db -> AudioEffects.setBandGainDb(index, db) },
+            onBandFinished = { persistEq() },
+            onBass = { AudioEffects.setBassStrength(it) },
+            onBassFinished = { persistEq() },
+            onVirt = { AudioEffects.setVirtualizerStrength(it) },
+            onVirtFinished = { persistEq() },
+            onReset = {
+                fx.bands.forEach { b -> AudioEffects.setBandGainDb(b.index, 0f) }
+                AudioEffects.setBassStrength(0f)
+                AudioEffects.setVirtualizerStrength(0f)
+                AudioEffects.setPresetClear()
+                persistEq()
+            }
+        )
 
         // ===== المستخدمون والأدوار (v0.3.0) =====
         UsersAndRolesCard(snackbar)

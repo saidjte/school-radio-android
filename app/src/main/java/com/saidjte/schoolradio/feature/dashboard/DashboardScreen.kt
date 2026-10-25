@@ -32,8 +32,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.shape.CircleShape
@@ -61,6 +63,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -84,6 +88,7 @@ import com.saidjte.schoolradio.core.theme.status
 import com.saidjte.schoolradio.core.ui.AppIcons
 import com.saidjte.schoolradio.core.ui.EmptyStateCard
 import com.saidjte.schoolradio.core.ui.LiveWaveform
+import com.saidjte.schoolradio.core.ui.OrientationLogic
 import com.saidjte.schoolradio.core.ui.StatusBadge
 import com.saidjte.schoolradio.core.ui.diagonalBrush
 import com.saidjte.schoolradio.core.ui.driftingGradient
@@ -226,12 +231,19 @@ fun DashboardScreen(
     val remainingToday = todayEvents.count { it.startMinutes > minutesNow }
     val nextEvent = todayEvents.filter { it.startMinutes > minutesNow }.minByOrNull { it.startMinutes }
 
-    LazyColumn(
+    // v0.22.0: شبكة تكيفية — عمود واحد على الهاتف (كما كان تماماً)، عمودان
+    // على اللوحيات والشاشات العريضة — نفس قاعدة القائمة الجانبية (v0.21.0)
+    val config = LocalConfiguration.current
+    val wide = OrientationLogic.useSideNavigation(config.screenWidthDp, config.screenHeightDp)
+
+    LazyVerticalGrid(
+        columns = if (wide) GridCells.Fixed(2) else GridCells.Fixed(1),
         Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // ===== بطاقة البطل: تحية + المدرسة + الساعة الحية (v0.7.0 — تدرج حي) =====
-        item {
+        item(span = { GridItemSpan(maxLineSpan) }) {
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -323,7 +335,7 @@ fun DashboardScreen(
 
         // ===== شريط إحصاءات اليوم =====
         if (todayEvents.isNotEmpty()) {
-            item {
+            item(span = { GridItemSpan(maxLineSpan) }) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     StatChip(
                         "فقرات اليوم", "${todayEvents.size}", Modifier.weight(1f),
@@ -369,7 +381,10 @@ fun DashboardScreen(
                             Text(
                                 "${ScheduleLogic.formatDuration(playback.positionMs)} / " +
                                     ScheduleLogic.formatDuration(playback.durationMs),
-                                style = MaterialTheme.typography.bodySmall
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
                             )
                             Spacer(Modifier.weight(1f))
                             IconButton(onClick = onOpenOnAir) {
@@ -395,7 +410,7 @@ fun DashboardScreen(
         }
 
         // ===== زر البث المباشر الضخم + زر التسجيل =====
-        item {
+        item(span = { GridItemSpan(maxLineSpan) }) {
             LiveBroadcastCard(
                 isLive = isLive,
                 phase = micPhase,
@@ -434,7 +449,7 @@ fun DashboardScreen(
         }
 
         // ===== v0.9.0: إجراءات سريعة — الاستوديو والسكربتات =====
-        item {
+        item(span = { GridItemSpan(maxLineSpan) }) {
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -457,7 +472,7 @@ fun DashboardScreen(
         }
 
         // ===== v0.11.0: حائط الجينغل — بوابة سريعة من الرئيسية =====
-        item {
+        item(span = { GridItemSpan(maxLineSpan) }) {
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -480,7 +495,7 @@ fun DashboardScreen(
         }
 
         // ===== جدول اليوم =====
-        item {
+        item(span = { GridItemSpan(maxLineSpan) }) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "فقرات اليوم",
@@ -494,7 +509,7 @@ fun DashboardScreen(
             }
         }
         if (todayEvents.isEmpty()) {
-            item {
+            item(span = { GridItemSpan(maxLineSpan) }) {
                 EmptyStateCard(
                     icon = AppIcons.Event,
                     title = "لا توجد فقرات مجدولة لليوم",
@@ -511,7 +526,7 @@ fun DashboardScreen(
 
         // ===== اقتراح المكتبة عندما تكون فقرات اليوم قليلة =====
         if (todayEvents.isNotEmpty() && remainingToday == 0) {
-            item {
+            item(span = { GridItemSpan(maxLineSpan) }) {
                 Card(
                     Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
@@ -545,7 +560,7 @@ fun DashboardScreen(
                 }
             }
         }
-        item { Spacer(Modifier.height(80.dp)) }
+        item(span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(80.dp)) }
     }
 }
 

@@ -4,6 +4,7 @@ import android.media.audiofx.BassBoost
 import android.media.audiofx.Equalizer
 import android.media.audiofx.Virtualizer
 import android.media.audiofx.Visualizer
+import com.saidjte.schoolradio.core.audio.RadioPresets
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,6 +32,8 @@ object AudioEffects {
         val index: Short,
         /** تسمية التردد المركزي مثل "60" أو "1.0k" */
         val freqLabel: String,
+        /** v0.22.0: التردد المركزي بالهرتز — لتحويل الأنماط الإذاعية إلى كسب الشرائح */
+        val centerHz: Int,
         val minDb: Float,
         val maxDb: Float,
         val gainDb: Float
@@ -187,6 +190,53 @@ object AudioEffects {
         _state.value = _state.value.copy(selectedPreset = id)
     }
 
+    /** v0.22.0: مسح اختيار الإعداد المسبق — بعد التصفير اليدوي للشرائح */
+    @Synchronized
+    fun setPresetClear() {
+        _state.value = _state.value.copy(selectedPreset = null)
+    }
+
+    /**
+     * v0.22.0: تطبيق نمط إذاعي مخصص (RadioPresets) — يُحسب كسب كل شريحة
+     * من مغلف النمط على مراكز ترددات الجهاز الفعلية ثم يُطبق على كل الجلسات.
+     * لا يعتمد على دعم الجهاز للإعدادات المسبقة إطلاقاً.
+     */
+    @Synchronized
+    fun applyRadioPreset(preset: RadioPresets.RadioPreset) {
+        val st = _state.value
+        if (!st.available || st.bands.isEmpty()) return
+        val first = st.bands.first()
+        val gains = RadioPresets.gainsForBands(
+            preset, st.bands.map { it.centerHz.toDouble() }, first.minDb, first.maxDb
+        )
+        attached.forEach { fx ->
+            gains.forEachIndexed { i, g ->
+                runCatching { fx.eq.setBandLevel(i.toShort(), (g * 100).toInt().toShort()) }
+            }
+        }
+        _state.value = st.copy(
+            bands = st.bands.mapIndexed { i, b -> b.copy(gainDb = gains[i]) },
+            selectedPreset = preset.id.toShort()
+        )
+    }
+
+    /**
+     * v0.22.0: لقطة قابلة للحفظ من الحالة الفعلية للحالة لحظة النداء —
+     * تُصلح تسرب حفظ الإعدادات المسبقة (الواجهة كانت تحفظ من حالة كومبوزيشن
+     * قد تكون إطاراً متأخرة عن آخر أمر). النمط الإذاعي يُحفظ عبر معرفه والكسب معه.
+     */
+    @Synchronized
+    fun snapshot(): RestoreData {
+        val s = _state.value
+        return RestoreData(
+            enabled = s.enabled,
+            presetId = s.selectedPreset?.toInt() ?: -1,
+            gains = s.bands.joinToString("|") { String.format(java.util.Locale.US, "%.2f", it.gainDb) },
+            bass = s.bassStrength,
+            virt = s.virtStrength
+        )
+    }
+
     /** تعزيز الباص 0..1 */
     @Synchronized
     fun setBassStrength(v: Float) {
@@ -248,6 +298,7 @@ object AudioEffects {
                     val khz = hz / 1000f
                     if (khz % 1f == 0f) "${khz.toInt()}k" else String.format("%.1fk", khz)
                 } else "$hz",
+                centerHz = hz,
                 minDb = eq.bandLevelRange[0] / 100f,
                 maxDb = eq.bandLevelRange[1] / 100f,
                 gainDb = eq.getBandLevel(idx) / 100f

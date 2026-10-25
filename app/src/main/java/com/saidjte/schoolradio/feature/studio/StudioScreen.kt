@@ -69,6 +69,7 @@ import com.saidjte.schoolradio.audio.AudioRoutingManager
 import com.saidjte.schoolradio.audio.MicPhase
 import com.saidjte.schoolradio.core.theme.status
 import com.saidjte.schoolradio.core.ui.AppIcons
+import com.saidjte.schoolradio.core.ui.EqualizerCard
 import com.saidjte.schoolradio.core.ui.GradientButton
 import com.saidjte.schoolradio.core.ui.ScreenHeader
 import com.saidjte.schoolradio.core.ui.StatusBadge
@@ -140,15 +141,14 @@ fun StudioScreen(
         }
     }
 
-    /** حفظ تكوين المعادل الحالي (الإعداد المسبق + كسب الشرائح) */
+    /** حفظ تكوين المعادل من اللقطة الفعلية (v0.22.0 — بلا تسرب حالة الكومبوزيشن) */
     fun persistEq() {
-        val s = fx
-        val gains = s.bands.joinToString("|") { String.format(Locale.US, "%.2f", it.gainDb) }
+        val d = AudioEffects.snapshot()
         scope.launch {
-            locator.settings.setEqConfig(s.selectedPreset?.toInt() ?: -1, gains)
-            locator.settings.setEqEnabled(s.enabled)
-            locator.settings.setBassStrength(s.bassStrength)
-            locator.settings.setVirtStrength(s.virtStrength)
+            locator.settings.setEqConfig(d.presetId, d.gains)
+            locator.settings.setEqEnabled(d.enabled)
+            locator.settings.setBassStrength(d.bass)
+            locator.settings.setVirtStrength(d.virt)
         }
     }
 
@@ -241,6 +241,7 @@ fun StudioScreen(
                 fx = fx,
                 onEnabled = { AudioEffects.setEnabled(it); persistEq() },
                 onPreset = { AudioEffects.setPreset(it); persistEq() },
+                onRadioPreset = { AudioEffects.applyRadioPreset(it); persistEq() },
                 onBand = { index, db -> AudioEffects.setBandGainDb(index, db) },
                 onBandFinished = { persistEq() },
                 onBass = { AudioEffects.setBassStrength(it) },
@@ -251,6 +252,7 @@ fun StudioScreen(
                     fx.bands.forEach { b -> AudioEffects.setBandGainDb(b.index, 0f) }
                     AudioEffects.setBassStrength(0f)
                     AudioEffects.setVirtualizerStrength(0f)
+                    AudioEffects.setPresetClear()
                     persistEq()
                 }
             )
@@ -973,280 +975,4 @@ private fun LinearVu(
             )
         }
     }
-}
-// =====================================================================
-// معادل الصوت
-// =====================================================================
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun EqualizerCard(
-    fx: AudioEffects.AudioEffectsState,
-    onEnabled: (Boolean) -> Unit,
-    onPreset: (Short) -> Unit,
-    onBand: (Short, Float) -> Unit,
-    onBandFinished: () -> Unit,
-    onBass: (Float) -> Unit,
-    onBassFinished: () -> Unit,
-    onVirt: (Float) -> Unit,
-    onVirtFinished: () -> Unit,
-    onReset: () -> Unit
-) {
-    Card(
-        Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-        )
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(AppIcons.GraphicEq, null, tint = MaterialTheme.colorScheme.primary)
-                Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                    Text("معادل الصوت (Equalizer)", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        if (fx.available) "يعمل على كل مشغلي التطبيق — مكتبة، تسجيلات، فقرات"
-                        else "مؤثرات الصوت غير متاحة على هذا الجهاز",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Switch(
-                    checked = fx.enabled,
-                    onCheckedChange = onEnabled,
-                    enabled = fx.available
-                )
-            }
-
-            if (fx.available) {
-                // الإعدادات المسبقة
-                if (fx.presets.isNotEmpty()) {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        fx.presets.forEach { p ->
-                            FilterChip(
-                                selected = fx.selectedPreset == p.id,
-                                onClick = { onPreset(p.id) },
-                                label = { Text(p.name) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer
-                                )
-                            )
-                        }
-                    }
-                }
-
-                // شرائح الترددات — عمودية كأجهزة الستيريو
-                Row(
-                    Modifier.fillMaxWidth().height(185.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    fx.bands.forEach { band ->
-                        val range = (band.maxDb - band.minDb).coerceAtLeast(0.01f)
-                        Column(
-                            Modifier.weight(1f),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                dbText(band.gainDb),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            VerticalFader(
-                                value = (band.gainDb - band.minDb) / range,
-                                onValueChange = { f -> onBand(band.index, band.minDb + f * range) },
-                                onFinished = onBandFinished,
-                                label = band.freqLabel,
-                                valueText = band.freqLabel,
-                                modifier = Modifier.fillMaxWidth().weight(1f),
-                                accent = MaterialTheme.colorScheme.primary,
-                                showValueInside = false
-                            )
-                        }
-                    }
-                }
-
-                // تعزيز الباص والمؤثر المحيطي (إن دعمهما الجهاز)
-                if (fx.bassSupported) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            "تعزيز الباص: ${(fx.bassStrength * 100).roundToInt()}٪",
-                            style = MaterialTheme.typography.labelMedium,
-                            modifier = Modifier.width(130.dp)
-                        )
-                        Slider(
-                            value = fx.bassStrength,
-                            onValueChange = onBass,
-                            onValueChangeFinished = onBassFinished,
-                            valueRange = 0f..1f,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-                if (fx.virtSupported) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            "مؤثر محيطي: ${(fx.virtStrength * 100).roundToInt()}٪",
-                            style = MaterialTheme.typography.labelMedium,
-                            modifier = Modifier.width(130.dp)
-                        )
-                        Slider(
-                            value = fx.virtStrength,
-                            onValueChange = onVirt,
-                            onValueChangeFinished = onVirtFinished,
-                            valueRange = 0f..1f,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-
-                TextButton(onClick = onReset) {
-                    Text("تصفير الإعدادات")
-                }
-            }
-        }
-    }
-}
-
-/** نص الديسيبل بإشارة صريحة وأرقام مغربية */
-private fun dbText(db: Float): String = when {
-    db > 0.05f -> "+" + String.format(Locale.US, "%.1f", db)
-    db < -0.05f -> String.format(Locale.US, "%.1f", db)
-    else -> "0.0"
-}
-
-// =====================================================================
-// مكوّنات الاستوديو: فيدَر عمودي + مؤشر مستوى VU
-// =====================================================================
-
-/**
- * فيدَر عمودي بلمسة استوديو — مسار بتدرج + مقبض بخط مركزي.
- * السحب عمودياً والنقر ينقل القيمة مباشرة (القمة = 1.0).
- * [onFinished] يُستدعى عند نهاية السحب لحفظ القيمة.
- */
-@Composable
-private fun VerticalFader(
-    value: Float,
-    onValueChange: (Float) -> Unit,
-    onFinished: (() -> Unit)?,
-    label: String,
-    valueText: String,
-    modifier: Modifier = Modifier,
-    accent: Color = MaterialTheme.colorScheme.primary,
-    showValueInside: Boolean = true
-) {
-    val currentValue by rememberUpdatedState(value)
-    val trackColor = MaterialTheme.colorScheme.surfaceVariant
-    val thumbColor = MaterialTheme.colorScheme.surfaceContainerHighest
-    val outline = MaterialTheme.colorScheme.outlineVariant
-
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        if (showValueInside) {
-            Text(
-                valueText,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1
-            )
-        }
-        Canvas(
-            Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .pointerInput(Unit) {
-                    detectTapGestures { offset ->
-                        onValueChange((1f - offset.y / size.height.toFloat()).coerceIn(0f, 1f))
-                        onFinished?.invoke()
-                    }
-                }
-                .pointerInput(Unit) {
-                    detectVerticalDragGestures(
-                        onDragEnd = { onFinished?.invoke() },
-                        onDragCancel = { onFinished?.invoke() },
-                        onVerticalDrag = { change, dragAmount ->
-                            change.consume()
-                            val h = size.height.toFloat()
-                            onValueChange((currentValue - dragAmount / h).coerceIn(0f, 1f))
-                        }
-                    )
-                }
-        ) {
-            drawFader(
-                fraction = value.coerceIn(0f, 1f),
-                trackColor = trackColor,
-                fillColor = accent,
-                thumbColor = thumbColor,
-                outline = outline
-            )
-        }
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 2,
-            minLines = 1,
-            textAlign = TextAlign.Center
-        )
-    }
-}
-
-/** رسم الفيدَر داخل Canvas — أفقي مركزي بمسار 10dp ومقبض عريض */
-private fun DrawScope.drawFader(
-    fraction: Float,
-    trackColor: Color,
-    fillColor: Color,
-    thumbColor: Color,
-    outline: Color
-) {
-    val w = size.width
-    val h = size.height
-    val trackW = 10.dp.toPx()
-    val pad = 6.dp.toPx()
-    val cx = w / 2f
-    val trackTop = pad
-    val trackH = h - pad * 2
-
-    // المسار
-    drawRoundRect(
-        color = trackColor,
-        topLeft = Offset(cx - trackW / 2, trackTop),
-        size = Size(trackW, trackH),
-        cornerRadius = CornerRadius(trackW / 2)
-    )
-    // التعبئة من الأسفل
-    val fillH = trackH * fraction
-    if (fillH > 1f) {
-        drawRoundRect(
-            color = fillColor,
-            topLeft = Offset(cx - trackW / 2, trackTop + trackH - fillH),
-            size = Size(trackW, fillH),
-            cornerRadius = CornerRadius(trackW / 2)
-        )
-    }
-    // المقبض
-    val thumbW = (w * 0.82f).coerceAtMost(40.dp.toPx())
-    val thumbH = 16.dp.toPx()
-    val thumbY = trackTop + trackH - fillH
-    drawRoundRect(
-        color = thumbColor,
-        topLeft = Offset(cx - thumbW / 2, thumbY - thumbH / 2),
-        size = Size(thumbW, thumbH),
-        cornerRadius = CornerRadius(8.dp.toPx())
-    )
-    drawRoundRect(
-        color = outline,
-        topLeft = Offset(cx - thumbW / 2, thumbY - thumbH / 2),
-        size = Size(thumbW, thumbH),
-        cornerRadius = CornerRadius(8.dp.toPx()),
-        style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx())
-    )
-    // خط المركز
-    drawLine(
-        color = fillColor,
-        start = Offset(cx - thumbW * 0.28f, thumbY),
-        end = Offset(cx + thumbW * 0.28f, thumbY),
-        strokeWidth = 2.5.dp.toPx(),
-        cap = StrokeCap.Round
-    )
 }
