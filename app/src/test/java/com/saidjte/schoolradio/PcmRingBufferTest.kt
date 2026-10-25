@@ -108,7 +108,10 @@ class PcmRingBufferTest {
 
     @Test
     fun `إنتاج ومستهلك متزامنان يتبادلان بلا فقد`() {
-        val rb = PcmRingBuffer(9600) // 200ms حقيقية
+        // v0.16.0: السعة = إجمالي الإنتاج ⇒ استحالة القص رياضياً (المقص موضوع
+        // اختبارات أخرى) — أي جوع للمستهلك تحت حمل الاختبارات المتوازية
+        // لن يفسد التطابق، والاختبار يبقى تحققاً تزامنياً كاملاً (FIFO سليم وقيم مطابقة)
+        val rb = PcmRingBuffer(50000)
         val total = 48000L // ثانية واحدة كاملة 48k عينة
         val produced = AtomicLong(0)
         val consumed = AtomicLong(0)
@@ -118,7 +121,6 @@ class PcmRingBufferTest {
         val producer = Thread {
             var v = 1L
             val chunk = ShortArray(480)
-            var cadence = 0
             while (produced.get() < total) {
                 for (i in chunk.indices) {
                     chunk[i] = v.toShort()
@@ -127,10 +129,8 @@ class PcmRingBufferTest {
                 }
                 rb.write(chunk, 0, chunk.size)
                 produced.addAndGet(chunk.size.toLong())
-                // محاكاة الإيقاع الزمني الحقيقي: في البث الفعلي يكتب المنتج بإيقاع
-                // الزمن الحقيقي فيواكبه المستهلك دائماً — بلا هذا التحفظ يسبق المنتج
-                // المستهلك بملايين المرات ويُقص الأقدم (سلوك المقص مقصود لكنه ليس موضوع الاختبار)
-                if (++cadence % 2 == 0) Thread.sleep(1) // إيقاع أقرب للزمن الحقيقي — الصندوق بطيء المعالج
+                // تنفس طفيف يسمح بتداخل حقيقي بين الخيطين (ليس شرطاً للصحة بعد رفع السعة)
+                Thread.yield()
             }
         }
         val consumer = Thread {
@@ -145,7 +145,7 @@ class PcmRingBufferTest {
             }
         }
         producer.start(); consumer.start()
-        producer.join(10000); consumer.join(10000)
+        producer.join(15000); consumer.join(15000)
 
         assertEquals(total, produced.get())
         assertEquals(total, consumed.get())

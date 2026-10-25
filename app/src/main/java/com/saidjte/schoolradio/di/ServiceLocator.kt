@@ -104,27 +104,40 @@ object ServiceLocator {
     lateinit var scripts: ScriptRepository
         private set
 
-    // v0.15.0: الميكسر الاحترافي — تطبيق القنوات موحّد هنا كي يتماشى كل الشاشات
-    // على نفس القواعد: القناة الفعّالة = الفيدَر × الماستر (والكتم يعامل كصفر)
+    // v0.16.0: الميكسر — تطبيق القنوات موحّد هنا. المستويات الممرّرة «فعّالة»
+    // (فيدَر × ماستر × حالة الكتم/الخفض) محسوبة في الواجهة؛ وبدون قيم
+    // يُعاد الحساب من الإعدادات المحفوظة (المشاهد، استرجاع المشغلات، انتهاء الخفض).
     fun applyMixerVolumes(
-        musicFader: Float? = null,
-        master: Float? = null,
-        previewFader: Float? = null,
-        cartFader: Float? = null
+        musicVolume: Float? = null,
+        cartVolume: Float? = null,
+        previewVolume: Float? = null
     ) {
         appScope.launch {
             val s = settings.settings.first()
-            val masterV = (master ?: s.masterVolume).coerceIn(0f, 1f)
-            val musicV = (musicFader ?: s.defaultVolume).coerceIn(0f, 1f)
-            val previewV = (previewFader ?: s.previewVolume).coerceIn(0f, 1f)
-            val cartV = (cartFader ?: s.cartVolume).coerceIn(0f, 1f)
-            // الموسيقى: نتجنب الكتابة فوق مستوى الخفض أثناء الإعلان الحي
+            val m = s.masterVolume.coerceIn(0f, 1f)
+            // أثناء إعلان حيّ: المسموع = فيدَر × ماستر × نسبة الخفض — سحب الفيدَر أثناء الإعلان يستجيب
             val ducking = _micLive.value && s.duckEnabled
-            if (!ducking) playback.setVolume(musicV * masterV)
+            val musicEff = musicVolume ?: run {
+                val base = s.defaultVolume.coerceIn(0f, 1f) * m
+                if (ducking) base * s.duckVolume.coerceIn(0f, 1f) else base
+            }
+            playback.setVolume(musicEff.coerceIn(0f, 1f))
             // المعاينة والجينل — إن وُجدت المشغلات (كسولة: لا نُنشئها من هنا)
-            if (_recordingsPlayerInstantiated) recordingsPlayer.setVolume(previewV * masterV)
-            if (_cartPlayerInstantiated) cartPlayer.setVolume(cartV * masterV)
+            if (_recordingsPlayerInstantiated)
+                recordingsPlayer.setVolume((previewVolume ?: (s.previewVolume * m)).coerceIn(0f, 1f))
+            if (_cartPlayerInstantiated)
+                cartPlayer.setVolume((cartVolume ?: (s.cartVolume * m)).coerceIn(0f, 1f))
         }
+    }
+
+    /** v0.16.0: ضبط قناة الجينل إن كان مشغلها قائماً فقط (بلا إنشاء كسول من الميكسر) */
+    fun setCartVolumeIfReady(v: Float) {
+        if (_cartPlayerInstantiated) cartPlayer.setVolume(v.coerceIn(0f, 1f))
+    }
+
+    /** v0.16.0: ضبط قناة معاينة الأرشيف إن كان مشغلها قائماً فقط */
+    fun setPreviewVolumeIfReady(v: Float) {
+        if (_recordingsPlayerInstantiated) recordingsPlayer.setVolume(v.coerceIn(0f, 1f))
     }
 
     private val _recordingsPlayerInstantiated: Boolean
@@ -276,8 +289,6 @@ object ServiceLocator {
     private val _micMessage = MutableStateFlow<String?>(null)
     val micMessage: StateFlow<String?> = _micMessage.asStateFlow()
 
-    private var volumeBeforeDuck: Float? = null
-
     /**
      * v0.11.0: آخر لقطة لإعدادات معالجة المذيع — يُحدّثها جامع مستمر من DataStore
      * ويقرأها البث عند البدء فتُطبق تغييرات الاستوديو على البث التالي مباشرة.
@@ -293,17 +304,11 @@ object ServiceLocator {
                 appScope.launch(Dispatchers.Main) {
                     val s = settings.settings.first()
                     if (s.duckEnabled) {
-                        if (duck) {
-                            // احفظ المستوى الحالي ثم اخفض إلى مستوى الإعلان
-                            // v0.15.0: مستوى الخفض يُضرب بالماستر (اتساق الميكسر)
-                            volumeBeforeDuck = playback.state.value.volume
-                                .takeIf { it > 0f } ?: (s.defaultVolume * s.masterVolume)
-                            playback.setVolume(s.duckVolume * s.masterVolume)
-                        } else {
-                            // أعد المستوى السابق بعد انتهاء الإعلان
-                            playback.setVolume(volumeBeforeDuck ?: (s.defaultVolume * s.masterVolume))
-                            volumeBeforeDuck = null
-                        }
+                        // v0.16.0: الخفض نسبة بقاء تُضرب في فيدَر الموسيقى × الماستر —
+                        // سحب الفيدَر أثناء الإعلان يستجيب فوراً، والاستعادة تقرأ الإعدادات
+                        // دائماً (لا لقطة قديمة تُمسك قبل سحب المستخدم)
+                        val base = s.defaultVolume.coerceIn(0f, 1f) * s.masterVolume.coerceIn(0f, 1f)
+                        playback.setVolume(if (duck) base * s.duckVolume.coerceIn(0f, 1f) else base)
                     }
                 }
             },
