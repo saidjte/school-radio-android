@@ -58,5 +58,13 @@ data class AudioTrackEntity(
     // v0.18.0: قص الفراغ الأول — عدد الميلي ثانية الصامتة في بداية الملف
     @ColumnInfo(name = "trim_start_ms") val trimStartMs: Long = 0,
     /** هل مرّ التحليل الصوتي على هذا المقطع؟ (0 = لم يُحلَّل بعد) */
-    @ColumnInfo(name = "silence_analyzed") val silenceAnalyzed: Boolean = false
+    @ColumnInfo(name = "silence_analyzed") val silenceAnalyzed: Boolean = false,
+    // v0.19.0: القص اليدوي — نقطة النهاية (0 = تشغيل حتى نهاية الملف)
+    @ColumnInfo(name = "trim_end_ms") val trimEndMs: Long = 0,
+    /**
+     * قرار قص بشري صريح من المحرر اليدوي — وسم سلطة:
+     * المقطع الموسوم لا يمسّه التحليل الآلي للفراغ أبداً، وقصه يُطبَّق
+     * دائماً حتى لو عُطّل مفتاح «قص الفراغ الأول» العام.
+     */
+    @ColumnInfo(name = "trim_manual") val trimManual: Boolean = false
 )

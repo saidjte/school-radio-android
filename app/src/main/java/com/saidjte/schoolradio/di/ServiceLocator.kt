@@ -423,14 +423,22 @@ object ServiceLocator {
                     ?.takeIf { it.isAvailable }
                     ?.let {
                         listOf(
-                            BreaksLogic.PlaySpec(it.uri, it.title, it.id, it.trimStartMs)
+                            BreaksLogic.PlaySpec(
+                                it.uri, it.title, it.id,
+                                it.trimStartMs, it.trimEndMs, it.trimManual
+                            )
                         )
                     }
                     ?: emptyList()
             schedule.breakCategoryId != null ->
                 library.tracks.first()
                     .filter { it.categoryId == schedule.breakCategoryId && it.isAvailable }
-                    .map { BreaksLogic.PlaySpec(it.uri, it.title, it.id, it.trimStartMs) }
+                    .map {
+                        BreaksLogic.PlaySpec(
+                            it.uri, it.title, it.id,
+                            it.trimStartMs, it.trimEndMs, it.trimManual
+                        )
+                    }
             else -> emptyList()
         }
 
@@ -455,7 +463,8 @@ object ServiceLocator {
             tagged.map {
                 PlaybackConnection.QueueItem(
                     it.spec.uri, it.spec.title, it.spec.trackId,
-                    it.isBreak, it.spec.trimStartMs
+                    it.isBreak, it.spec.trimStartMs,
+                    it.spec.trimEndMs, it.spec.manualTrim
                 )
             },
             queueTag = "breaks:${schedule.id}",
@@ -487,7 +496,12 @@ object ServiceLocator {
     private suspend fun resolveEventContent(e: ScheduledEventEntity): List<BreaksLogic.PlaySpec>? = when {
         e.playlistId != null ->
             playlists.resolvedTracks(e.playlistId)
-                .map { BreaksLogic.PlaySpec(it.uri, it.title, it.id, it.trimStartMs) }
+                .map {
+                    BreaksLogic.PlaySpec(
+                        it.uri, it.title, it.id,
+                        it.trimStartMs, it.trimEndMs, it.trimManual
+                    )
+                }
                 .takeIf { it.isNotEmpty() }
         e.recordingId != null ->
             recordingsRepo.byId(e.recordingId)
@@ -496,7 +510,14 @@ object ServiceLocator {
         e.singleTrackId != null ->
             library.trackById(e.singleTrackId)
                 ?.takeIf { it.isAvailable }
-                ?.let { listOf(BreaksLogic.PlaySpec(it.uri, it.title, it.id, it.trimStartMs)) }
+                ?.let {
+                    listOf(
+                        BreaksLogic.PlaySpec(
+                            it.uri, it.title, it.id,
+                            it.trimStartMs, it.trimEndMs, it.trimManual
+                        )
+                    )
+                }
         else -> null
     }
 

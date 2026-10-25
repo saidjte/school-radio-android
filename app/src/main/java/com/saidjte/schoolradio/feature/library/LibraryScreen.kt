@@ -64,6 +64,7 @@ import com.saidjte.schoolradio.core.ui.PlayingEqualizer
 import com.saidjte.schoolradio.core.ui.RoundedProgressBar
 import com.saidjte.schoolradio.core.ui.ScreenHeader
 import com.saidjte.schoolradio.core.util.ScheduleLogic
+import com.saidjte.schoolradio.core.util.TrimLogic
 import com.saidjte.schoolradio.data.local.entity.AudioTrackEntity
 import com.saidjte.schoolradio.di.ServiceLocator
 import kotlinx.coroutines.launch
@@ -89,6 +90,8 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
     var selectedCategoryId by remember { mutableStateOf<Long?>(null) }
     var editing by remember { mutableStateOf<AudioTrackEntity?>(null) }
     var relinking by remember { mutableStateOf<AudioTrackEntity?>(null) }
+    // v0.19.0: محرر القص اليدوي
+    var trimming by remember { mutableStateOf<AudioTrackEntity?>(null) }
     var categoryMenuOpen by remember { mutableStateOf(false) }
     // v0.10.0: إدارة التصنيفات — إضافة سريعة + حوار إدارة كامل
     var addCategoryOpen by remember { mutableStateOf(false) }
@@ -258,15 +261,24 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                             },
                             onRelink = { relinking = track },
                             // v0.18.0: تحليل يدوي لقص الفراغ الأول مع رسالة النتيجة
+                            // v0.19.0: المقطع المقصوص يدوياً لا يمسّه التحليل الآلي
                             onTrim = {
-                                scope.launch {
+                                if (track.trimManual) {
+                                    scope.launch {
+                                        snackbar.showSnackbar(
+                                            "«${track.title}» مقصوص يدوياً — افتح «قص يدوي» للتعديل أو الإزالة"
+                                        )
+                                    }
+                                } else scope.launch {
                                     val trim = locator.library.analyzeSilenceById(track.id)
                                     snackbar.showSnackbar(
                                         com.saidjte.schoolradio.core.util.SilenceLogic
                                             .message(trim, track.title)
                                     )
                                 }
-                            }
+                            },
+                            // v0.19.0: فتح محرر القص اليدوي
+                            onManualTrim = { trimming = track }
                         )
                     }
                     item { androidx.compose.foundation.layout.Spacer(Modifier.padding(40.dp)) }
@@ -288,6 +300,30 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                     snackbar.showSnackbar("حُدّث المقطع")
                 }
                 editing = null
+            }
+        )
+    }
+
+    // ===== v0.19.0: محرر القص اليدوي — بداية ونهاية بمعاينة فورية =====
+    trimming?.let { track ->
+        TrimEditorDialog(
+            track = track,
+            onDismiss = { trimming = null },
+            onSave = { s, e ->
+                scope.launch {
+                    val err = locator.library.applyManualTrim(track.id, s, e)
+                    snackbar.showSnackbar(
+                        err ?: com.saidjte.schoolradio.core.util.TrimLogic.message(s, e, track.title)
+                    )
+                }
+                trimming = null
+            },
+            onClear = {
+                scope.launch {
+                    locator.library.clearManualTrim(track.id)
+                    snackbar.showSnackbar(com.saidjte.schoolradio.core.util.TrimLogic.CLEAR_MESSAGE)
+                }
+                trimming = null
             }
         )
     }
@@ -353,7 +389,8 @@ private fun TrackRow(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onRelink: () -> Unit,
-    onTrim: () -> Unit = {}
+    onTrim: () -> Unit = {},
+    onManualTrim: () -> Unit = {}
 ) {
     // v0.8.0: المقطع قيد التشغيل يُميّز بلون وتحريك — وأزراره تعكس الحالة الفعلية
     val isPlayingNow = isCurrent && isPlaying
@@ -446,6 +483,14 @@ private fun TrackRow(
                                 Icon(AppIcons.Cut, null, Modifier.size(20.dp))
                             },
                             onClick = { menuOpen = false; onTrim() }
+                        )
+                        // v0.19.0: القص اليدوي الكامل — بداية ونهاية مع معاينة
+                        DropdownMenuItem(
+                            text = { Text("قص يدوي…") },
+                            leadingIcon = {
+                                Icon(AppIcons.Tune, null, Modifier.size(20.dp))
+                            },
+                            onClick = { menuOpen = false; onManualTrim() }
                         )
                         DropdownMenuItem(
                             text = { Text("تعديل") },

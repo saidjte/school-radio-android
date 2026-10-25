@@ -106,9 +106,11 @@ interface AudioTrackDao {
 
     // ===== v0.18.0: قص الفراغ الأول =====
 
-    /** المقاطع التي لم يمر عليها محلّل الصمت بعد — لفحص الخلفي التدريجي */
+    /** المقاطع التي لم يمر عليها محلّل الصمت بعد — لفحص الخلفي التدريجي.
+     *  v0.19.0: المقاطع ذات القص اليدوي (trim_manual = 1) مستثناة أبداً —
+     *  قرار المذيع الصريح لا يجوز أن يمسّه التحليل الآلي. */
     @Query(
-        "SELECT * FROM audio_tracks WHERE silence_analyzed = 0 AND is_available = 1 " +
+        "SELECT * FROM audio_tracks WHERE silence_analyzed = 0 AND trim_manual = 0 AND is_available = 1 " +
             "ORDER BY added_at DESC LIMIT :limit"
     )
     suspend fun pendingSilenceScan(limit: Int): List<AudioTrackEntity>
@@ -122,6 +124,29 @@ interface AudioTrackDao {
     /** إعادة فتح التحليل (زر «قص الفراغ الأول» يدوياً) */
     @Query("UPDATE audio_tracks SET silence_analyzed = 0 WHERE id = :id")
     suspend fun resetSilenceAnalysis(id: Long)
+
+    // ===== v0.19.0: القص اليدوي =====
+
+    /**
+     * حفظ القص اليدوي: نقطة البداية والنهاية معاً + وسم السلطة (trim_manual = 1)
+     * الذي يستثني المقطع من التحليل الآلي للأبد، و silence_analyzed = 1
+     * كي لا يلتقطه الفحص الخلفي أصلاً.
+     */
+    @Query(
+        "UPDATE audio_tracks SET trim_start_ms = :startMs, trim_end_ms = :endMs, " +
+            "trim_manual = 1, silence_analyzed = 1 WHERE id = :id"
+    )
+    suspend fun setManualTrim(id: Long, startMs: Long, endMs: Long)
+
+    /**
+     * إزالة كل القص (اليدوي والآلي) — يعود المقطع إلى ملفه الأصلي كاملاً.
+     * silence_analyzed = 1 يمنع إعادة التحليل الآلي (قرار «تجاهل» مستقر لا يتقلب).
+     */
+    @Query(
+        "UPDATE audio_tracks SET trim_start_ms = 0, trim_end_ms = 0, " +
+            "trim_manual = 0, silence_analyzed = 1 WHERE id = :id"
+    )
+    suspend fun clearTrim(id: Long)
 }
 
 // =====================================================================

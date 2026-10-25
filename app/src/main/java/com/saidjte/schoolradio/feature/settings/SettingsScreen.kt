@@ -209,7 +209,7 @@ fun SettingsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                     Column(Modifier.weight(1f)) {
                         Text("قص الفراغ الأول من المقاطع")
                         Text(
-                            "يقفز المشغل فوق الصمت في بداية المقاطع والجينلات لتنطلق من أول نغمة — أطفئه لتشغيلها كما هي (تجاهل القص)",
+                            "يقفز المشغل فوق الصمت في بداية المقاطع والجينلات لتنطلق من أول نغمة — أطفئه لتشغيلها كما هي (تجاهل القص). القص اليدوي من قائمة المقطع في المكتبة يُطبَّق دائماً بغضّ النظر عن هذا المفتاح",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

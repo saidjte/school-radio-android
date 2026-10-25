@@ -24,12 +24,16 @@ import kotlin.random.Random
 object BreaksLogic {
 
     /** عنصر تشغيل مجرد — فصل المنطق عن PlaybackConnection (اختبار JVM بلا وسائط) */
-    /** v0.18.0: [trimStartMs] قص الفراغ الأول المقيس للجينل/المقطع — يمر للمشغل */
+    /** v0.18.0: [trimStartMs] قص الفراغ الأول المقيس للجينل/المقطع — يمر للمشغل.
+     *  v0.19.0: [trimEndMs] نقطة النهاية اليدوية + [manualTrim] وسم السلطة —
+     *  القص اليدوي يُطبق دائماً حتى لو عُطّل مفتاح قص الفراغ العام. */
     data class PlaySpec(
         val uri: String,
         val title: String,
         val trackId: Long,
-        val trimStartMs: Long = 0
+        val trimStartMs: Long = 0,
+        val trimEndMs: Long = 0,
+        val manualTrim: Boolean = false
     )
 
     /**

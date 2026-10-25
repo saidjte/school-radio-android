@@ -180,7 +180,10 @@ fun CartWallScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                     loop = pad.loop,
                                     volume = cartState.volume,
                                     // v0.18.0: قص الفراغ الأول المقيس لهذا المقطع
-                                    trimStartMs = track.trimStartMs
+                                    // v0.19.0: القص اليدوي (بداية + نهاية) يورَّث كاملاً
+                                    trimStartMs = track.trimStartMs,
+                                    trimEndMs = track.trimEndMs,
+                                    manualTrim = track.trimManual
                                 )?.let { message(it) }
                             } else {
                                 message("مقطع هذا الجينغل لم يعد في المكتبة — اضغط مطولاً لإعادة الربط")

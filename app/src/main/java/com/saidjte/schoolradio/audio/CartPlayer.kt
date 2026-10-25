@@ -101,7 +101,10 @@ class CartPlayer(context: Context) {
         title: String,
         loop: Boolean,
         volume: Float,
-        trimStartMs: Long = 0
+        trimStartMs: Long = 0,
+        // v0.19.0: نهاية القص اليدوي + وسم السلطة — القص اليدوي يُطبق دائماً
+        trimEndMs: Long = 0,
+        manualTrim: Boolean = false
     ): String? {
         val javaFile = java.io.File(uri)
         val mediaUri = if (uri.startsWith("content://") || uri.startsWith("file://")) {
@@ -122,18 +125,17 @@ class CartPlayer(context: Context) {
         fadeJob?.cancel()
         player.repeatMode = if (loop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
         player.volume = _state.value.volume // نبدأ من الفيدَر الحالي
-        // v0.18.0: قص الفراغ الأول — الرقاقة تنطلق من أول نغمة (إعداد مستخدم)
-        val mediaItem = if (
-            trimStartMs > 0 &&
-            com.saidjte.schoolradio.di.ServiceLocator.trimSilenceEnabled.value
-        ) {
+        // القص: البداية (آلي عند تفعيل الإعداد، أو يدوي دائماً) + النهاية (يدوي فقط)
+        val applyStart = trimStartMs > 0 &&
+            (manualTrim || com.saidjte.schoolradio.di.ServiceLocator.trimSilenceEnabled.value)
+        val applyEnd = manualTrim && trimEndMs > trimStartMs
+        val mediaItem = if (applyStart || applyEnd) {
+            val clip = MediaItem.ClippingConfiguration.Builder()
+            if (applyStart) clip.setStartPositionMs(trimStartMs)
+            if (applyEnd) clip.setEndPositionMs(trimEndMs)
             MediaItem.Builder()
                 .setUri(mediaUri)
-                .setClippingConfiguration(
-                    MediaItem.ClippingConfiguration.Builder()
-                        .setStartPositionMs(trimStartMs)
-                        .build()
-                )
+                .setClippingConfiguration(clip.build())
                 .build()
         } else {
             MediaItem.fromUri(mediaUri)

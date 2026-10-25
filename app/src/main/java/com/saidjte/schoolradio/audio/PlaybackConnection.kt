@@ -265,13 +265,17 @@ class PlaybackConnection(private val context: Context) {
      * ليتعرف عليها محرك الحدود في PlaybackService ويطبق مهلة الانتقال قبلها.
      * v0.18.0: [trimStartMs] قص الفراغ الأول — يتحول إلى ClippingConfiguration
      * عند بناء MediaItem إذا كان إعداد «قص الفراغ الأول» مفعّلاً (تجاهل = تشغيل كما هو).
+     * v0.19.0: [trimEndMs] نقطة نهاية القص اليدوي + [manualTrim] وسم السلطة:
+     * القص اليدوي قرار صريح فيُطبّق دائماً بغضّ النظر عن المفتاح العام.
      */
     data class QueueItem(
         val uri: String,
         val title: String,
         val trackId: Long,
         val isBreak: Boolean = false,
-        val trimStartMs: Long = 0
+        val trimStartMs: Long = 0,
+        val trimEndMs: Long = 0,
+        val manualTrim: Boolean = false
     ) {
         fun toMediaItem(): MediaItem {
             val metadata = MediaMetadata.Builder()
@@ -286,15 +290,15 @@ class PlaybackConnection(private val context: Context) {
                 .setUri(uri)
                 .setMediaId(trackId.toString())
                 .setMediaMetadata(metadata.build())
-            // v0.18.0: القفز فوق الصمت الأول (إعداد مستخدم — الإيقاف = تجاهل القص)
-            if (trimStartMs > 0 &&
-                com.saidjte.schoolradio.di.ServiceLocator.trimSilenceEnabled.value
-            ) {
-                builder.setClippingConfiguration(
-                    MediaItem.ClippingConfiguration.Builder()
-                        .setStartPositionMs(trimStartMs)
-                        .build()
-                )
+            // القص: البداية (آلي عند تفعيل الإعداد، أو يدوي دائماً) + النهاية (يدوي فقط)
+            val applyStart = trimStartMs > 0 &&
+                (manualTrim || com.saidjte.schoolradio.di.ServiceLocator.trimSilenceEnabled.value)
+            val applyEnd = manualTrim && trimEndMs > trimStartMs
+            if (applyStart || applyEnd) {
+                val clip = MediaItem.ClippingConfiguration.Builder()
+                if (applyStart) clip.setStartPositionMs(trimStartMs)
+                if (applyEnd) clip.setEndPositionMs(trimEndMs)
+                builder.setClippingConfiguration(clip.build())
             }
             return builder.build()
         }
@@ -308,14 +312,18 @@ class PlaybackConnection(private val context: Context) {
                 mediaMetadata.extras?.getBoolean(KEY_IS_BREAK, false) == true
 
             /**
-             * v0.18.0: بناء عنصر من كيان مقطع المكتبة — يورّث قص الفراغ الأول
-             * المقيس تلقائياً. البديل الأنظف عن تمرير الحقول يدوياً في كل نداء.
+             * بناء عنصر من كيان مقطع المكتبة — يورّث قص الفراغ الأول المقيس تلقائياً
+             * والقص اليدوي (بداية + نهاية) منذ v0.19.0.
+             * البديل الأنظف عن تمرير الحقول يدوياً في كل نداء.
              */
             fun of(
                 track: com.saidjte.schoolradio.data.local.entity.AudioTrackEntity,
                 isBreak: Boolean = false
             ): QueueItem =
-                QueueItem(track.uri, track.title, track.id, isBreak, track.trimStartMs)
+                QueueItem(
+                    track.uri, track.title, track.id, isBreak,
+                    track.trimStartMs, track.trimEndMs, track.trimManual
+                )
         }
     }
 }

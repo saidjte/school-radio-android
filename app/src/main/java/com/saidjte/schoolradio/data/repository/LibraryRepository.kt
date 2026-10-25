@@ -138,11 +138,13 @@ class LibraryRepository(
     /**
      * تحليل الفراغ الأول لمقطع واحد وبدء تخزين النتيجة.
      * آمن تماماً: فشل التحليل يعني «لا قص» — لا يرفع استثناء أبداً.
+     * v0.19.0: المقطع ذو القص اليدوي مستثنى — قرار المذيع لا يُطمس بالقياس الآلي.
      * @return المدة المقيسة بالميلي ثانية (0 = لا فراغ يُذكر)
      */
     suspend fun analyzeSilenceById(trackId: Long): Long = withContext(Dispatchers.IO) {
         val track = trackDao.byId(trackId) ?: return@withContext 0L
         if (!track.isAvailable) return@withContext 0L
+        if (track.trimManual) return@withContext 0L // وسم السلطة: لا تحليل آلي فوق قص يدوي
         val trim = SilenceAnalyzer.leadingSilenceMs(context, track.uri)
         trackDao.setSilenceTrim(trackId, trim)
         trim
@@ -164,6 +166,31 @@ class LibraryRepository(
 
     suspend fun rename(track: AudioTrackEntity, newTitle: String) {
         trackDao.update(track.copy(title = newTitle))
+    }
+
+    // ================== v0.19.0: القص اليدوي ==================
+
+    /**
+     * حفظ قص يدوي (بداية + نهاية) بعد التحقق عبر TrimLogic.
+     * القص اليدوي وسم سلطة: يُطبق دائماً في كل مسارات التشغيل ولا يمسّه
+     * التحليل الآلي، حتى لو عُطّل مفتاح «قص الفراغ الأول» العام.
+     * @return null عند النجاح أو رسالة عربية للعرض
+     */
+    suspend fun applyManualTrim(trackId: Long, startMs: Long, endMs: Long): String? =
+        withContext(Dispatchers.IO) {
+            val track = trackDao.byId(trackId) ?: return@withContext "المقطع غير موجود في المكتبة"
+            val err = com.saidjte.schoolradio.core.util.TrimLogic.validate(startMs, endMs, track.durationMs)
+            if (err != null) return@withContext err
+            trackDao.setManualTrim(trackId, startMs, endMs)
+            null
+        }
+
+    /**
+     * إزالة كل القص (اليدوي والآلي) — يعود المقطع إلى ملفه الأصلي كاملاً.
+     * القرار مستقر: التحليل الآلي لن يعود لهذا المقطع تلقائياً.
+     */
+    suspend fun clearManualTrim(trackId: Long) = withContext(Dispatchers.IO) {
+        trackDao.clearTrim(trackId)
     }
 
     suspend fun moveToCategory(track: AudioTrackEntity, categoryId: Long?) {

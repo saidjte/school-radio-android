@@ -32,6 +32,9 @@ import com.saidjte.schoolradio.data.local.entity.UserEntity
  *   + أساس الأتمتة الموثوقة (خدمة حارسة + منبهات دقيقة مضمونة).
  * الإصدار 6 = v0.15.0: مهلة الانتقال القابلة للضبط للفواصل + نمط «الجينل مع نهاية كل مقطع»
  *   (break_transition_sec + break_every_track على radio_schedules).
+ * الإصدار 7 = v0.18.0: قص الفراغ الأول (trim_start_ms + silence_analyzed على audio_tracks).
+ * الإصدار 8 = v0.19.0: القص اليدوي (trim_end_ms + trim_manual على audio_tracks) —
+ *   نقطة نهاية يحددها المذيع من المحرر + وسم سلطة يمنع التحليل الآلي من المساس بالقص.
  * عند أي تعديل مستقبلي: زد الإصدار واكتب Migration() صريحاً (لا fallback في الإنتاج)
  * — بيانات المدارس الحقيقية (مكتبة + جداول + أرشيف) لا يجوز فقدانها أبداً.
  */
@@ -47,7 +50,7 @@ import com.saidjte.schoolradio.data.local.entity.UserEntity
         UserEntity::class,
         RecordingEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -204,6 +207,25 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * ترحيل 7 → 8 (v0.18.0 → v0.19.0): عمودان للقص اليدوي على audio_tracks —
+         * نقطة النهاية التي يحددها المذيع (trim_end_ms، صفر = تشغيل حتى نهاية الملف)
+         * + وسم السلطة (trim_manual) الذي يجعل قص المقطع يدوياً محسوماً: التحليل الآلي
+         * لا يمسه، ومفتاح «قص الفراغ الأول» العام لا يلغيه.
+         * ADD COLUMN بقيم افتراضية ولا تُكتب صفوف أثناء الترحيل — لا مساس بالبيانات.
+         * SQL هنا يجب أن يطابق حرفياً ما يولّده Room من الكيانات (يُفحص مخطط app/schemas/8.json).
+         */
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `audio_tracks` ADD COLUMN `trim_end_ms` INTEGER NOT NULL DEFAULT 0"
+                )
+                db.execSQL(
+                    "ALTER TABLE `audio_tracks` ADD COLUMN `trim_manual` INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -213,7 +235,7 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
-                        MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7
+                        MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8
                     )
                     .build().also { INSTANCE = it }
             }
