@@ -1,6 +1,7 @@
 package com.saidjte.schoolradio.feature.playlists
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,16 +16,18 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -184,18 +187,63 @@ fun PlaylistsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                         "تشغيل/إيقاف القائمة"
                                     )
                                 }
-                                IconButton(onClick = { openPlaylistId = p.id }) {
-                                    Icon(Icons.Filled.List, "إدارة العناصر")
-                                }
-                                IconButton(onClick = { renamingId = p.id }) {
-                                    Icon(Icons.Filled.Edit, "تعديل الاسم")
-                                }
-                                IconButton(onClick = {
-                                    scope.launch {
-                                        locator.playlists.delete(p.id)
-                                        snackbar.showSnackbar("حُذفت القائمة")
+                                // v0.17.0: قائمة أدوات واحدة بدل ثلاث أيقونات — اتساق مع الأرشيف والمكتبة
+                                Box {
+                                    var menuOpen by remember { mutableStateOf(false) }
+                                    IconButton(onClick = { menuOpen = true }) {
+                                        Icon(AppIcons.MoreVert, "خيارات القائمة")
                                     }
-                                }) { Icon(Icons.Filled.Delete, "حذف القائمة") }
+                                    DropdownMenu(
+                                        expanded = menuOpen,
+                                        onDismissRequest = { menuOpen = false }
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("إدارة العناصر") },
+                                            leadingIcon = {
+                                                Icon(
+                                                    Icons.AutoMirrored.Filled.List,
+                                                    null,
+                                                    Modifier.size(20.dp)
+                                                )
+                                            },
+                                            onClick = {
+                                                menuOpen = false
+                                                openPlaylistId = p.id
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("تعديل الاسم") },
+                                            leadingIcon = {
+                                                Icon(Icons.Filled.Edit, null, Modifier.size(20.dp))
+                                            },
+                                            onClick = {
+                                                menuOpen = false
+                                                renamingId = p.id
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    "حذف القائمة",
+                                                    color = MaterialTheme.colorScheme.error
+                                                )
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    Icons.Filled.Delete, null, Modifier.size(20.dp),
+                                                    tint = MaterialTheme.colorScheme.error
+                                                )
+                                            },
+                                            onClick = {
+                                                menuOpen = false
+                                                scope.launch {
+                                                    locator.playlists.delete(p.id)
+                                                    snackbar.showSnackbar("حُذفت القائمة")
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

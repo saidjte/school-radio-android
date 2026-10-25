@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.rememberScrollState
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -416,10 +418,35 @@ private fun TrackRow(
                         )
                     }
                 }
-                IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, "تعديل") }
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Filled.Delete, "حذف من المكتبة",
-                        tint = MaterialTheme.colorScheme.secondary)
+                // v0.17.0: قائمة أدوات واحدة بدل أيقونتين ظاهرتين — اتساق مع الأرشيف والقوائم
+                Box {
+                    var menuOpen by remember { mutableStateOf(false) }
+                    IconButton(onClick = { menuOpen = true }) {
+                        Icon(AppIcons.MoreVert, "خيارات المقطع")
+                    }
+                    DropdownMenu(
+                        expanded = menuOpen,
+                        onDismissRequest = { menuOpen = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("تعديل") },
+                            leadingIcon = { Icon(Icons.Filled.Edit, null, Modifier.size(20.dp)) },
+                            onClick = { menuOpen = false; onEdit() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(
+                                "حذف من المكتبة",
+                                color = MaterialTheme.colorScheme.error
+                            ) },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Filled.Delete, null, Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            },
+                            onClick = { menuOpen = false; onDelete() }
+                        )
+                    }
                 }
             }
             // شريط تقدم رفيع أسفل السطر قيد التشغيل

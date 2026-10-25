@@ -8,7 +8,10 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,7 +31,10 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -93,6 +99,7 @@ enum class RecSort(val labelAr: String) {
     NEWEST("الأحدث"), OLDEST("الأقدم"), LONGEST("الأطول")
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun RecordingsScreen(
     snackbar: androidx.compose.material3.SnackbarHostState,
@@ -221,10 +228,10 @@ fun RecordingsScreen(
                 singleLine = true,
                 shape = MaterialTheme.shapes.medium
             )
-            // ===== مرشّح المصدر + الفرز =====
-            Row(
+            // ===== مرشّح المصدر + الفرز في صف قابل للالتفاف — توفير عمودي وترتيب أجمل =====
+            FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 RecFilter.entries.forEach { f ->
                     FilterChip(
@@ -233,15 +240,11 @@ fun RecordingsScreen(
                         label = { Text(f.labelAr) }
                     )
                 }
-            }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
                 Text(
                     "الفرز:",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 6.dp)
                 )
                 RecSort.entries.forEach { s ->
                     FilterChip(
@@ -517,7 +520,12 @@ private fun RecordingsMiniPlayer(
     }
 }
 
-/** سطر تسجيل واحد: زر تشغيل دائري + البيانات + شارة المصدر + مشغل تفاعلي + أدوات محمية بالدور */
+/**
+ * سطر تسجيل واحد — v0.17.0 إعادة بناء كاملة لعلاج تشوّه القائمة:
+ * كان السطر يحشر حتى 7 عناصر (تشغيل + نص + 5 أيقونات أدوات) فُيُسحق العنوان على الشاشات الضيقة.
+ * البنية الجديدة: صف هادئ (تشغيل + العنوان والبيانات + قائمة أدوات ⋮ واحدة)
+ * والقائمة المنسدلة تجمع الجدولة/المشاركة/التصدير/التسمية/الحذف بأيقونات واضحة.
+ */
 @Composable
 private fun RecordingRow(
     recording: RecordingEntity,
@@ -532,12 +540,12 @@ private fun RecordingRow(
     onShare: () -> Unit = {},
     onExport: () -> Unit = {}
 ) {
-    val st = MaterialTheme.status
     val isCurrent = playing.recordingId == recording.id
     val isPlayingNow = isCurrent && playing.isPlaying
     val isLiveSrc = recording.sourceEnum().name == "PTT"
     // v0.6.0: أرقام مغربية عبر المنسّق المركزي
     val dateText = AppFormat.dateShort(recording.createdAt)
+    var menuOpen by remember { mutableStateOf(false) }
 
     Card(
         Modifier.fillMaxWidth().animateContentSize(),
@@ -546,12 +554,12 @@ private fun RecordingRow(
         ) else CardDefaults.cardColors(),
         border = if (isCurrent) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)) else null
     ) {
-        Column(Modifier.padding(12.dp)) {
+        Column(Modifier.padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 FilledTonalIconButton(
                     onClick = onToggle,
                     modifier = Modifier.size(46.dp),
-                    colors = androidx.compose.material3.IconButtonDefaults.filledTonalIconButtonColors(
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(
                         containerColor = if (isCurrent) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.primaryContainer,
                         contentColor = if (isCurrent) MaterialTheme.colorScheme.onPrimary
@@ -605,25 +613,53 @@ private fun RecordingRow(
                         }
                     }
                 }
-                IconButton(onClick = onSchedule) {
-                    Icon(AppIcons.Event, "جدولة هذا التسجيل")
-                }
-                // v0.14.0: مشاركة عبر التطبيقات + تصدير دائم إلى Downloads
-                IconButton(onClick = onShare) {
-                    Icon(AppIcons.Share, "مشاركة التسجيل")
-                }
-                IconButton(onClick = onExport) {
-                    Icon(AppIcons.Download, "تصدير إلى Downloads")
-                }
-                if (canManage) {
-                    IconButton(onClick = onRename) {
-                        Icon(Icons.Filled.Edit, "تسمية التسجيل")
+                // v0.17.0: قائمة أدوات واحدة بدل 5 أيقونات — لا ازدحام مهما كانت الصلاحيات
+                Box {
+                    IconButton(onClick = { menuOpen = true }) {
+                        Icon(AppIcons.MoreVert, "خيارات التسجيل")
                     }
-                    IconButton(onClick = onDelete) {
-                        Icon(
-                            Icons.Filled.Delete, "حذف التسجيل",
-                            tint = MaterialTheme.colorScheme.error
+                    DropdownMenu(
+                        expanded = menuOpen,
+                        onDismissRequest = { menuOpen = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("جدولة كفقرة") },
+                            leadingIcon = { Icon(AppIcons.Event, null, Modifier.size(20.dp)) },
+                            onClick = { menuOpen = false; onSchedule() }
                         )
+                        DropdownMenuItem(
+                            text = { Text("مشاركة") },
+                            leadingIcon = { Icon(AppIcons.Share, null, Modifier.size(20.dp)) },
+                            onClick = { menuOpen = false; onShare() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("تصدير إلى Downloads") },
+                            leadingIcon = { Icon(AppIcons.Download, null, Modifier.size(20.dp)) },
+                            onClick = { menuOpen = false; onExport() }
+                        )
+                        if (canManage) {
+                            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                            DropdownMenuItem(
+                                text = { Text("تسمية") },
+                                leadingIcon = { Icon(Icons.Filled.Edit, null, Modifier.size(20.dp)) },
+                                onClick = { menuOpen = false; onRename() }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        "حذف",
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Filled.Delete, null, Modifier.size(20.dp),
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                },
+                                onClick = { menuOpen = false; onDelete() }
+                            )
+                        }
                     }
                 }
             }
@@ -641,10 +677,13 @@ private fun RecordingRow(
                         onValueChange = { ratio ->
                             onSeek((ratio * playing.durationMs).toLong())
                         },
-                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                        modifier = Modifier.fillMaxWidth().padding(start = 6.dp, end = 10.dp),
                         enabled = playing.durationMs > 0
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 6.dp)
+                    ) {
                         Text(
                             "${RecordingLogic.formatElapsed(playing.positionMs)} / " +
                                 RecordingLogic.formatElapsed(playing.durationMs),
