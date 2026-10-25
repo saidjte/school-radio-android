@@ -12,10 +12,16 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
@@ -37,8 +43,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
@@ -52,6 +61,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.saidjte.schoolradio.core.theme.SchoolRadioTheme
 import com.saidjte.schoolradio.core.ui.AppIcons
+import com.saidjte.schoolradio.core.ui.OrientationLogic
 import com.saidjte.schoolradio.data.settings.AppSettings
 import com.saidjte.schoolradio.di.ServiceLocator
 import com.saidjte.schoolradio.feature.cartwall.CartWallScreen
@@ -108,69 +118,89 @@ private fun AppScaffold() {
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
 
+    // v0.21.0: تخطيط تكيفي — الوضع الأفقي/اللوحيات يستخدمان قائمة جانبية مضغوطة
+    // بدل الشريط السفلي الذي يستهلك ارتفاعاً ثميناً في الأفقي
+    val config = LocalConfiguration.current
+    val sideNav = OrientationLogic.useSideNavigation(
+        config.screenWidthDp, config.screenHeightDp
+    )
+    // شاشة العرض على الهواء وقارئ السكربت تحتاجان كل المساحة — بلا قوائم تنقل
+    val showNav = currentRoute != AppRoute.ON_AIR && currentRoute != AppRoute.TELEPROMPTER
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
-            // شاشة العرض على الهواء وقارئ السكربت تحتاجان كل المساحة — بلا شريط سفلي
-            if (currentRoute != AppRoute.ON_AIR && currentRoute != AppRoute.TELEPROMPTER) {
-            Column {
-                PlayerBar(
-                    snackbar,
-                    onOpenOnAir = { nav.navigateSafely(AppRoute.ON_AIR) }
-                )
-                // شريط تنقل عائم بحواف دائرية وظل ناعم — لمسة عصرية (v0.7.0)
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 4.dp),
-                    shape = RoundedCornerShape(26.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainer,
-                    shadowElevation = 10.dp
-                ) {
-                    NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp) {
-                        // عدد التسجيلات — شارة حية على تبويب الأرشيف
-                        val recCount by ServiceLocator.recordingsRepo.observeAll()
-                            .collectAsStateWithLifecycle(initialValue = emptyList())
-                        NavigationItem.entries.forEach { item ->
-                            NavigationBarItem(
-                                selected = currentRoute == item.route,
-                                onClick = {
-                                    nav.navigate(item.route) {
-                                        popUpTo(AppRoute.DASHBOARD) { saveState = true }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                },
-                                icon = {
-                                    if (item.route == AppRoute.RECORDINGS && recCount.isNotEmpty()) {
-                                        BadgedBox(badge = {
-                                            Badge { Text("${recCount.size}", fontSize = 10.sp) }
-                                        }) {
+            if (showNav) {
+                if (sideNav) {
+                    // أفقي/لوحي: شريط المشغل وحده أسفل — التنقل انتقل جانباً
+                    PlayerBar(
+                        snackbar,
+                        onOpenOnAir = { nav.navigateSafely(AppRoute.ON_AIR) }
+                    )
+                } else {
+                Column {
+                    PlayerBar(
+                        snackbar,
+                        onOpenOnAir = { nav.navigateSafely(AppRoute.ON_AIR) }
+                    )
+                    // شريط تنقل عائم بحواف دائرية وظل ناعم — لمسة عصرية (v0.7.0)
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 4.dp),
+                        shape = RoundedCornerShape(26.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        shadowElevation = 10.dp
+                    ) {
+                        NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp) {
+                            // عدد التسجيلات — شارة حية على تبويب الأرشيف
+                            val recCount by ServiceLocator.recordingsRepo.observeAll()
+                                .collectAsStateWithLifecycle(initialValue = emptyList())
+                            NavigationItem.entries.forEach { item ->
+                                NavigationBarItem(
+                                    selected = currentRoute == item.route,
+                                    onClick = { nav.navigateTopLevel(item.route) },
+                                    icon = {
+                                        if (item.route == AppRoute.RECORDINGS && recCount.isNotEmpty()) {
+                                            BadgedBox(badge = {
+                                                Badge { Text("${recCount.size}", fontSize = 10.sp) }
+                                            }) {
+                                                Icon(item.icon, contentDescription = item.label)
+                                            }
+                                        } else {
                                             Icon(item.icon, contentDescription = item.label)
                                         }
-                                    } else {
-                                        Icon(item.icon, contentDescription = item.label)
+                                    },
+                                    // إصلاح v0.5.0: سطر واحد بخط مصغّر — لم تعد التسميات
+                                    // (التسجيلات…) تلتف على سطرين فوق أيقونتها في الشاشات الضيقة
+                                    label = {
+                                        Text(
+                                            item.label,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            fontSize = 9.5.sp
+                                        )
                                     }
-                                },
-                                // إصلاح v0.5.0: سطر واحد بخط مصغّر — لم تعد التسميات
-                                // (التسجيلات…) تلتف على سطرين فوق أيقونتها في الشاشات الضيقة
-                                label = {
-                                    Text(
-                                        item.label,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        fontSize = 9.5.sp
-                                    )
-                                }
-                            )
+                                )
+                            }
                         }
                     }
                 }
-            }
+                }
             }
         }
     ) { padding ->
-        Box(Modifier.padding(padding)) {
+        // v0.21.0: NavHost يبقى مؤلفاً في نفس موضع الشجرة دائماً — الدوران يبدّل
+        // وجود القائمة الجانبية فقط دون تفكيك المحتوى فلا تُفقد حالة التنقل ولا
+        // الحوارات المفتوحة ولا مواضع التمرير (مدعوم بـ configChanges بالـManifest)
+        Row(Modifier.padding(padding)) {
+            if (showNav && sideNav) {
+                AppSideNavRail(
+                    currentRoute = currentRoute,
+                    onNavigate = { nav.navigateTopLevel(it) }
+                )
+            }
+            Box(Modifier.weight(1f)) {
             NavHost(
                 navController = nav,
                 startDestination = AppRoute.DASHBOARD,
@@ -237,12 +267,105 @@ private fun AppScaffold() {
                     }
                 }
             }
+            }
         }
+    }
+}
+
+/** v0.21.0: القائمة الجانبية المضغوطة — نفس البنود السبعة بنمط عائم موافق لجمالية الشريط السفلي */
+@Composable
+private fun AppSideNavRail(
+    currentRoute: String?,
+    onNavigate: (String) -> Unit
+) {
+    // عدد التسجيلات — الشارة الحية نفسها المستخدمة في الشريط السفلي
+    val recCount by ServiceLocator.recordingsRepo.observeAll()
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+
+    Surface(
+        modifier = Modifier
+            .fillMaxHeight()
+            .padding(start = 8.dp, end = 2.dp, top = 8.dp, bottom = 8.dp),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        shadowElevation = 10.dp
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            // تباعد متساوٍ يوزع البنود السبعة على كامل الارتفاع المتاح مهما قلّ
+            verticalArrangement = Arrangement.SpaceEvenly
+        ) {
+            NavigationItem.entries.forEach { item ->
+                SideRailItem(
+                    item = item,
+                    selected = currentRoute == item.route,
+                    badgeCount =
+                        if (item.route == AppRoute.RECORDINGS) recCount.size else 0,
+                    onClick = { onNavigate(item.route) }
+                )
+            }
+        }
+    }
+}
+
+/** بند جانبي مضغوط: أيقونة 22dp + تسمية 8.5sp — ارتفاع ~47dp يتسع سبع مرات في هاتف أفقي */
+@Composable
+private fun SideRailItem(
+    item: NavigationItem,
+    selected: Boolean,
+    badgeCount: Int,
+    onClick: () -> Unit
+) {
+    val activeBg = MaterialTheme.colorScheme.secondaryContainer
+    val activeTint = MaterialTheme.colorScheme.onSecondaryContainer
+    val idleTint = MaterialTheme.colorScheme.onSurfaceVariant
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (selected) activeBg else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 5.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        if (badgeCount > 0) {
+            BadgedBox(badge = { Badge { Text("$badgeCount", fontSize = 9.sp) } }) {
+                Icon(
+                    item.icon,
+                    contentDescription = item.label,
+                    modifier = Modifier.size(22.dp),
+                    tint = if (selected) activeTint else idleTint
+                )
+            }
+        } else {
+            Icon(
+                item.icon,
+                contentDescription = item.label,
+                modifier = Modifier.size(22.dp),
+                tint = if (selected) activeTint else idleTint
+            )
+        }
+        Text(
+            item.label,
+            fontSize = 8.5.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = if (selected) activeTint else idleTint
+        )
     }
 }
 
 /** تنقّل بلا تكرار أعلى المكدس */
 private fun NavHostController.navigateSafely(route: String) {
+    navigate(route) {
+        popUpTo(AppRoute.DASHBOARD) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
+    }
+}
+
+/** v0.21.0: نفس سياسة التنقل للشريط السفلي والجانبي — بلا تكرار */
+private fun NavHostController.navigateTopLevel(route: String) {
     navigate(route) {
         popUpTo(AppRoute.DASHBOARD) { saveState = true }
         launchSingleTop = true
