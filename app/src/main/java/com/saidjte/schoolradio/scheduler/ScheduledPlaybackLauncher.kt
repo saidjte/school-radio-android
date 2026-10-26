@@ -100,7 +100,8 @@ object ScheduledPlaybackLauncher {
                         listOf(
                             PlaybackConnection.QueueItem(
                                 rec.filePath, rec.title, rec.id,
-                                false, rec.trimStartMs, rec.trimEndMs, rec.trimManual
+                                false, rec.trimStartMs, rec.trimEndMs, rec.trimManual,
+                                isRecording = true
                             )
                         )
                 }
@@ -133,9 +134,8 @@ object ScheduledPlaybackLauncher {
 
         // ===== 3) الإطلاق عبر MediaController (الموضوع الرئيسي) =====
         withContext(Dispatchers.Main) {
-            // الحَكَم الموحّد — أوقف أي معاينة تسجيلات قبل إطلاق الفقرة
-            // (نفس المشغل الرئيسي، لا تداخل صوتي أبداً)
-            ServiceLocator.onScheduledPlaybackStarting()
+            // v0.41.0: بوابة الحَكَم أُزيلت — لا مشغل معاينة منفصل يُوقف قبل الفقرة
+            // (التسجيلات تشتغل على المشغل الرئيسي نفسه فلا تداخل أصلاً)
             // v0.23.0: حماية صريحة — وضع الفواصل (breaks:) لقوائم يدوية لا يجوز أن
             // يبقى نشطاً فوق الفقرات المجدولة (إلا تعطلت نهايتها على محرك الحدود)
             ServiceLocator.breaksModeActive.value = false

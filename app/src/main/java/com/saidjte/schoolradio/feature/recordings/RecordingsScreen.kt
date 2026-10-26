@@ -63,7 +63,6 @@ import androidx.compose.ui.unit.sp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.saidjte.schoolradio.audio.RecordingsPlayer
 import com.saidjte.schoolradio.core.theme.status
 import com.saidjte.schoolradio.core.ui.AppIcons
 import com.saidjte.schoolradio.core.ui.EmptyStateCard
@@ -92,8 +91,8 @@ import kotlinx.coroutines.launch
  * شاشة أرشيف التسجيلات (v0.4.0، محدّثة v0.8.0):
  *  - بحث بالعنوان + مرشّح المصدر (الكل / بث مباشر / فقرة تحضيرية) + فرز (الأحدث/الأقدم/الأطول)
  *  - ملخص علوي: العدد والحجم الكلي للأرشيف
- *  - استماع فوري عبر الحَكَم الموحّد ( PlaybackCoordinator ) — لا تداخل مع مشغل القائمة أو البث،
- *    والتوقّف المؤقت للقائمة الرئيسية يُستأنف تلقائياً بعد انتهاء المعاينة
+ *  - v0.41.0: الاستماع عبر مشغل المكتبة نفسه (بوابة playRecording) — المشغل المنفصل
+ *    وبرنامجه والحَكَم أُزيلوا: المحرك الذي أثبت الأستاذ أنه يشغل الملفات هو المستعمل
  *  - مشغل سطر كامل: شريط تقديم تفاعلي + زر إيقاف + مؤشر تشغيل متحرك
  *  - تسمية وحذف محميان بالأدوار: معلم أو مشرف فقط
  */
@@ -104,6 +103,18 @@ enum class RecFilter(val labelAr: String) {
 enum class RecSort(val labelAr: String) {
     NEWEST("الأحدث"), OLDEST("الأقدم"), LONGEST("الأطول")
 }
+
+/**
+ * v0.41.0: حالة تشغيل التسجيل كما يراها الأرشيف — مصدرها حالة مشغل المكتبة
+ * الرئيسي (PlaybackUiState) عند كون العنصر الحالي تسجيلاً موسوماً.
+ */
+data class RecPlayback(
+    val isActive: Boolean = false,
+    val isPlaying: Boolean = false,
+    val positionMs: Long = 0,
+    val durationMs: Long = 0,
+    val speed: Float = 1f
+)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -116,7 +127,7 @@ fun RecordingsScreen(
 
     val recordings by locator.recordingsRepo.observeAll()
         .collectAsStateWithLifecycle(initialValue = emptyList())
-    val playback by locator.recordingsPlayer.state.collectAsStateWithLifecycle()
+    val playback by locator.playback.state.collectAsStateWithLifecycle()
     val canManage by locator.session.canManage
         .collectAsStateWithLifecycle(initialValue = true)
 
@@ -230,16 +241,19 @@ fun RecordingsScreen(
         }
     val totalBytes = recordings.sumOf { it.sizeBytes }
 
-    /** فتح/إغلاق معاينة عبر الحَكَم الموحّد — الرسائل المنعِقة (بث يعمل/ملف مفقود) تظهر snackbar */
+    /** فتح/إيقاف التشغيل عبر بوابة playRecording الموحّدة — رسائل المنع (ملف مفقود/تالف) snackbar */
     fun togglePreview(rec: RecordingEntity) {
-        locator.previewToggle(rec)?.let { msg ->
+        locator.playRecording(rec)?.let { msg ->
             scope.launch { snackbar.showSnackbar(msg) }
         }
     }
 
-    // v0.36.0: أخطاء التشغيل غير المتزامنة (صيغة غير مدعومة/ملف تالف) — snackbar بدل الصمت
-    LaunchedEffect(Unit) {
-        locator.recordingsPlayer.errors.collect { msg -> snackbar.showSnackbar(msg) }
+    // v0.41.0: أخطاء التشغيل تصل عبر حالة المشغل الموحّد (رسائل عربية من PlaybackConnection)
+    LaunchedEffect(playback.errorMessage) {
+        playback.errorMessage?.let { msg ->
+            snackbar.showSnackbar(msg)
+            locator.playback.clearError()
+        }
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
@@ -313,10 +327,22 @@ fun RecordingsScreen(
                 body = "جرّب كلمة بحث مختلفة أو غيّر المرشّح"
             )
         } else {
-            // v0.9.0: المشغل السفلي المثبّت — شريط قائمة بكامل الارتفاع المتبقي
+            // v0.41.0: المشغل السفلي المثبّت — سطر قائمة بكامل الارتفاع المتبقي
+            // التسجيل النشط = العنصر الحالي في المشغل الرئيسي وهو موسوم isRecording
             val currentRec = remember(
-                playback.recordingId, recordings
-            ) { recordings.firstOrNull { it.id == playback.recordingId } }
+                playback.currentTrackId, playback.currentIsRecording, recordings
+            ) {
+                if (playback.currentIsRecording)
+                    recordings.firstOrNull { it.id == playback.currentTrackId } else null
+            }
+            // لقطة حالة المشغل الرئيسي حين يكون مشغّلاً تسجيلاً — للمشغل المصغر والسطور
+            val recPb = RecPlayback(
+                isActive = playback.currentIsRecording,
+                isPlaying = playback.isPlaying,
+                positionMs = playback.positionMs,
+                durationMs = playback.durationMs,
+                speed = playback.speed
+            )
             // v0.10.0: موقع التسجيل الحالي داخل القائمة المرئية — للسابق/التالي والعدّاد
             val visibleIndex = currentRec?.let { visible.indexOfFirst { r -> r.id == it.id } } ?: -1
 
@@ -327,15 +353,17 @@ fun RecordingsScreen(
                 items(visible, key = { it.id }) { rec ->
                     RecordingRow(
                         recording = rec,
-                        playing = playback,
+                        playing = recPb.copy(
+                            isActive = playback.currentIsRecording &&
+                                playback.currentTrackId == rec.id
+                        ),
                         canManage = canManage,
                         integrity = integrity[rec.id] ?: RecordingIntegrityLogic.State.OK,
                         onToggle = { togglePreview(rec) },
-                        onSeek = { ms -> locator.recordingsPlayer.seekTo(ms) },
+                        onSeek = { ms -> locator.playback.seekTo(ms) },
                         onStop = {
-                            locator.recordingsPlayer.stopAll()
-                            // الإيقاف الصريح يعني انتهاء المعاينة — أبلغ الحَكَم
-                            locator.coordinator.previewFinished()
+                            // إيقاف كامل عبر المشغل الرئيسي (يفرّغ القائمة والإشعار)
+                            locator.playback.stopAll()
                         },
                         onRename = { renameTarget = rec },
                         onDelete = { deleteTarget = rec },
@@ -363,22 +391,20 @@ fun RecordingsScreen(
             }
 
             // ===== v0.10.0: مشغل التسجيلات المثبّت — سابق/تالي + ±15ث + سرعة + تقدم كامل =====
+            // v0.41.0: الأوامر كلها عبر المشغل الرئيسي (المكتبة نفسها)
             if (currentRec != null) {
                 RecordingsMiniPlayer(
-                    state = playback,
+                    state = recPb,
                     title = currentRec.title,
                     positionText = if (visibleIndex >= 0 && visible.isNotEmpty())
                         "${visibleIndex + 1} من ${visible.size}" else null,
                     canGoPrevious = visibleIndex > 0,
                     canGoNext = visibleIndex in 0 until visible.size - 1,
                     onToggle = { togglePreview(currentRec) },
-                    onStop = {
-                        locator.recordingsPlayer.stopAll()
-                        locator.coordinator.previewFinished()
-                    },
-                    onSeek = { ms -> locator.recordingsPlayer.seekTo(ms) },
-                    onSkip = { delta -> locator.recordingsPlayer.skipBy(delta) },
-                    onSpeed = { speed -> locator.recordingsPlayer.setSpeed(speed) },
+                    onStop = { locator.playback.stopAll() },
+                    onSeek = { ms -> locator.playback.seekTo(ms) },
+                    onSkip = { delta -> locator.playback.seekTo(playback.positionMs + delta) },
+                    onSpeed = { speed -> locator.playback.setSpeed(speed) },
                     // v0.10.0: التنقل بين التسجيلات من المشغل نفسه — بلا عودة للقائمة
                     onPrevious = {
                         if (visibleIndex > 0) togglePreview(visible[visibleIndex - 1])
@@ -468,7 +494,7 @@ fun RecordingsScreen(
  */
 @Composable
 private fun RecordingsMiniPlayer(
-    state: RecordingsPlayer.State,
+    state: RecPlayback,
     title: String,
     positionText: String? = null,
     canGoPrevious: Boolean = false,
@@ -605,7 +631,7 @@ private fun RecordingsMiniPlayer(
 @Composable
 private fun RecordingRow(
     recording: RecordingEntity,
-    playing: RecordingsPlayer.State,
+    playing: RecPlayback,
     canManage: Boolean,
     integrity: RecordingIntegrityLogic.State = RecordingIntegrityLogic.State.OK,
     onToggle: () -> Unit,
@@ -618,7 +644,8 @@ private fun RecordingRow(
     onExport: () -> Unit = {},
     onTrim: () -> Unit = {}
 ) {
-    val isCurrent = playing.recordingId == recording.id
+    // v0.41.0: السطر النشط براية isRecording من حالة المشغل الرئيسي
+    val isCurrent = playing.isActive
     val isPlayingNow = isCurrent && playing.isPlaying
     val isLiveSrc = recording.sourceEnum().name == "PTT"
     // v0.6.0: أرقام مغربية عبر المنسّق المركزي

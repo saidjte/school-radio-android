@@ -183,7 +183,6 @@ fun StudioScreen(
                 musicFader = settings.defaultVolume,
                 mediaLevelProvider = { locator.mediaLevel.value },
                 breaksFader = settings.cartVolume,
-                previewFader = settings.previewVolume,
                 masterFader = settings.masterVolume,
                 duckEnabled = settings.duckEnabled,
                 duckVolume = settings.duckVolume,
@@ -192,11 +191,9 @@ fun StudioScreen(
                 onMicVolume = { mic.setMicGain(it) },
                 onMusicVolume = { locator.playback.setVolume(it) },
                 onCartVolume = { locator.setCartVolumeIfReady(it) },
-                onPreviewVolume = { locator.setPreviewVolumeIfReady(it) },
                 onMicFaderFinished = { v -> scope.launch { locator.settings.setMicGain(v) } },
                 onMusicFaderFinished = { v -> scope.launch { locator.settings.setDefaultVolume(v) } },
                 onBreaksFaderFinished = { v -> scope.launch { locator.settings.setCartVolume(v) } },
-                onPreviewFaderFinished = { v -> scope.launch { locator.settings.setPreviewVolume(v) } },
                 onMasterFaderFinished = { v ->
                     scope.launch { locator.settings.setMasterVolume(v) }
                     locator.applyMixerVolumes()
@@ -210,15 +207,13 @@ fun StudioScreen(
                         locator.settings.setMicGain(scene.set.mic)
                         locator.settings.setDefaultVolume(scene.set.music)
                         locator.settings.setCartVolume(scene.set.breaks)
-                        locator.settings.setPreviewVolume(scene.set.preview)
                         locator.settings.setMasterVolume(scene.set.master)
                         locator.settings.setDuckEnabled(scene.set.duckEnabled)
                         locator.settings.setDuckVolume(scene.set.duckVolume)
                         // بعد حفظ الإعدادات: تطبيق فوري للمستويات الفعّالة على المشغلات القائمة
                         locator.applyMixerVolumes(
                             musicVolume = scene.set.music * scene.set.master,
-                            cartVolume = scene.set.breaks * scene.set.master,
-                            previewVolume = scene.set.preview * scene.set.master
+                            cartVolume = scene.set.breaks * scene.set.master
                         )
                     }
                 }
@@ -495,7 +490,6 @@ private fun MixerConsole(
     /** v0.35.0: مزوّد مستوى الموسيقى — يُقرأ وقت العينة داخل شريط VU */
     mediaLevelProvider: () -> Float,
     breaksFader: Float,
-    previewFader: Float,
     masterFader: Float,
     duckEnabled: Boolean,
     duckVolume: Float,
@@ -504,11 +498,9 @@ private fun MixerConsole(
     onMicVolume: (Float) -> Unit,
     onMusicVolume: (Float) -> Unit,
     onCartVolume: (Float) -> Unit,
-    onPreviewVolume: (Float) -> Unit,
     onMicFaderFinished: (Float) -> Unit,
     onMusicFaderFinished: (Float) -> Unit,
     onBreaksFaderFinished: (Float) -> Unit,
-    onPreviewFaderFinished: (Float) -> Unit,
     onMasterFaderFinished: (Float) -> Unit,
     onDuckEnabled: (Boolean) -> Unit,
     onDuckVolume: (Float) -> Unit,
@@ -520,28 +512,24 @@ private fun MixerConsole(
     var micLocal by remember { mutableFloatStateOf(micFader) }
     var musicLocal by remember { mutableFloatStateOf(musicFader) }
     var breaksLocal by remember { mutableFloatStateOf(breaksFader) }
-    var previewLocal by remember { mutableFloatStateOf(previewFader) }
     var masterLocal by remember { mutableFloatStateOf(masterFader) }
 
     // مزامنة مع المصدر عند تغيّر خارجي (استرجاع من الإعدادات، تطبيق مشهد)
     LaunchedEffect(micFader) { micLocal = micFader }
     LaunchedEffect(musicFader) { musicLocal = musicFader }
     LaunchedEffect(breaksFader) { breaksLocal = breaksFader }
-    LaunchedEffect(previewFader) { previewLocal = previewFader }
     LaunchedEffect(masterFader) { masterLocal = masterFader }
 
     // ===== الكتم جلسي فقط — لا يكتب في الإعدادات ولا يمس الفيدَر =====
     var micMuted by remember { mutableStateOf(false) }
     var musicMuted by remember { mutableStateOf(false) }
     var breaksMuted by remember { mutableStateOf(false) }
-    var previewMuted by remember { mutableStateOf(false) }
     // كل مشهد يُطبَّق = حالة نظيفة بلا كتم معلّق
     LaunchedEffect(sceneTick) {
         if (sceneTick > 0) {
             micMuted = false
             musicMuted = false
             breaksMuted = false
-            previewMuted = false
         }
     }
 
@@ -667,32 +655,6 @@ private fun MixerConsole(
                 }
             )
 
-            // ===== قناة معاينة الأرشيف =====
-            MixerChannelRow(
-                icon = AppIcons.LibraryMusic,
-                name = "معاينة الأرشيف",
-                value = previewLocal,
-                range = 0f..1f,
-                step = 0.02f,
-                muted = previewMuted,
-                accent = MaterialTheme.colorScheme.secondary,
-                vu = null,
-                onValue = { v ->
-                    previewLocal = MixerLogic.clampFader(MixerLogic.Channel.PREVIEW, v)
-                    onPreviewVolume(if (previewMuted) 0f else previewLocal * masterLocal)
-                },
-                onFinished = { onPreviewFaderFinished(previewLocal) },
-                onStep = { v ->
-                    previewLocal = MixerLogic.clampFader(MixerLogic.Channel.PREVIEW, v)
-                    onPreviewVolume(if (previewMuted) 0f else previewLocal * masterLocal)
-                    onPreviewFaderFinished(previewLocal)
-                },
-                onToggleMute = {
-                    previewMuted = !previewMuted
-                    onPreviewVolume(if (previewMuted) 0f else previewLocal * masterLocal)
-                }
-            )
-
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
 
             // ===== الماستر — يُضرب لحظياً في كل القنوات الموسيقية أثناء السحب =====
@@ -709,14 +671,12 @@ private fun MixerConsole(
                     masterLocal = MixerLogic.clampFader(MixerLogic.Channel.MASTER, v)
                     onMusicVolume(musicEffective(musicLocal, musicMuted))
                     onCartVolume(if (breaksMuted) 0f else breaksLocal * masterLocal)
-                    onPreviewVolume(if (previewMuted) 0f else previewLocal * masterLocal)
                 },
                 onFinished = { onMasterFaderFinished(masterLocal) },
                 onStep = { v ->
                     masterLocal = MixerLogic.clampFader(MixerLogic.Channel.MASTER, v)
                     onMusicVolume(musicEffective(musicLocal, musicMuted))
                     onCartVolume(if (breaksMuted) 0f else breaksLocal * masterLocal)
-                    onPreviewVolume(if (previewMuted) 0f else previewLocal * masterLocal)
                     onMasterFaderFinished(masterLocal)
                 },
                 onToggleMute = {},

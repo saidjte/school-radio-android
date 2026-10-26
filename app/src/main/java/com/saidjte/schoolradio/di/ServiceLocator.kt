@@ -7,12 +7,10 @@ import com.saidjte.schoolradio.audio.CartPlayer
 import com.saidjte.schoolradio.audio.MicProcessing
 import com.saidjte.schoolradio.audio.MicrophoneController
 import com.saidjte.schoolradio.audio.PlaybackConnection
-import com.saidjte.schoolradio.audio.PlaybackCoordinator
 import com.saidjte.schoolradio.audio.RecordingManager
-import com.saidjte.schoolradio.audio.RecordingsPlayer
 import com.saidjte.schoolradio.core.util.BreaksLogic
 import com.saidjte.schoolradio.core.util.CrashGuard
-import com.saidjte.schoolradio.core.util.PlaybackGuardLogic
+import com.saidjte.schoolradio.core.util.RecordingIntegrityLogic
 import com.saidjte.schoolradio.data.backup.BackupRepository
 import com.saidjte.schoolradio.data.local.AppDatabase
 import com.saidjte.schoolradio.data.local.entity.RadioScheduleEntity
@@ -123,10 +121,10 @@ object ServiceLocator {
     // v0.16.0: الميكسر — تطبيق القنوات موحّد هنا. المستويات الممرّرة «فعّالة»
     // (فيدَر × ماستر × حالة الكتم/الخفض) محسوبة في الواجهة؛ وبدون قيم
     // يُعاد الحساب من الإعدادات المحفوظة (المشاهد، استرجاع المشغلات، انتهاء الخفض).
+    // v0.41.0: قناة المعاينة أُزيلت — التسجيلات عبر قناة الموسيقى نفسها.
     fun applyMixerVolumes(
         musicVolume: Float? = null,
-        cartVolume: Float? = null,
-        previewVolume: Float? = null
+        cartVolume: Float? = null
     ) {
         appScope.launch {
             val s = settings.settings.first()
@@ -138,9 +136,8 @@ object ServiceLocator {
                 if (ducking) base * s.duckVolume.coerceIn(0f, 1f) else base
             }
             playback.setVolume(musicEff.coerceIn(0f, 1f))
-            // المعاينة والجينل — إن وُجدت المشغلات (كسولة: لا نُنشئها من هنا)
-            if (_recordingsPlayerInstantiated)
-                recordingsPlayer.setVolume((previewVolume ?: (s.previewVolume * m)).coerceIn(0f, 1f))
+            // v0.41.0: قناة «معاينة الأرشيف» أُزيلت — التسجيلات تشتغل عبر مشغل
+            // المكتبة نفسه (قناة الموسيقى) فلا مشغل معاينة ثانٍ يُضبط من هنا
             if (_cartPlayerInstantiated)
                 cartPlayer.setVolume((cartVolume ?: (s.cartVolume * m)).coerceIn(0f, 1f))
         }
@@ -151,38 +148,14 @@ object ServiceLocator {
         if (_cartPlayerInstantiated) cartPlayer.setVolume(v.coerceIn(0f, 1f))
     }
 
-    /** v0.16.0: ضبط قناة معاينة الأرشيف إن كان مشغلها قائماً فقط */
-    fun setPreviewVolumeIfReady(v: Float) {
-        if (_recordingsPlayerInstantiated) recordingsPlayer.setVolume(v.coerceIn(0f, 1f))
-    }
-
-    private val _recordingsPlayerInstantiated: Boolean
-        get() = recordingsPlayerRef != null
     private val _cartPlayerInstantiated: Boolean
         get() = cartPlayerRef != null
-    @Volatile private var recordingsPlayerRef: RecordingsPlayer? = null
     @Volatile private var cartPlayerRef: CartPlayer? = null
 
-    // مشغل تسجيلات الأرشيف (ExoPlayer مستقل عن مشغل المكتبة الخلفي)
-    val recordingsPlayer: RecordingsPlayer by lazy {
-        RecordingsPlayer(appContext).also { p ->
-            recordingsPlayerRef = p
-            // v0.9.0: معاينة التسجيلات تدخل سلسلة المؤثرات المشتركة (معادل الصوت يعمل عليها أيضاً)
-            attachAudioEffects(p.audioSessionId)
-            // v0.8.0: نهاية المعاينة طبيعياً → الحَكَم يستأنف ما كان يعمل قبله
-            p.onEnded = { coordinator.previewFinished() }
-            // v0.15.0: استرجاع فيدَر قناة المعاينة × الماستر من الإعدادات المحفوظة
-            appScope.launch {
-                val s = settings.settings.first()
-                p.setVolume(s.previewVolume * s.masterVolume)
-            }
-        }
-    }
-
     /**
-     * v0.11.0: مشغل حائط الجينغل — طبقة مزج مستقلة عمداً:
+     * v0.16.0: مشغل حائط الجينغل — طبقة مزج مستقلة عمداً:
      * الرقائق تُطلَق فوق القائمة وفوق البث المباشر (النشيد خلف صوت المذيع
-     * سلوك إذاعي طبيعي) — لذلك لا يمر عبر PlaybackCoordinator.
+     * سلوك إذاعي طبيعي) — لذلك لا يمر عبر بوابة القائمة الرئيسية.
      * ★ يجب أول وصول له من الخيط الرئيسي (إنشاء ExoPlayer) — الواجهة Compose
      *   تصل إليه من Compose مباشرة فهذا محقق.
      */
@@ -197,35 +170,6 @@ object ServiceLocator {
             // الجينغل يدخل سلسلة المؤثرات المشتركة أيضاً — المعادل والباص يعملان عليه
             attachAudioEffects(p.audioSessionId)
         }
-    }
-
-    /**
-     * v0.8.0 — حَكَم التشغيل الموحّد: مصدر واحد للحقيقة عند تعارض المصادر الصوتية
-     * (قائمة المكتبة/القوائم، معاينة التسجيلات، البث المباشر).
-     * المنفذ موصول كسولاً لتفادي أي حلقة تهيئة.
-     */
-    val coordinator: PlaybackCoordinator by lazy {
-        // v0.37.0: كل نداءات المنفذ محمية — هذه الواجهة تعمل قبل حارس toggle
-        // (فشل متحكم الوسائط/خدمة مقتولة = رسالة وهدوء لا انهيار)
-        PlaybackCoordinator(object : PlaybackCoordinator.PlayerPort {
-            override fun isMainPlaying(): Boolean =
-                runCatching { playback.state.value.isPlaying }.getOrElse {
-                    CrashGuard.record("coordinator.isMainPlaying", it); false
-                }
-            override fun pauseMain() {
-                runCatching { playback.pause() }
-                    .onFailure { CrashGuard.record("coordinator.pauseMain", it) }
-            }
-            override fun resumeMain() {
-                runCatching { playback.play() }
-                    .onFailure { CrashGuard.record("coordinator.resumeMain", it) }
-            }
-            override fun stopPreview() {
-                runCatching { recordingsPlayer.stopAll() }
-                    .onFailure { CrashGuard.record("coordinator.stopPreview", it) }
-            }
-            override fun isMicLive(): Boolean = _micLive.value
-        })
     }
 
     // ===== حالة البث المباشر المشتركة مع الواجهة =====
@@ -243,7 +187,8 @@ object ServiceLocator {
 
     /**
      * v0.9.0: ربط جلسة صوتية جديدة بمحرك المؤثرات المشترك —
-     * يُستدعى من PlaybackService ومن RecordingsPlayer فور إنشاء المشغلين.
+     * يُستدعى من PlaybackService ومن CartPlayer فور إنشاء المشغلين
+     * (v0.41.0: مشغل المعاينة المنفصل أُزيل فبقي مشغلا الخدمة والجينل).
      * أول استدعاء ناجح يطبّق الإعدادات المحفوظة (معادل/باص/محيطي).
      */
     fun attachAudioEffects(sessionId: Int) {
@@ -313,6 +258,11 @@ object ServiceLocator {
         return true
     }
 
+    /**
+     * v0.8.0 — حَكَم التشغيل الموّد كان يدير عزلة مشغل المعاينة المنفصل —
+     * v0.41.0: أُلغي بوجوده الكلي؛ لم يعد هناك مشغل ثانٍ يعزله
+     * (التسجيلات تشتغل عبر مشغل المكتبة نفسه فالعزلة بُنيت بلا حاجة إليها).
+     */
     private val _micLive = MutableStateFlow(false)
     val micLive: StateFlow<Boolean> = _micLive.asStateFlow()
 
@@ -351,12 +301,8 @@ object ServiceLocator {
             onStateChanged = { isLive, message ->
                 _micLive.value = isLive
                 _micMessage.value = message
-                if (isLive) {
-                    // v0.8.0: البث المباشر أعلى أولوية — الحَكَم يوقف المعاينة فوراً
-                    coordinator.micStarted()
-                } else {
+                if (!isLive) {
                     _micLevel.value = 0f
-                    coordinator.micStopped()
                     // انتهى البث والتسجيل يعمل؟ أوقف واحفظ فوراً (لا ملفات تالفة)
                     // v0.15.0: على خيط خلفي — كان يستدعى من الخيط الرئيسي وينتظر
                     // خيط التسجيل حتى 400ms، وأي استثناء فيه كان يغلق التطبيق
@@ -377,40 +323,62 @@ object ServiceLocator {
         scheduler.rescheduleAll(events)
     }
 
-    // ================== v0.8.0: بوابات التشغيل الموحّدة ==================
+    // ================== بوابات التشغيل الموحّدة ==================
 
     /**
-     * بوابة معاينة التسجيلات — كل الشاشات تستدعي هذه بدل recordingsPlayer مباشرة.
-     * تمر عبر الحَكَم (توقف مؤقت للقائمة الرئيسية إن كانت تعمل) وتُرجع رسالة
-     * عربية جاهزة للعرض إذا منع البدء (البث المباشر يعمل أو الملف مفقود)،
-     * أو null عند النجاح.
+     * v0.41.0 — التوحيد الجذري الذي طلبه الأستاذ حرفياً: «لماذا لا تستعمل
+     * المشغل الذي يعمل في المكتبة» — بعد أن صدّر تسجيلاً واستورده في المكتبة
+     * فاشتغل، بينما أرشيف التسجيلات أظهر «تعذر بدء التشغيل»، ثبت أن العطل
+     * في المشغل المعزول الثاني وبوابة الحَكَم لا في الملفات.
+     *
+     * فصار تشغيل التسجيلات هنا: عبر مشغل المكتبة نفسه (خدمة أمامية بإشعار
+     * وسائط) — المحرك المجرَّب ذاته وبناء MediaItem ذاته المستعمل للفقرات
+     * المجدولة من التسجيلات (وهي تعمل عبره أصلاً منذ v0.20.0).
+     *
+     * بقي من البوابة القديمة الصدق فقط: ملف مفقود أو تالف = رسالة السبب
+     * الحقيقي قبل الإطلاق (منطق v0.39 كما هو)، ونفس التسجيل = تبديل تشغيل/إيقاف.
+     *
+     * @return null عند النجاح أو رسالة عربية جاهزة للعرض.
      */
-    fun previewToggle(recording: com.saidjte.schoolradio.data.local.entity.RecordingEntity): String? {
-        // v0.37.0: البوابة كلها داخل درع — التهيئة الكسولة للمشغل وقرارات الحَكَم
-        // وأي مفاجأة أخرى تصبح رسالة عربية موثقة بدل «ينغلق التطبيق»
-        return try {
-            val currentId = recordingsPlayer.state.value.recordingId
-            val sameRecording = currentId == recording.id
-            if (sameRecording) {
-                // تبديل تشغيل/إيقاف لنفس التسجيل — لا قرار عزلة جديد
-                // v0.10.0: تمرير رسالة فشل (مثل ملف مفقود) إلى الواجهة بدل الصمت
-                recordingsPlayer.toggle(recording)
-            } else {
-                when (coordinator.requestPreviewStart()) {
-                    PlaybackCoordinator.PreviewDecision.OK -> recordingsPlayer.toggle(recording)
-                    PlaybackCoordinator.PreviewDecision.BLOCKED_LIVE ->
-                        "أوقف البث المباشر أولاً للاستماع إلى التسجيل — لا يجوز خلطهما"
-                }
-            }
-        } catch (t: Throwable) {
-            CrashGuard.record("preview.toggle", t)
-            PlaybackGuardLogic.startFailureMessage()
+    fun playRecording(recording: com.saidjte.schoolradio.data.local.entity.RecordingEntity): String? {
+        val file = java.io.File(recording.filePath)
+        if (!file.exists()) {
+            // ملف مفقود (استعادة نسخة على جهاز آخر مثلاً) — رسالة واضحة بدل صمت مريب
+            return "ملف هذا التسجيل غير موجود على الجهاز — ربما حُذف أو نُقل"
         }
+        // v0.39.0: الصدق البنيوي — ملف تالف من إصدار قديم (كاتب الحاويات قبل
+        // إصلاح v0.38.0) لا يُسلَّم لمشغل فك الترميز أصلاً: رسالة السبب الحقيقي.
+        val integrity = RecordingIntegrityLogic.classify(
+            exists = true,
+            fileSize = file.length(),
+            head = RecordingIntegrityLogic.readFileHead(file),
+            mimeType = recording.mimeType
+        )
+        if (integrity == RecordingIntegrityLogic.State.CORRUPT) {
+            return RecordingIntegrityLogic.corruptMessage()
+        }
+        // نفس التسجيل قيد التشغيل/المتوقف مؤقتاً؟ تبديل تشغيل/إيقاف كالعادة
+        val pb = playback.state.value
+        if (pb.currentIsRecording && pb.currentTrackId == recording.id) {
+            playback.playPause()
+            return null
+        }
+        playMainQueue(
+            listOf(
+                PlaybackConnection.QueueItem(
+                    recording.filePath, recording.title, recording.id,
+                    false, recording.trimStartMs, recording.trimEndMs,
+                    recording.trimManual, isRecording = true
+                )
+            ),
+            queueTag = "recording"
+        )
+        return null
     }
 
     /**
-     * بوابة القائمة الرئيسية (مكتبة/قوائم/تشغيل يدوي) — توقف أي معاينة أولاً عبر الحَكَم.
-     * الفقرات المجدولة تستدعي [onScheduledPlaybackStarting] مباشرة.
+     * بوابة القائمة الرئيسية (مكتبة/قوائم/تسجيلات/فقرات مجدولة/تشغيل يدوي) —
+     * v0.41.0: مصدر صوت واحد في التطبيق كله فلا حاجة لأي حَكَم عزل قبلها.
      */
     fun playMainQueue(
         items: List<PlaybackConnection.QueueItem>,
@@ -420,16 +388,7 @@ object ServiceLocator {
         transitionDelayMs: Long = 0L
     ) {
         if (items.isEmpty()) return
-        coordinator.requestMainQueueStart()
         playback.playQueue(items, startIndex, repeatAll, queueTag, transitionDelayMs)
-    }
-
-    /**
-     * بوابة الفقرة المجدولة — تُستدعى من AlarmReceiver قبل إطلاق القائمة
-     * (على خيط رئيسي): توقف معاينة التسجيلات إن كانت تعمل.
-     */
-    fun onScheduledPlaybackStarting() {
-        coordinator.requestMainQueueStart()
     }
 
     /**

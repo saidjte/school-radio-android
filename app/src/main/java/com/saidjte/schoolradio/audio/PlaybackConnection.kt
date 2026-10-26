@@ -43,6 +43,14 @@ data class PlaybackUiState(
      * لوحة عدّ الفاصل حتى مع جينلات القوائم الموسومة (breaks:) دون معلومات على الهواء.
      */
     val currentIsBreak: Boolean = false,
+    /**
+     * v0.41.0: هل العنصر الحالي تسجيلاً من الأرشيف؟ — الأرشيف يعرض مشغله
+     * المصغر ويلمّع السطر النشط بهذه الراية (المعرّفات بين جدولي
+     * المكتبة والأرشيف مستقلة فالراية تمنع أي التباس في التظليل).
+     */
+    val currentIsRecording: Boolean = false,
+    /** v0.41.0: سرعة التشغيل الحالية (0.5..2.0) — رقاقات السرعة في مشغل الأرشيف */
+    val speed: Float = 1f,
     /** v0.14.0: متبقي المقطع الحالي (مدة − موضع) للمؤقت التنازلي على شاشة العرض */
     val remainingMs: Long = 0,
     /**
@@ -59,6 +67,8 @@ data class PlaybackUiState(
  *
  * ضمانات معمارية:
  * - مشغل واحد فقط في التطبيق (الخدمة) — كل الشاشات تتحكم عبر هذه القناة.
+ *   v0.41.0: صار حرفياً واحداً بلا استثناء — أرشيف التسجيلات نفسه شغّل عبره
+ *   بعد أن ثبت ميدانياً أن الملفات السليمة تُشغَّل هنا ولا تعمل على أي مشغل ثانٍ.
  * - التشغيل يستمر عند التنقل بين الشاشات أو إطفاء الشاشة (خدمة أمامية + إشعار).
  */
 class PlaybackConnection(private val context: Context) {
@@ -189,6 +199,10 @@ class PlaybackConnection(private val context: Context) {
             // v0.23.0: قراءة وسم الفاصل من عنصر الوسائط الحالي (جينلات القوائم/الفاصل المجدول)
             currentIsBreak = c.currentMediaItem?.mediaMetadata?.extras
                 ?.getBoolean(QueueItem.KEY_IS_BREAK, false) == true,
+            // v0.41.0: راية التسجيل — الأرشيف يظلّل السطر ويظهر مشغله المصغر بها
+            currentIsRecording = c.currentMediaItem?.mediaMetadata?.extras
+                ?.getBoolean(QueueItem.KEY_IS_RECORDING, false) == true,
+            speed = c.playbackParameters.speed,
             errorMessage = _state.value.errorMessage
         )
     }
@@ -265,6 +279,14 @@ class PlaybackConnection(private val context: Context) {
     fun seekTo(positionMs: Long) { controller?.seekTo(positionMs) }
 
     /**
+     * v0.41.0: سرعة التشغيل (0.5..2.0) — كانت حصراً في مشغل الأرشيف المنفصل،
+     * وصرت قدراً مشتركاً على المشغل الموحد (مراجعة التسجيلات بسرعة).
+     */
+    fun setSpeed(speed: Float) {
+        controller?.setPlaybackSpeed(speed.coerceIn(0.5f, 2.0f))
+    }
+
+    /**
      * v0.35.0: إحلال URI عنصر بعيد بتدفق طازج — يستدعيه التجديد الخلفي
      * (RemoteMediaService.refreshPendingRemoteAsync) بعد انطلاق التشغيل،
      * فتتجدد روابط القائمة أثناء الاستماع بلا أي انقطاع صوت.
@@ -311,6 +333,9 @@ class PlaybackConnection(private val context: Context) {
      * عند بناء MediaItem إذا كان إعداد «قص الفراغ الأول» مفعّلاً (تجاهل = تشغيل كما هو).
      * v0.19.0: [trimEndMs] نقطة نهاية القص اليدوي + [manualTrim] وسم السلطة:
      * القص اليدوي قرار صريح فيُطبّق دائماً بغضّ النظر عن المفتاح العام.
+     * v0.41.0: [isRecording] يميز تسجيلات الأرشيف — راية في extras يقرأها
+     * أرشيف التسجيلات ليلمّع السطر النشط ويظهر مشغله المصغر (حيث تشغّل التسجيلات
+     * الآن على هذا المشغل نفسه).
      */
     data class QueueItem(
         val uri: String,
@@ -319,15 +344,19 @@ class PlaybackConnection(private val context: Context) {
         val isBreak: Boolean = false,
         val trimStartMs: Long = 0,
         val trimEndMs: Long = 0,
-        val manualTrim: Boolean = false
+        val manualTrim: Boolean = false,
+        val isRecording: Boolean = false
     ) {
         fun toMediaItem(): MediaItem {
             val metadata = MediaMetadata.Builder()
                 .setTitle(title)
                 .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
-            if (isBreak) {
+            if (isBreak || isRecording) {
                 metadata.setExtras(
-                    android.os.Bundle().apply { putBoolean(KEY_IS_BREAK, true) }
+                    android.os.Bundle().apply {
+                        if (isBreak) putBoolean(KEY_IS_BREAK, true)
+                        if (isRecording) putBoolean(KEY_IS_RECORDING, true)
+                    }
                 )
             }
             val builder = MediaItem.Builder()
@@ -350,6 +379,9 @@ class PlaybackConnection(private val context: Context) {
         companion object {
             /** وسم عناصر الفواصل داخل MediaMetadata.extras — يقرأه PlaybackService */
             const val KEY_IS_BREAK = "sr_is_break"
+
+            /** v0.41.0: وسم عناصر تسجيلات الأرشيف داخل extras — يقرأه أرشيف التسجيلات */
+            const val KEY_IS_RECORDING = "sr_is_recording"
 
             /** قراءة وسم الفاصل من عنصر وسائط (خدمة المشغل) */
             fun MediaItem.isBreakItem(): Boolean =

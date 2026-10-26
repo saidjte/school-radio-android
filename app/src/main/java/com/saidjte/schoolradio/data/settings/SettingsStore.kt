@@ -44,7 +44,7 @@ data class AppSettings(
     val cartLayoutJson: String = "",       // تخطيط الرقائق JSON (راجع CartWallStore)
     // ===== v0.15.0: الميكسر الاحترافي — قنوات مستقلة + ماستر =====
     val masterVolume: Float = 1.0f,        // فيدَر الماستر (يضرب القنوات الموسيقية) 0..1
-    val previewVolume: Float = 0.9f,       // فيدَر قناة معاينة الأرشيف 0..1
+    val previewVolume: Float = 0.9f,       // (v0.41: محفوظ للتوافق مع النسخ السابقة فقط — قناة المعاينة أُزيلت، التسجيلات عبر قناة الموسيقى)
     // ===== v0.11.0: تفضيلات قارئ السكربت (Teleprompter) =====
     val prompterSpeed: Float = 55f,        // سرعة التمرير dp/ثانية
     val prompterFont: Float = 30f,         // حجم خط النص sp

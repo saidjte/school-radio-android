@@ -275,9 +275,10 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                         TrackRow(
                             track = track,
                             categoryName = categories.firstOrNull { it.id == track.categoryId }?.name,
-                            isCurrent = playback.currentTrackId == track.id,
+                            isCurrent = playback.currentTrackId == track.id && !playback.currentIsRecording,
                             isPlaying = playback.isPlaying,
-                            progress = if (playback.currentTrackId == track.id && playback.durationMs > 0)
+                            progress = if (playback.currentTrackId == track.id &&
+                                !playback.currentIsRecording && playback.durationMs > 0)
                                 playback.positionMs.toFloat() / playback.durationMs else 0f,
                             onPlay = { playFromLibrary(track) },
                             onEdit = { editing = track },
