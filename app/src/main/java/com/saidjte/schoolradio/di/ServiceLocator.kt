@@ -563,6 +563,9 @@ object ServiceLocator {
             playback = PlaybackConnection(appContext)
             // v0.35.0: جسر الإحلال الحي — التجديد الخلفي للروابط البعيدة يستبدل عناصر القائمة الحية
             remote.onFreshUri = { trackId, freshUri -> playback.replaceItemUri(trackId, freshUri) }
+            // v0.42.0: بعد اكتمال التنزيل يتبنى المشغل الملف المحلي فوراً —
+            // التشغيل يصير من الملف لا من المصدر (العنصر الجاري بنفس الموضع)
+            remote.onLocalFileAdopted = { trackId, localUri -> playback.adoptLocalFile(trackId, localUri) }
             scheduler = SchedulerManager(appContext)
             // v0.9.0: السكربتات الإذاعية — تخزين JSON محلي في مسار التطبيق
             scripts = ScriptRepository(appContext.filesDir, appScope)

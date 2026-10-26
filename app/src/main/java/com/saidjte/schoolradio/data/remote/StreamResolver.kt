@@ -2,6 +2,9 @@ package com.saidjte.schoolradio.data.remote
 
 import com.saidjte.schoolradio.core.util.RemoteLinks
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.schabi.newpipe.extractor.NewPipe
@@ -135,12 +138,24 @@ object StreamResolver {
         }
 
     /**
-     * اختيار أفضل تدفق صوتي: تفضيل M4A/AAC (توافق عالٍ مع كل أجهزة الأندرويد
-     * ومع دائرة المكتبة) بأعلى معدل بت، وإلا أفضل ما هو متاح (Opus/WebM يشتغل أيضاً).
+     * اختيار أفضل تدفق صوتي — v0.42.0 تصحيح جذري: **تدفقات تقدمية حصراً**
+     * (PROGRESSIVE_HTTP: ملف صوتي واحد يُنزَّل ويُبثّ بمحرف Range).
+     *
+     * القاعدة القديمة كانت تختار أعلى معدل بت وهي تكتشف أن قوائم HLS/DASH
+     * تُسجّل بصيغة M4A وبمعدلات بت أعلى من التقدمية — فيفوز ملف .m3u8/.mpd
+     * نصي بحجم كيلوبايات لا الملف الصوتي: تنزيله يعطي ملفاً تالفاً، وتشغيله
+     * يفشل أصلاً (وحدات media3-hls/dash ليست في الاعتماديات) — وربما كان
+     * هذا بطة «بطء التنزيل» الثانية: تمرير كيلوبايات يُحتسب تنزيلاً سريعاً
+     * زائفاً ثم فشل.
+     *
+     * ضمن التقدمية: M4A/AAC أولاً (توافق عالٍ مع كل الأجهزة) بأعلى معدل بت.
      * الروابط https فقط — بعض التدفقات تُقدم بـ http فيرفضها المشغل.
      */
     internal fun pickAudio(streams: List<org.schabi.newpipe.extractor.stream.AudioStream>) =
         streams.filter { it.isUrl && it.url?.startsWith("https") == true }
+            .filter {
+                it.deliveryMethod == org.schabi.newpipe.extractor.stream.DeliveryMethod.PROGRESSIVE_HTTP
+            }
             .maxWithOrNull(
                 compareBy(
                     { it.format == org.schabi.newpipe.extractor.MediaFormat.M4A },
@@ -271,7 +286,14 @@ object StreamResolver {
      * تنزيل التدفق إلى ملف محلي — بعد التحميل يصبح المقطع ملكاً للمكتبة
      * يعمل دون إنترنت للأبد (فلسفة التطبيق offline-first).
      *
-     * v0.25.0: معايرة التقدم الحي عبر [onProgress] (البايتات المنزلة، الكلي إن عُرف)
+     * v0.42.0: تنزيل **مجزأ متوازٍ** وفق خطة [ParallelDownloadLogic] —
+     * الاستطلاع أولًا (GET بشريحة ضئيلة يقرأ الترويسات): إن أعلن الخادم
+     * دعم Range والحجم فلملف يُقسم ست شرائح تُنزَّل اتصالات متوازية تكتب
+     * كل واحدة في موضعها بمحرف Range (يفك خنق الاتصال الواحد الذي يفرضه
+     * googlevideo — سبب بطء التنزيل المبلغ عنه) — وفشل التفرع لأي سبب
+     * غير رفض الخادم الصادق يهبط مرة واحدة للتدفق الواحد (سلوك v0.25.0).
+     *
+     * معايرة التقدم الحي عبر [onProgress] (البايتات المنزلة، الكلي إن عُرف)
      * + رسالة 403 إرشادية تفسر سبب الرفض (انتهاء صلاحية رابط التدفق) بدل رمز غامض.
      *
      * @return حجم الملف بالبايت
@@ -281,6 +303,168 @@ object StreamResolver {
         outFile: File,
         onProgress: (downloaded: Long, total: Long) -> Unit = { _, _ -> }
     ): Long = withContext(Dispatchers.IO) {
+        val probe = runCatching { probeRange(url) }
+            .getOrDefault(RangeProbe(total = -1L, acceptRanges = false))
+        val plan = ParallelDownloadLogic.plan(probe.total, probe.acceptRanges)
+        if (plan != null) {
+            try {
+                return@withContext downloadSegmented(url, outFile, plan, probe.total, onProgress)
+            } catch (e: RemoteImportException) {
+                throw e // رفض خادم صادق (403/410/صفحة HTML) — لا يحجبه سقوط للتدفق الواحد
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // شبكة متقطعة أو خادم تجاهل Range وسط التفرع — هبوط واحد موثوق
+                File(outFile.parentFile, outFile.name + ".part").delete()
+            }
+        }
+        downloadSequential(url, outFile, onProgress)
+    }
+
+    /** نتيجة استطلاع التدفق: الحجم المعلن وهل يعلن الخادم دعم محارف Range */
+    private class RangeProbe(val total: Long, val acceptRanges: Boolean)
+
+    /**
+     * استطلاع خفيف: GET بشريحة «bytes=0-0» — يقرأ الترويسات فقط ولا يُنزّل الجسد.
+     * نستخدم GET لا HEAD لأن بعض خوادم المنصات ترفض HEAD، والاستجابة 206
+     * للشريحة الضئيلة هي الدليل العملي على دعم Range (أصدق من ترويسة معلنة).
+     */
+    private fun probeRange(url: String): RangeProbe {
+        val conn = URL(url).openConnection() as HttpURLConnection
+        try {
+            conn.connectTimeout = 10_000
+            conn.readTimeout = 12_000
+            conn.instanceFollowRedirects = true
+            conn.setRequestProperty("User-Agent", BROWSER_UA)
+            conn.setRequestProperty("Range", "bytes=0-0")
+            val code = conn.responseCode
+            checkDownloadResponse(code, conn)
+            val acceptRanges = code == 206
+            val total = when {
+                code == 206 -> conn.getHeaderField("Content-Range")
+                    ?.substringAfter('/')?.toLongOrNull() ?: -1L
+                else -> conn.contentLengthLong.takeIf { it > 0 } ?: -1L
+            }
+            return RangeProbe(total, acceptRanges)
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    /** رسائل رفض الخادم الصادقة — واحدة لكل مسارات التنزيل (استطلاع/شرائح/تدفق واحد) */
+    private fun checkDownloadResponse(code: Int, conn: HttpURLConnection) {
+        if (code in 200..399) return
+        throw RemoteImportException(
+            if (code == 403 || code == 410)
+                "الخادم رفض التدفق ($code) — انتهت صلاحية الرابط غالباً؛ أعد المحاولة فتُجدد آلياً أو أعد الاستيراد"
+            else "فشل التنزيل (رمز $code) — حاول مجدداً بعد قليل"
+        )
+    }
+
+    private fun isHtmlResponse(conn: HttpURLConnection): Boolean =
+        "text/html" in (conn.getHeaderField("Content-Type") ?: "").lowercase()
+
+    /**
+     * التنزيل المجزأ المتوازي: ملف .part يحجز حجمه كاملاً مسبقاً ثم تكتب كل
+     * شريحة في موضعها (كتابات موضعية على قناة واحدة — آمنة خيطياً عكسياً
+     * لأن كل شريحة تملك نطاق محارف لا يلمسه غيرها)، والتقدم يجمع من كل
+     * الشرائح، والنهاية تتحقق من اكتمال المجموع قبل إعادة التسمية.
+     */
+    private suspend fun downloadSegmented(
+        url: String,
+        outFile: File,
+        plan: List<ParallelDownloadLogic.Segment>,
+        total: Long,
+        onProgress: (Long, Long) -> Unit
+    ): Long = withContext(Dispatchers.IO) {
+        val part = File(outFile.parentFile, outFile.name + ".part")
+        val raf = java.io.RandomAccessFile(part, "rw")
+        try {
+            raf.setLength(total)
+            val channel = raf.channel
+            val downloaded = java.util.concurrent.atomic.AtomicLongArray(plan.size)
+            val lastReported = java.util.concurrent.atomic.AtomicLong(0L)
+
+            fun reportProgress() {
+                val cur = ParallelDownloadLogic.aggregate(
+                    LongArray(downloaded.length()) { downloaded.get(it) }
+                )
+                if (DownloadLogic.shouldReport(lastReported.get(), cur)) {
+                    lastReported.set(cur)
+                    onProgress(cur, total)
+                }
+            }
+
+            coroutineScope {
+                plan.map { seg ->
+                    async {
+                        val conn = URL(url).openConnection() as HttpURLConnection
+                        try {
+                            conn.connectTimeout = 12_000
+                            conn.readTimeout = 30_000
+                            conn.instanceFollowRedirects = true
+                            conn.setRequestProperty("User-Agent", BROWSER_UA)
+                            conn.setRequestProperty("Range", ParallelDownloadLogic.rangeHeader(seg))
+                            val code = conn.responseCode
+                            checkDownloadResponse(code, conn)
+                            // خادم تجاهل Range وأعاد 200 كاملاً — الكتابة الموضعية هنا
+                            // ستلطخ الشرائح الأخرى؛ هبوط للتدفق الواحد واجب لا خيار
+                            if (code != 206) {
+                                throw IllegalStateException("الخادم تجاهل محارف Range (رمز $code)")
+                            }
+                            if (isHtmlResponse(conn)) {
+                                throw RemoteImportException(
+                                    "الخادم أعاد صفحة بدل الملف — غالباً انتهت صلاحية التدفق؛ أعد الاستيراد من الرابط الأصلي"
+                                )
+                            }
+                            val buf = ByteArray(ParallelDownloadLogic.READ_BUFFER_BYTES)
+                            conn.inputStream.use { input ->
+                                var pos = seg.start
+                                while (true) {
+                                    val n = input.read(buf)
+                                    if (n < 0) break
+                                    channel.write(java.nio.ByteBuffer.wrap(buf, 0, n), pos)
+                                    pos += n
+                                    downloaded.addAndGet(seg.index, n.toLong())
+                                    reportProgress()
+                                }
+                                // قُطعت الشريحة مبكراً وسكتت — نقصٌ لا يُكتشف غيره إلا هنا
+                                if (pos - seg.start != seg.length) {
+                                    throw IllegalStateException("انقطعت شريحة ${seg.index} قبل اكتمالها")
+                                }
+                            }
+                        } finally {
+                            conn.disconnect()
+                        }
+                    }
+                }.awaitAll()
+            }
+
+            val downloadedTotal = ParallelDownloadLogic.aggregate(
+                LongArray(downloaded.length()) { downloaded.get(it) }
+            )
+            if (!ParallelDownloadLogic.isComplete(plan, downloadedTotal)) {
+                throw IllegalStateException("مجموع الشرائح لا يطابق الحجم المعلن")
+            }
+            onProgress(downloadedTotal, total)
+            channel.force(true)
+            raf.close()
+            if (!part.renameTo(outFile)) {
+                part.copyTo(outFile, overwrite = true)
+                part.delete()
+            }
+            outFile.length()
+        } finally {
+            runCatching { raf.close() }
+        }
+    }
+
+    /** التدفق الواحد — سلوك v0.25.0 الحرفي: للاحجام الصغيرة والخوادم بلا Range */
+    private suspend fun downloadSequential(
+        url: String,
+        outFile: File,
+        onProgress: (downloaded: Long, total: Long) -> Unit
+    ): Long = withContext(Dispatchers.IO) {
         val conn = URL(url).openConnection() as HttpURLConnection
         try {
             conn.connectTimeout = 15_000
@@ -288,15 +472,8 @@ object StreamResolver {
             conn.instanceFollowRedirects = true
             conn.setRequestProperty("User-Agent", BROWSER_UA)
             val code = conn.responseCode
-            if (code !in 200..399) {
-                throw RemoteImportException(
-                    if (code == 403 || code == 410)
-                        "الخادم رفض التدفق ($code) — انتهت صلاحية الرابط غالباً؛ أعد المحاولة فتُجدد آلياً أو أعد الاستيراد"
-                    else "فشل التنزيل (رمز $code) — حاول مجدداً بعد قليل"
-                )
-            }
-            val ct = (conn.getHeaderField("Content-Type") ?: "").lowercase()
-            if ("text/html" in ct) {
+            checkDownloadResponse(code, conn)
+            if (isHtmlResponse(conn)) {
                 throw RemoteImportException(
                     "الخادم أعاد صفحة بدل الملف — غالباً انتهت صلاحية التدفق؛ أعد الاستيراد من الرابط الأصلي"
                 )
@@ -307,7 +484,7 @@ object StreamResolver {
             val tmp = File(outFile.parentFile, outFile.name + ".part")
             conn.inputStream.use { input ->
                 tmp.outputStream().use { out ->
-                    val buf = ByteArray(64 * 1024)
+                    val buf = ByteArray(ParallelDownloadLogic.READ_BUFFER_BYTES)
                     var downloaded = 0L
                     var lastReported = 0L
                     while (true) {
@@ -333,8 +510,6 @@ object StreamResolver {
                 tmp.delete()
             }
             outFile.length()
-        } catch (e: RemoteImportException) {
-            throw e
         } catch (e: IOException) {
             throw RemoteImportException("انقطع الاتصال أثناء التنزيل — تحقق من الشبكة وحاول مجدداً")
         } finally {

@@ -174,14 +174,18 @@ class RemoteMediaService(
                 }
 
                 val duration = queryDurationForFile(out)
+                val localUri = Uri.fromFile(out).toString()
                 trackDao.update(
                     track.copy(
-                        uri = Uri.fromFile(out).toString(),
+                        uri = localUri,
                         isRemote = false,
                         durationMs = if (duration > 0) duration else track.durationMs,
                         sizeBytes = out.length()
                     )
                 )
+                // v0.42.0: الملف محلي الآن — المشغل يتبناه فوراً فيصير التشغيل
+                // من الملف لا من المصدر (العنصر الجاري سماعه بنفس الموضع)
+                onLocalFileAdopted?.invoke(track.id, localUri)
                 // تحليل الفراغ الأول — الملف محلي الآن فالتحليل آمن ومفيد
                 runCatching { library.analyzeSilenceById(track.id) }
                 val msg = "نُزّل «${track.title}» إلى المكتبة — يعمل الآن دون إنترنت"
@@ -273,6 +277,14 @@ class RemoteMediaService(
      * ليستبدل عنصر القائمة بتدفق طازج أثناء الاستماع بلا انقطاع صوت.
      */
     var onFreshUri: ((trackId: Long, freshUri: String) -> Unit)? = null
+
+    /**
+     * v0.42.0: جسر تبني الملف المحلي — يوصلها ServiceLocator بـ
+     * PlaybackConnection.adoptLocalFile: بعد اكتمال التنزيل يستبدل المشغل
+     * تدفق المقطع (الجاري سماعه أو المنتظر في القائمة) بالملف المحلي —
+     * فيصير التشغيل من الملف لا من المصدر (العيب المبلغ عنه).
+     */
+    var onLocalFileAdopted: ((trackId: Long, localUri: String) -> Unit)? = null
 
     /** خطة قائمة سريعة: URIs جاهزة للإدراج الفوري + مقاطع بعيدة مؤجلة التجديد الخلفي */
     data class QueuePlan(

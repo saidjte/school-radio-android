@@ -312,6 +312,45 @@ class PlaybackConnection(private val context: Context) {
         }
     }
 
+    /**
+     * v0.42.0: تبني الملف المحلي بعد اكتمال التنزيل — العيب المبلغ عنه كان
+     * «عند انتهاء التنزيل يبقى المقطع يعمل من المصدر» لأن replaceItemUri
+     * (الصحيح لتجديد التدفقات) يتجاهل العنصر الحالي عمداً، فلا أحد يستبدل
+     * URI المقطع الجاري سماعه.
+     *
+     * هنا العكس مقصود: المقطع الذي يعمل الآن (تدفق بعيد) يُستبدل ملفه
+     * المحلي الجاهز **في نفس الموضع** — توقف متواصل لحظة إعادة التهيئة
+     * فقط، ومن هذه اللحظة التشغيل كله محلي: بلا إنترنت ولا خنق ولا
+     * انقطاع صوتي عند انتهاء صلاحية التدفق. العناصر المنتظرة في القائمة
+     * تُستبدل صامتة (بلا انقطاع إطلاقاً) فتبدأ محلية حين يأتي دورها.
+     * فشل الأمر غير متوقع يُترك للبث من المصدر — لا قتل للتشغيل الجاري.
+     */
+    fun adoptLocalFile(trackId: Long, localUri: String) {
+        val c = controller ?: return
+        val count = c.mediaItemCount
+        for (i in 0 until count) {
+            if (c.getMediaItemAt(i).mediaId == trackId.toString()) {
+                try {
+                    val local = c.getMediaItemAt(i).buildUpon().setUri(localUri).build()
+                    if (i == c.currentMediaItemIndex) {
+                        val wasPlaying = c.isPlaying
+                        val pos = c.currentPosition
+                        c.replaceMediaItem(i, local)
+                        // ضمان الموضع: إن حافظ اللاعب عليه ذاتياً فالأمر تكرار بلا ضرر،
+                        // وإن أعاد التهيئة من الصفر فهذا يعيد الأستاذ للثانية نفسها
+                        c.seekTo(i, pos)
+                        if (wasPlaying) c.play()
+                    } else {
+                        c.replaceMediaItem(i, local)
+                    }
+                } catch (_: Exception) {
+                    // أمر غير متاح على هذه الجلسة — يبقى البث من المصدر حتى نهايته
+                }
+                return
+            }
+        }
+    }
+
     /** ضبط مستوى الصوت — تستخدمه أيضاً آلية الخفض التلقائي أثناء الإعلان */
     fun setVolume(volume: Float) {
         controller?.volume = volume.coerceIn(0f, 1f)
