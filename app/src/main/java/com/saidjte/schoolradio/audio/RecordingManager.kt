@@ -203,12 +203,16 @@ class RecordingManager(
         scope.launch {
             val result = w.finish()
             if (result == null || w.failed != null) {
+                // v0.38.0: ملف فاشل لا يُترك يتماً في مجلد الأرشيف أبداً —
+                // الكاتب نفسه يحذف ناتجه المكسور، وهذا يحذف أي بقايا قديمة
+                runCatching { File(w.filePath).delete() }
                 _mode.value = null
                 return@launch
             }
             val (durationMs, sizeBytes) = result
             if (durationMs < 300) {
-                // أقل من ثلث ثانية = ضغطة خاطئة — لا نلوث الأرشيف
+                // أقل من ثلث ثانية = ضغطة خاطئة — لا نلوث الأرشيف ولا نترك ملفاً يتماً
+                runCatching { File(w.filePath).delete() }
                 _mode.value = null
                 return@launch
             }

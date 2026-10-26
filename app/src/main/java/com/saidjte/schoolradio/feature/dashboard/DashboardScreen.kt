@@ -60,6 +60,9 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
+import android.os.Build
+import com.saidjte.schoolradio.core.util.RecordingCodecLogic
+import com.saidjte.schoolradio.audio.OpusFileWriter
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -1043,9 +1046,21 @@ private fun LiveBroadcastCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     } else {
+                        // v0.38.0: النص الصادق — الترميز الذي سيُستخدم فعلاً في التسجيل القادم
+                        // (قرار preferOpus نفسه: التفضيل + أندرويد 10+ + وجود المشفر) لا نص ثابت
+                        val hdPref by ServiceLocator.recordingHdPreferred.collectAsStateWithLifecycle()
+                        val nextOpus = remember(hdPref) {
+                            RecordingCodecLogic.preferOpus(
+                                Build.VERSION.SDK_INT,
+                                OpusFileWriter.encoderAvailable(),
+                                hdPref
+                            )
+                        }
                         Text(
-                            if (isLive) "AAC ‏128kbps — حفظ فوري عند الإيقاف"
-                            else "بلا بث للمكبرات — تحضير قبل الإذاعة",
+                            if (isLive) {
+                                if (nextOpus) "Opus HD ‏48kHz/128kbps — حفظ فوري عند الإيقاف"
+                                else "AAC ‏128kbps — حفظ فوري عند الإيقاف"
+                            } else "بلا بث للمكبرات — تحضير قبل الإذاعة",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
