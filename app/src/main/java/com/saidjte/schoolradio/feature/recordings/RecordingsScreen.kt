@@ -47,6 +47,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -207,6 +208,11 @@ fun RecordingsScreen(
         locator.previewToggle(rec)?.let { msg ->
             scope.launch { snackbar.showSnackbar(msg) }
         }
+    }
+
+    // v0.33.0: أخطاء التشغيل غير المتزامنة (صيغة غير مدعومة/ملف تالف) — snackbar بدل الصمت
+    LaunchedEffect(Unit) {
+        locator.recordingsPlayer.errors.collect { msg -> snackbar.showSnackbar(msg) }
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {

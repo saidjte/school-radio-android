@@ -3,9 +3,13 @@ package com.saidjte.schoolradio.feature.settings
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -30,6 +34,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.platform.LocalContext
+import com.saidjte.schoolradio.core.util.CrashGuard
+import com.saidjte.schoolradio.core.util.CrashReportLogic
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -81,6 +88,11 @@ fun SettingsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
         .collectAsStateWithLifecycle(initialValue = AppSettings())
     var schoolName by remember(settings.schoolName) { mutableStateOf(settings.schoolName) }
     var busy by remember { mutableStateOf(false) }
+
+    // v0.33.0: تقرير الأعطال — أي انهيار سابق موثق بـ CrashGuard يُعرض ويُشارك من هنا
+    val context = LocalContext.current
+    var crashLog by remember { mutableStateOf<String?>(CrashGuard.readLog()) }
+    var showCrashReport by remember { mutableStateOf(false) }
 
     // تصدير: المستخدم يختار المكان (SAF)
     val exportLauncher = rememberLauncherForActivityResult(
@@ -258,6 +270,73 @@ fun SettingsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                 }
 
                 HorizontalDivider()
+
+                // v0.33.0: تقرير الأعطال السابقة — مشاركته يجعل التشخيص دقيقاً بدل التخمين
+                crashLog?.let { log ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { showCrashReport = true },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("تقرير الأعطال السابقة")
+                            Text(
+                                CrashReportLogic.summaryLabel(log),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    HorizontalDivider()
+                }
+                if (showCrashReport) {
+                    AlertDialog(
+                        onDismissRequest = { showCrashReport = false },
+                        title = { Text("تقرير الأعطال السابقة") },
+                        text = {
+                            Text(
+                                CrashReportLogic.preview(crashLog),
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier
+                                    .heightIn(max = 340.dp)
+                                    .verticalScroll(rememberScrollState())
+                            )
+                        },
+                        confirmButton = {
+                            Button(onClick = {
+                                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(
+                                        android.content.Intent.EXTRA_SUBJECT,
+                                        "تقرير أعطال الإذاعة المدرسية v0.33.0"
+                                    )
+                                    putExtra(
+                                        android.content.Intent.EXTRA_TEXT,
+                                        CrashReportLogic.preview(crashLog, 8000)
+                                    )
+                                }
+                                runCatching {
+                                    context.startActivity(
+                                        android.content.Intent.createChooser(send, "مشاركة تقرير الأعطال")
+                                    )
+                                }
+                            }) { Text("مشاركة") }
+                        },
+                        dismissButton = {
+                            Row {
+                                OutlinedButton(onClick = {
+                                    CrashGuard.clear()
+                                    crashLog = null
+                                    showCrashReport = false
+                                    scope.launch { snackbar.showSnackbar("مُسح سجل الأعطال") }
+                                }) { Text("مسح السجل") }
+                                Spacer(Modifier.width(8.dp))
+                                OutlinedButton(onClick = { showCrashReport = false }) { Text("إغلاق") }
+                            }
+                        }
+                    )
+                }
 
                 // v0.18.0: قص الفراغ الأول من المقاطع (أو تجاهله)
                 Row(verticalAlignment = Alignment.CenterVertically) {
