@@ -105,7 +105,8 @@ fun PlaylistsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                     EmptyStateCard(
                         icon = AppIcons.QueueMusic,
                         title = "لا توجد قوائم بعد",
-                        body = "أنشئ قائمة (طابور الصباح، نشيد الأسبوع…) ثم أضف إليها مقاطع من المكتبة"
+                        body = "أنشئ قائمة (طابور الصباح، نشيد الأسبوع…) ثم أضف إليها مقاطع من المكتبة",
+                        animAsset = "radio_waves"
                     )
                 }
                 LazyColumn(

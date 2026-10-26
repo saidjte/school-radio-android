@@ -246,6 +246,7 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                     body = if (tracks.isEmpty())
                         "استورد ملفات MP3/WAV من الجهاز لتجهيز فقرات الإذاعة"
                     else "جرّب كلمة بحث مختلفة أو اختر تصنيفاً آخر",
+                    animAsset = if (tracks.isEmpty()) "radio_waves" else null,
                     ctaLabel = if (tracks.isEmpty()) "استيراد مقاطع" else null,
                     onCta = if (tracks.isEmpty()) {
                         { importLauncher.launch(arrayOf("audio/*")) }

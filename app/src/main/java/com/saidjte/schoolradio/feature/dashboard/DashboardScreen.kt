@@ -516,7 +516,8 @@ fun DashboardScreen(
                     title = "لا توجد فقرات مجدولة لليوم",
                     body = "أنشئ فقرات الصباح من تبويب الجدولة ليعمل النظام تلقائياً في مواعيدها",
                     ctaLabel = "الذهاب إلى الجدولة",
-                    onCta = onNavigateToSchedule
+                    onCta = onNavigateToSchedule,
+                    animAsset = "calendar_dots"
                 )
             }
         } else {

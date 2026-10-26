@@ -78,7 +78,8 @@ fun ScriptsScreen(
                     title = "لا سكربتات بعد",
                     body = "اكتب نص الإعلان أو التقديم هنا ليقرأه المذيع من شاشة الهاتف بخط كبير وتمرير تلقائي أثناء الإذاعة",
                     ctaLabel = "أضف سكربتاً جديداً",
-                    onCta = { showNewEditor = true }
+                    onCta = { showNewEditor = true },
+                    animAsset = "mic_waves"
                 )
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {

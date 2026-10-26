@@ -362,7 +362,8 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                         icon = AppIcons.Event,
                         title = if (schedules.isEmpty()) "ابدأ بجدول ثم أضف فقراته" else "لا فقرات بعد",
                         body = "اضغط «فقرة مجدولة» أدناه — إذا لم يوجد جدول سيُطلب منك اسمه أولاً،" +
-                            " ثم حدّد وقت الفقرة وأيامها ومحتواها (قائمة/مقطع/تسجيل) لتنطلق تلقائياً"
+                            " ثم حدّد وقت الفقرة وأيامها ومحتواها (قائمة/مقطع/تسجيل) لتنطلق تلقائياً",
+                        animAsset = "calendar_dots"
                     )
                 }
             }

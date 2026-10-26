@@ -46,6 +46,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,9 +75,14 @@ import com.saidjte.schoolradio.core.ui.GradientButton
 import com.saidjte.schoolradio.core.ui.ScreenHeader
 import com.saidjte.schoolradio.core.ui.StatusBadge
 import com.saidjte.schoolradio.core.ui.driftingGradient
+import com.saidjte.schoolradio.core.util.MicPermissionFlowLogic
 import com.saidjte.schoolradio.core.util.MixerLogic
 import com.saidjte.schoolradio.data.settings.AppSettings
 import com.saidjte.schoolradio.di.ServiceLocator
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.isGranted
+import com.google.accompanist.permissions.rememberPermissionState
+import com.google.accompanist.permissions.shouldShowRationale
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -93,7 +99,7 @@ import kotlin.math.roundToInt
  *
  * كل الإعدادات تُحفظ محلياً وتُسترجع عند تشغيل التطبيق.
  */
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalPermissionsApi::class)
 @Composable
 fun StudioScreen(
     snackbar: androidx.compose.material3.SnackbarHostState,
@@ -116,15 +122,16 @@ fun StudioScreen(
     // v0.16.0: عدّاد تطبيق المشاهد — يُبادل وحدة المزج برفع الكتم الجلسي عند كل مشهد
     var sceneTick by remember { mutableIntStateOf(0) }
 
-    val micPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        scope.launch {
-            if (granted) {
-                mic.start(route) { err -> err?.let { m -> scope.launch { snackbar.showSnackbar(m) } } }
-            } else {
-                snackbar.showSnackbar("بدون صلاحية الميكروفون لا يمكن البث المباشر")
-            }
+    // v0.30.0: صلاحيات حالة-محورة عبر Accompanist — بلا لانشر يدوي
+    val micPermissionState = rememberPermissionState(Manifest.permission.RECORD_AUDIO)
+    var micRequestedOnce by rememberSaveable { mutableStateOf(false) }
+    var pendingMicStart by rememberSaveable { mutableStateOf(false) }
+
+    // عند المنح بعد الطلب — أكمل بدء الميكروفون تلقائياً بنفس المسار المختار
+    LaunchedEffect(micPermissionState.status) {
+        if (micPermissionState.status.isGranted && pendingMicStart) {
+            pendingMicStart = false
+            mic.start(route) { err -> err?.let { m -> scope.launch { snackbar.showSnackbar(m) } } }
         }
     }
 
@@ -132,10 +139,28 @@ fun StudioScreen(
         when (micPhase) {
             MicPhase.LIVE, MicPhase.STARTING -> mic.stop()
             MicPhase.IDLE, MicPhase.STOPPING -> {
-                if (mic.hasPermission()) {
-                    mic.start(route) { err -> err?.let { m -> scope.launch { snackbar.showSnackbar(m) } } }
-                } else {
-                    micPermission.launch(Manifest.permission.RECORD_AUDIO)
+                // v0.30.0: تدفق صلاحية موحّد (Accompanist + MicPermissionFlowLogic)
+                val step = MicPermissionFlowLogic.decide(
+                    granted = micPermissionState.status.isGranted,
+                    shouldShowRationale = micPermissionState.status.shouldShowRationale,
+                    alreadyRequested = micRequestedOnce
+                )
+                when (step) {
+                    MicPermissionFlowLogic.Step.START ->
+                        mic.start(route) { err -> err?.let { m -> scope.launch { snackbar.showSnackbar(m) } } }
+                    MicPermissionFlowLogic.Step.REQUEST -> {
+                        micRequestedOnce = true
+                        pendingMicStart = true
+                        micPermissionState.launchPermissionRequest()
+                    }
+                    MicPermissionFlowLogic.Step.REQUEST_WITH_RATIONALE -> {
+                        scope.launch { snackbar.showSnackbar(MicPermissionFlowLogic.rationaleMessage(false)) }
+                        micRequestedOnce = true
+                        pendingMicStart = true
+                        micPermissionState.launchPermissionRequest()
+                    }
+                    MicPermissionFlowLogic.Step.OPEN_SETTINGS ->
+                        scope.launch { snackbar.showSnackbar(MicPermissionFlowLogic.rationaleMessage(true)) }
                 }
             }
         }

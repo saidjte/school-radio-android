@@ -268,7 +268,8 @@ fun RecordingsScreen(
             EmptyStateCard(
                 icon = AppIcons.LibraryMusic,
                 title = "لا توجد تسجيلات بعد",
-                body = "اضغط زر التسجيل في الصفحة الرئيسية أثناء البث المباشر، أو سجّل فقرة تحضيرية قبل وقت الإذاعة"
+                body = "اضغط زر التسجيل في الصفحة الرئيسية أثناء البث المباشر، أو سجّل فقرة تحضيرية قبل وقت الإذاعة",
+                animAsset = "mic_waves"
             )
         } else if (visible.isEmpty()) {
             EmptyStateCard(
