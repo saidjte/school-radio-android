@@ -1,5 +1,7 @@
 package com.saidjte.schoolradio.feature.settings
 
+import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -28,6 +30,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,15 +38,20 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.saidjte.schoolradio.BuildConfig
 import com.saidjte.schoolradio.audio.AudioEffects
 import com.saidjte.schoolradio.core.ui.AppIcons
 import com.saidjte.schoolradio.core.ui.EqualizerCard
+import com.saidjte.schoolradio.core.util.CrashGuard
+import com.saidjte.schoolradio.core.util.CrashReportLogic
 import com.saidjte.schoolradio.data.backup.BackupRepository
 import com.saidjte.schoolradio.data.settings.AppSettings
 import com.saidjte.schoolradio.di.ServiceLocator
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /** عنوان بطاقة إعداد بأيقونة حاوية */
@@ -331,6 +339,9 @@ fun SettingsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
             }
         }
 
+        // ===== v0.37.0: تشخيص الأعطال — كل بلاغ «ينغلق التطبيق» يصير أثراً مكتوباً قابلاً للمشاركة =====
+        CrashDiagnosticsCard(snackbar)
+
         // ===== الإصدار =====
         Card {
             Column(Modifier.padding(16.dp)) {
@@ -348,6 +359,89 @@ fun SettingsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                         snackbar.showSnackbar("فُحصت الفقرات: $missed فائتة — أُعيدت ضبط المنبهات")
                     }
                 }) { Text("فحص الفقرات الفائتة وإعادة ضبط المنبهات") }
+            }
+        }
+    }
+}
+
+/**
+ * v0.37.0 — بطاقة تشخيص الأعطال:
+ * أي عطل موثق محلياً منذ v0.15.0 (CrashGuard) يُعرض هنا بعدد وسياق وزمن آخر عطل،
+ * مع مشاركة التقرير كاملاً (نص + ملف عبر FileProvider) في رسالة/واتساب/بريد —
+ * ليتحول كل بلاغ «ينغلق التطبيق» إلى أثر مكتوب يُشخَّص بدقة لا تخميناً.
+ */
+@Composable
+private fun CrashDiagnosticsCard(snackbar: androidx.compose.material3.SnackbarHostState) {
+    val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    var log by remember { mutableStateOf<String?>(null) }
+
+    fun reload() {
+        scope.launch(Dispatchers.IO) {
+            val text = CrashGuard.readLog()
+            kotlinx.coroutines.withContext(Dispatchers.Main) { log = text }
+        }
+    }
+    LaunchedEffect(Unit) { reload() }
+
+    Card {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            CardTitle(AppIcons.Tune, "تشخيص الأعطال")
+            Text(
+                log?.let { CrashReportLogic.summary(it, System.currentTimeMillis()) }
+                    ?: CrashReportLogic.NO_CRASHES_MESSAGE,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (log == null) MaterialTheme.colorScheme.onSurfaceVariant
+                else MaterialTheme.colorScheme.error
+            )
+            log?.let { text ->
+                CrashReportLogic.previewLines(text, maxEntries = 3).forEach { line ->
+                    Text(
+                        line,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        val text = log
+                        if (text == null) {
+                            scope.launch { snackbar.showSnackbar(CrashReportLogic.NO_CRASHES_MESSAGE) }
+                        } else runCatching {
+                            val send = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, CrashReportLogic.shareText(text))
+                                CrashGuard.logFile()?.let { f ->
+                                    putExtra(
+                                        Intent.EXTRA_STREAM,
+                                        FileProvider.getUriForFile(
+                                            context, "${context.packageName}.fileprovider", f
+                                        )
+                                    )
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                            }
+                            context.startActivity(Intent.createChooser(send, "مشاركة تقرير الأعطال"))
+                        }.onFailure {
+                            scope.launch { snackbar.showSnackbar("تعذر فتح لوحة المشاركة: ${it.message}") }
+                        }
+                    },
+                    enabled = log != null
+                ) { Text("مشاركة التقرير") }
+                OutlinedButton(
+                    onClick = {
+                        scope.launch(Dispatchers.IO) {
+                            CrashGuard.clearLog()
+                            kotlinx.coroutines.withContext(Dispatchers.Main) { log = null }
+                        }
+                    },
+                    enabled = log != null
+                ) { Text("مسح السجل") }
             }
         }
     }

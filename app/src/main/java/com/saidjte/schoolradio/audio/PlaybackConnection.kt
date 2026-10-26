@@ -63,7 +63,10 @@ data class PlaybackUiState(
  */
 class PlaybackConnection(private val context: Context) {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    // v0.37.0: معالج استثناءات إلزامي — حلقة الاستطلاع (كل 500ms) وأي رد نداء
+    // لم يكن يجد معالجاً فأي رمي كان يقتل العملية عبر المعالج الافتراضي
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main +
+        com.saidjte.schoolradio.core.util.CrashGuard.coroutineHandler)
 
     private val _state = MutableStateFlow(PlaybackUiState())
     val state: StateFlow<PlaybackUiState> = _state.asStateFlow()
@@ -142,6 +145,13 @@ class PlaybackConnection(private val context: Context) {
     }
 
     private fun pushState() {
+        // v0.37.0: قراءة حالة المتحكم لا تقتل العملية — فشل القراءة يحتفظ بآخر حالة سليمة
+        runCatching { pushStateUnsafe() }.onFailure {
+            com.saidjte.schoolradio.core.util.CrashGuard.record("playback.pushState", it)
+        }
+    }
+
+    private fun pushStateUnsafe() {
         val c = controller ?: return
         // v0.14.0: حساب المؤقت التنازلي — متبقي المقطع + متبقي القائمة إن كانت المدد معروفة
         val pos = c.currentPosition.coerceAtLeast(0)

@@ -56,13 +56,18 @@ class RecordingsPlayer(context: Context) {
 
     private val poller = object : Runnable {
         override fun run() {
-            val p = player
-            _state.value = _state.value.copy(
-                positionMs = p.currentPosition.coerceAtLeast(0),
-                durationMs = if (p.duration > 0) p.duration else _state.value.durationMs,
-                isPlaying = p.isPlaying
-            )
-            if (p.isPlaying) handler.postDelayed(this, 250)
+            try {
+                val p = player
+                _state.value = _state.value.copy(
+                    positionMs = p.currentPosition.coerceAtLeast(0),
+                    durationMs = if (p.duration > 0) p.duration else _state.value.durationMs,
+                    isPlaying = p.isPlaying
+                )
+                if (p.isPlaying) handler.postDelayed(this, 250)
+            } catch (t: Throwable) {
+                // v0.37.0: حلقة التحديث لا تقتل العملية أبداً — توثيق وهدوء
+                CrashGuard.record("recordings.poller", t)
+            }
         }
     }
 
@@ -78,25 +83,33 @@ class RecordingsPlayer(context: Context) {
 
     init {
         // عند انتهاء المقطع طبيعياً: حدّث الحالة وأبلغ الحَكَم (استئناف القائمة الرئيسية)
+        // v0.37.0: أي استثناء في ردود النداء يهرب عبر الخيط الداخلي للمشغّل ويقتل العملية
+        // (كانت الحماية في toggle تُغطي البدء فقط) — لذلك كل رد نداء محاط بدرع مستقل.
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == Player.STATE_ENDED) {
-                    _state.value = _state.value.copy(isPlaying = false)
-                    onEnded?.invoke()
-                }
+                runCatching {
+                    if (playbackState == Player.STATE_ENDED) {
+                        _state.value = _state.value.copy(isPlaying = false)
+                        onEnded?.invoke()
+                    }
+                }.onFailure { CrashGuard.record("recordings.onState", it) }
             }
 
             // v0.10.0: لحظة جاهزية المقطع — ثبّت المدة الفعلية (قد تختلف عن القيمة المسجلة)
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                _state.value = _state.value.copy(positionMs = 0)
+                runCatching {
+                    _state.value = _state.value.copy(positionMs = 0)
+                }.onFailure { CrashGuard.record("recordings.onTransition", it) }
             }
 
             // v0.36.0: فشل التشغيل غير المتزامن — توثيق + رسالة عربية بدل صمت مريب
             override fun onPlayerError(error: PlaybackException) {
-                CrashGuard.record("recordings.playback", error)
-                handler.removeCallbacks(poller)
-                _state.value = _state.value.copy(isPlaying = false)
-                _errors.tryEmit(PlaybackGuardLogic.decodeFailureMessage())
+                runCatching {
+                    CrashGuard.record("recordings.playback", error)
+                    handler.removeCallbacks(poller)
+                    _state.value = _state.value.copy(isPlaying = false)
+                    _errors.tryEmit(PlaybackGuardLogic.decodeFailureMessage())
+                }.onFailure { CrashGuard.record("recordings.onError", it) }
             }
         })
     }

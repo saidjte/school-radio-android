@@ -11,6 +11,8 @@ import com.saidjte.schoolradio.audio.PlaybackCoordinator
 import com.saidjte.schoolradio.audio.RecordingManager
 import com.saidjte.schoolradio.audio.RecordingsPlayer
 import com.saidjte.schoolradio.core.util.BreaksLogic
+import com.saidjte.schoolradio.core.util.CrashGuard
+import com.saidjte.schoolradio.core.util.PlaybackGuardLogic
 import com.saidjte.schoolradio.data.backup.BackupRepository
 import com.saidjte.schoolradio.data.local.AppDatabase
 import com.saidjte.schoolradio.data.local.entity.RadioScheduleEntity
@@ -203,11 +205,25 @@ object ServiceLocator {
      * المنفذ موصول كسولاً لتفادي أي حلقة تهيئة.
      */
     val coordinator: PlaybackCoordinator by lazy {
+        // v0.37.0: كل نداءات المنفذ محمية — هذه الواجهة تعمل قبل حارس toggle
+        // (فشل متحكم الوسائط/خدمة مقتولة = رسالة وهدوء لا انهيار)
         PlaybackCoordinator(object : PlaybackCoordinator.PlayerPort {
-            override fun isMainPlaying(): Boolean = playback.state.value.isPlaying
-            override fun pauseMain() = playback.pause()
-            override fun resumeMain() = playback.play()
-            override fun stopPreview() = recordingsPlayer.stopAll()
+            override fun isMainPlaying(): Boolean =
+                runCatching { playback.state.value.isPlaying }.getOrElse {
+                    CrashGuard.record("coordinator.isMainPlaying", it); false
+                }
+            override fun pauseMain() {
+                runCatching { playback.pause() }
+                    .onFailure { CrashGuard.record("coordinator.pauseMain", it) }
+            }
+            override fun resumeMain() {
+                runCatching { playback.play() }
+                    .onFailure { CrashGuard.record("coordinator.resumeMain", it) }
+            }
+            override fun stopPreview() {
+                runCatching { recordingsPlayer.stopAll() }
+                    .onFailure { CrashGuard.record("coordinator.stopPreview", it) }
+            }
             override fun isMicLive(): Boolean = _micLive.value
         })
     }
@@ -370,17 +386,25 @@ object ServiceLocator {
      * أو null عند النجاح.
      */
     fun previewToggle(recording: com.saidjte.schoolradio.data.local.entity.RecordingEntity): String? {
-        val currentId = recordingsPlayer.state.value.recordingId
-        val sameRecording = currentId == recording.id
-        if (sameRecording) {
-            // تبديل تشغيل/إيقاف لنفس التسجيل — لا قرار عزلة جديد
-            // v0.10.0: تمرير رسالة فشل (مثل ملف مفقود) إلى الواجهة بدل الصمت
-            return recordingsPlayer.toggle(recording)
-        }
-        return when (coordinator.requestPreviewStart()) {
-            PlaybackCoordinator.PreviewDecision.OK -> recordingsPlayer.toggle(recording)
-            PlaybackCoordinator.PreviewDecision.BLOCKED_LIVE ->
-                "أوقف البث المباشر أولاً للاستماع إلى التسجيل — لا يجوز خلطهما"
+        // v0.37.0: البوابة كلها داخل درع — التهيئة الكسولة للمشغل وقرارات الحَكَم
+        // وأي مفاجأة أخرى تصبح رسالة عربية موثقة بدل «ينغلق التطبيق»
+        return try {
+            val currentId = recordingsPlayer.state.value.recordingId
+            val sameRecording = currentId == recording.id
+            if (sameRecording) {
+                // تبديل تشغيل/إيقاف لنفس التسجيل — لا قرار عزلة جديد
+                // v0.10.0: تمرير رسالة فشل (مثل ملف مفقود) إلى الواجهة بدل الصمت
+                recordingsPlayer.toggle(recording)
+            } else {
+                when (coordinator.requestPreviewStart()) {
+                    PlaybackCoordinator.PreviewDecision.OK -> recordingsPlayer.toggle(recording)
+                    PlaybackCoordinator.PreviewDecision.BLOCKED_LIVE ->
+                        "أوقف البث المباشر أولاً للاستماع إلى التسجيل — لا يجوز خلطهما"
+                }
+            }
+        } catch (t: Throwable) {
+            CrashGuard.record("preview.toggle", t)
+            PlaybackGuardLogic.startFailureMessage()
         }
     }
 

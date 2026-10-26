@@ -20,7 +20,11 @@ import java.io.StringWriter
  */
 object CrashGuard {
 
+    /** v0.37.0: السجل في مجلد logs/ — قابل للمشاركة عبر FileProvider بلا كشف بقية الملفات */
+    private const val LOGS_DIR = "logs"
     private const val FILE_NAME = "crash_log.txt"
+    /** الموضع القديم قبل v0.37.0 — يُقرأ تراجعياً كي لا يفقد أي عطل موثق سابق */
+    private const val LEGACY_FILE_NAME = "crash_log.txt"
     private const val MAX_LOG_BYTES = 64 * 1024
 
     private val ioExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
@@ -70,7 +74,8 @@ object CrashGuard {
     private fun append(context: String, throwable: Throwable) {
         val dir = logDir ?: return
         try {
-            val f = File(dir, FILE_NAME)
+            val logsDir = File(dir, LOGS_DIR).apply { mkdirs() }
+            val f = File(logsDir, FILE_NAME)
             if (f.length() > MAX_LOG_BYTES) f.delete()
             val sw = StringWriter()
             throwable.printStackTrace(PrintWriter(sw))
@@ -83,10 +88,29 @@ object CrashGuard {
         }
     }
 
-    /** قراءة السجل (للاختبار أو عرض مستقبلي في الإعدادات) */
+    /** ملف السجل الحالي (مجلد logs) — للمشاركة عبر FileProvider */
+    fun logFile(): File? {
+        val dir = logDir ?: return null
+        val f = File(File(dir, LOGS_DIR), FILE_NAME)
+        return if (f.exists()) f else null
+    }
+
+    /** قراءة السجل (البطاقة في الإعدادات) — مع تراجع لملف الموضع القديم قبل v0.37.0 */
     fun readLog(): String? {
         val dir = logDir ?: return null
-        val f = File(dir, FILE_NAME)
-        return if (f.exists()) f.readText() else null
+        val current = File(File(dir, LOGS_DIR), FILE_NAME)
+        if (current.exists()) return runCatching { current.readText() }.getOrNull()
+        val legacy = File(dir, LEGACY_FILE_NAME)
+        if (legacy.exists()) return runCatching { legacy.readText() }.getOrNull()
+        return null
+    }
+
+    /** v0.37.0: مسح السجل من الإعدادات بعد معالجة العطل أو مشاركته */
+    fun clearLog() {
+        val dir = logDir ?: return
+        runCatching {
+            File(File(dir, LOGS_DIR), FILE_NAME).delete()
+            File(dir, LEGACY_FILE_NAME).delete()
+        }
     }
 }

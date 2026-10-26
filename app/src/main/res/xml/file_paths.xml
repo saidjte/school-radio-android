@@ -11,4 +11,8 @@
     <files-path
         name="internal_recordings"
         path="recordings/" />
+    <!-- v0.37.0: تقرير الأعطال — مشاركة crash_log.txt عبر الإعدادات -->
+    <files-path
+        name="app_logs"
+        path="logs/" />
 </paths>
