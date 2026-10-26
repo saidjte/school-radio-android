@@ -63,6 +63,7 @@ import com.saidjte.schoolradio.core.theme.SchoolRadioTheme
 import com.saidjte.schoolradio.core.ui.AppIcons
 import com.saidjte.schoolradio.core.ui.CrystalBackground
 import com.saidjte.schoolradio.core.ui.GlassCard
+import com.saidjte.schoolradio.core.ui.LocalPerformanceMode
 import com.saidjte.schoolradio.core.ui.OrientationLogic
 import com.saidjte.schoolradio.data.settings.AppSettings
 import com.saidjte.schoolradio.di.ServiceLocator
@@ -99,9 +100,14 @@ class MainActivity : ComponentActivity() {
             // اتجاه عربي صريح RTL على مستوى الجذر
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                 SchoolRadioTheme(themeMode = themeMode()) {
-                    // v0.28.0: خلفية الأورورا الكريستالية — تطفو فوقها كل الشاشات
-                    CrystalBackground {
-                        AppScaffold()
+                    // v0.31.0: وضع الأداء يقرأ من الإعدادات ويُقدَّم لكل الزخارف
+                    val perf = performanceMode()
+                    CompositionLocalProvider(LocalPerformanceMode provides perf) {
+                        // v0.28.0: خلفية الأورورا الكريستالية — تطفو فوقها كل الشاشات
+                        // v0.31.0: في وضع الأداء غسلة واحدة هادئة بلا هالات شعاعية
+                        CrystalBackground(crystal = !perf) {
+                            AppScaffold()
+                        }
                     }
                 }
             }
@@ -113,6 +119,13 @@ class MainActivity : ComponentActivity() {
         val settings by ServiceLocator.settings.settings
             .collectAsStateWithLifecycle(initialValue = AppSettings())
         return settings.themeMode
+    }
+
+    @Composable
+    private fun performanceMode(): Boolean {
+        val settings by ServiceLocator.settings.settings
+            .collectAsStateWithLifecycle(initialValue = AppSettings())
+        return settings.performanceMode
     }
 }
 

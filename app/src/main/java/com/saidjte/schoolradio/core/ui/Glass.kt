@@ -50,6 +50,8 @@ import com.saidjte.schoolradio.core.theme.gradients
 @Composable
 fun CrystalBackground(
     modifier: Modifier = Modifier,
+    /** v0.31.0: false = وضع الأداء — غسلة واحدة هادئة بلا هالات شعاعية */
+    crystal: Boolean = true,
     content: @Composable BoxScope.() -> Unit
 ) {
     val g = MaterialTheme.gradients
@@ -61,15 +63,18 @@ fun CrystalBackground(
                 .background(Brush.verticalGradient(g.bgWash))
         )
         // ثلاث هالات شعاعية شفافة — العمق الكريستالي بلا ضباب حقيقي
-        Box(
-            Modifier
-                .fillMaxSize()
-                .drawBehind {
-                    auroraBlob(g.aurora[0], cx = 0.88f, cy = 0.06f, radiusFactor = 0.85f)
-                    auroraBlob(g.aurora[1], cx = 0.06f, cy = 0.44f, radiusFactor = 0.80f)
-                    auroraBlob(g.aurora[2], cx = 0.72f, cy = 1.02f, radiusFactor = 0.95f)
-                }
-        )
+        // v0.31.0: في وضع الأداء تُحذف تماماً — ثلاثة رسم شاشة-كاملة تُوفَّر لكل إطار
+        if (crystal) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .drawBehind {
+                        auroraBlob(g.aurora[0], cx = 0.88f, cy = 0.06f, radiusFactor = 0.85f)
+                        auroraBlob(g.aurora[1], cx = 0.06f, cy = 0.44f, radiusFactor = 0.80f)
+                        auroraBlob(g.aurora[2], cx = 0.72f, cy = 1.02f, radiusFactor = 0.95f)
+                    }
+            )
+        }
         content()
     }
 }
@@ -128,6 +133,32 @@ fun GlassCard(
     content: @Composable () -> Unit
 ) {
     val glass = MaterialTheme.glass
+    // v0.31.0: وضع الأداء — سطح مصمت بلا تدرجات ولا ظلال: كلفة رسم أدنى بلا فقدان أي وظيفة
+    val perf = LocalPerformanceMode.current
+    if (perf) {
+        val flatBorder = borderColor?.let { BorderStroke(1.dp, it) }
+        if (onClick != null) {
+            Surface(
+                onClick = onClick,
+                modifier = modifier,
+                shape = shape,
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                border = flatBorder,
+                shadowElevation = 0.dp
+            ) { content() }
+        } else {
+            Surface(
+                modifier = modifier,
+                shape = shape,
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                border = flatBorder,
+                shadowElevation = 0.dp
+            ) { content() }
+        }
+        return
+    }
     val fillBrush = Brush.linearGradient(glass.fill)
     val border = BorderStroke(1.dp, borderColor ?: glass.border)
     val fillModifier = Modifier.glassFill(fillBrush, glass.sheen, shape, tint)
@@ -173,13 +204,15 @@ fun GlassButton(
 ) {
     val glass = MaterialTheme.glass
     val shape = RoundedCornerShape(50)
+    // v0.31.0: وضع الأداء — الزر الثانوي مصمت بلا تدرج ولا ظل
+    val perf = LocalPerformanceMode.current
     Surface(
         onClick = onClick,
         enabled = enabled,
         shape = shape,
         color = Color.Transparent,
         border = if (accent) null else BorderStroke(1.dp, glass.border),
-        shadowElevation = if (enabled) 4.dp else 0.dp,
+        shadowElevation = if (enabled && !perf) 4.dp else 0.dp,
         modifier = modifier
     ) {
         val inner: Modifier = if (accent) {
@@ -191,6 +224,12 @@ fun GlassButton(
                         MaterialTheme.colorScheme.surfaceVariant
                     )
                 ),
+                shape
+            )
+        } else if (perf) {
+            Modifier.background(
+                if (enabled) MaterialTheme.colorScheme.surfaceContainerHigh
+                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
                 shape
             )
         } else {

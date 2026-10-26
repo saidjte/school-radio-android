@@ -77,6 +77,8 @@ import com.saidjte.schoolradio.core.ui.StatusBadge
 import com.saidjte.schoolradio.core.ui.driftingGradient
 import com.saidjte.schoolradio.core.util.MicPermissionFlowLogic
 import com.saidjte.schoolradio.core.util.MixerLogic
+import com.saidjte.schoolradio.core.util.WaveformLogic
+import kotlinx.coroutines.delay
 import com.saidjte.schoolradio.data.settings.AppSettings
 import com.saidjte.schoolradio.di.ServiceLocator
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
@@ -111,8 +113,8 @@ fun StudioScreen(
 
     val micPhase by mic.phase.collectAsStateWithLifecycle()
     val micGain by mic.micGain.collectAsStateWithLifecycle()
-    val micLevelRaw by locator.micLevel.collectAsStateWithLifecycle()
-    val mediaLevelRaw by locator.mediaLevel.collectAsStateWithLifecycle()
+    // v0.31.0: المستويات الحية لم تعد تُجمَع في رأس الشاشة — مزوّدات تُقرأ وقت العينة
+    // داخل أشرطة VU نفسها، وإعادة تركيب شاشة الاستوديو عند كل انبعاث صارت صفراً
     val playbackState by locator.playback.state.collectAsStateWithLifecycle()
     val fx by AudioEffects.state.collectAsStateWithLifecycle()
     val settings by locator.settings.settings
@@ -202,9 +204,9 @@ fun StudioScreen(
         item {
             MixerConsole(
                 micFader = micGain,
-                micLevel = micLevelRaw,
+                micLevelProvider = { locator.micLevel.value },
                 musicFader = settings.defaultVolume,
-                mediaLevel = mediaLevelRaw,
+                mediaLevelProvider = { locator.mediaLevel.value },
                 breaksFader = settings.cartVolume,
                 previewFader = settings.previewVolume,
                 masterFader = settings.masterVolume,
@@ -512,9 +514,11 @@ private fun ProcessingSwitch(
 @Composable
 private fun MixerConsole(
     micFader: Float,
-    micLevel: Float,
+    /** v0.31.0: مزوّد مستوى الميكروفون — يُقرأ وقت العينة داخل شريط VU */
+    micLevelProvider: () -> Float,
     musicFader: Float,
-    mediaLevel: Float,
+    /** v0.31.0: مزوّد مستوى الموسيقى — يُقرأ وقت العينة داخل شريط VU */
+    mediaLevelProvider: () -> Float,
     breaksFader: Float,
     previewFader: Float,
     masterFader: Float,
@@ -617,7 +621,8 @@ private fun MixerConsole(
                 step = 0.05f,
                 muted = micMuted,
                 accent = st.live,
-                vu = if (micMuted) 0f else micLevel,
+                vu = null,
+                vuProvider = { if (micMuted) 0f else micLevelProvider() },
                 onValue = { v ->
                     micLocal = MixerLogic.clampFader(MixerLogic.Channel.MIC, v)
                     onMicVolume(if (micMuted) 0f else micLocal)
@@ -643,7 +648,8 @@ private fun MixerConsole(
                 step = 0.02f,
                 muted = musicMuted,
                 accent = MaterialTheme.colorScheme.primary,
-                vu = if (musicMuted) 0f else mediaLevel,
+                vu = null,
+                vuProvider = { if (musicMuted) 0f else mediaLevelProvider() },
                 onValue = { v ->
                     musicLocal = MixerLogic.clampFader(MixerLogic.Channel.MUSIC, v)
                     onMusicVolume(musicEffective(musicLocal, musicMuted))
@@ -837,6 +843,8 @@ private fun MixerChannelRow(
     muted: Boolean,
     accent: Color,
     vu: Float?,
+    /** v0.31.0: مصدر مستوى حي يُقرأ وقت العينة — يلغي إعادة تركيب الصف عند كل انبعاث */
+    vuProvider: (() -> Float)? = null,
     onValue: (Float) -> Unit,
     onFinished: () -> Unit,
     onStep: (Float) -> Unit,
@@ -900,9 +908,11 @@ private fun MixerChannelRow(
             ) { onStep((value + step).coerceIn(range.start, range.endInclusive)) }
         }
         // شريط مستوى رفيع (الميكروفون والموسيقى فقط)
-        if (vu != null) {
+        // v0.31.0: مزوّد المستوى يُقرأ وقت العينة داخل الشريط — بلا إعادة تركيب الصف
+        if (vu != null || vuProvider != null) {
             LinearVu(
-                level = vu,
+                level = vu ?: 0f,
+                levelProvider = vuProvider,
                 modifier = Modifier.fillMaxWidth().height(5.dp)
             )
         }
@@ -962,24 +972,35 @@ private fun StepButton(
 /**
  * شريط مستوى أفقي رفيع — تعبئة بتدرج حراري (أخضر ← كهرماني ← أحمر)
  * تنمو من جهة البداية (يمين الشاشة في العربية) مع تنعيم بسيط.
+ * v0.31.0: معيّنة داخلية 45ms تقرأ المزوّد مباشرة — تحديثات المستوى تُحرّك
+ * الرسم وحده (smooth داخل State يُقرأ في طوري الرسم) بلا أي إعادة تركيب.
  */
 @Composable
 private fun LinearVu(
     level: Float,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** v0.31.0: مصدر المستوى المباشر — يُقرأ وقت العينة لا في التركيب */
+    levelProvider: (() -> Float)? = null
 ) {
     val track = MaterialTheme.colorScheme.surfaceVariant
-    val smooth by animateFloatAsState(
-        targetValue = level.coerceIn(0f, 1f),
-        animationSpec = tween(80),
-        label = "linvu"
-    )
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val currentLevel by rememberUpdatedState(level)
+    val providerRef by rememberUpdatedState(levelProvider)
+    val smooth = remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) {
+        var prev = 0f
+        while (true) {
+            val target = (providerRef?.invoke() ?: currentLevel).coerceIn(0f, 1f)
+            prev = WaveformLogic.smooth(prev, target)
+            smooth.floatValue = prev
+            delay(45)
+        }
+    }
     Canvas(modifier) {
         val w = size.width
         val h = size.height
         drawRoundRect(color = track, cornerRadius = CornerRadius(h / 2))
-        val lvl = smooth
+        val lvl = smooth.floatValue
         if (lvl > 0.005f) {
             val green = Color(0xFF2E9E6B)
             val amber = Color(0xFFE8B33C)

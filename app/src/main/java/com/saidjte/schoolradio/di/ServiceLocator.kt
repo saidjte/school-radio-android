@@ -1,6 +1,8 @@
 package com.saidjte.schoolradio.di
 
+import android.app.ActivityManager
 import android.content.Context
+import android.os.Build
 import com.saidjte.schoolradio.audio.AudioEffects
 import com.saidjte.schoolradio.audio.AudioRoutingManager
 import com.saidjte.schoolradio.audio.CartPlayer
@@ -603,6 +605,27 @@ object ServiceLocator {
                     trimSilenceEnabled.value = s.trimSilence
                     // v0.29.0: لقطة حية لتفضيل Opus HD
                     recordingHdPreferred.value = s.recordingHd
+                }
+            }
+            // v0.31.0: قرار وضع الأداء الأول — تلقائي حسب قوة الجهاز مرة واحدة فقط،
+            // ثم يبقى اختيار المستخدم حرّاً من الإعدادات (لا يُعاد الحسم أبداً)
+            appScope.launch {
+                runCatching {
+                    val s = settings.settings.first()
+                    if (!s.performanceDecided) {
+                        val am = appContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+                        val memInfo = ActivityManager.MemoryInfo()
+                        am.getMemoryInfo(memInfo)
+                        val memMb = com.saidjte.schoolradio.core.util.PerformanceModeLogic
+                            .bytesToMb(memInfo.totalMem)
+                        val auto = com.saidjte.schoolradio.core.util.PerformanceModeLogic.autoDefault(
+                            isLowRamDevice = am.isLowRamDevice,
+                            totalMemMb = memMb,
+                            apiLevel = Build.VERSION.SDK_INT
+                        )
+                        settings.setPerformanceMode(auto)
+                        settings.setPerformanceDecided(true)
+                    }
                 }
             }
             initialized = true

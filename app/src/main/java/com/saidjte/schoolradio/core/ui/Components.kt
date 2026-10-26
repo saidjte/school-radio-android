@@ -129,7 +129,8 @@ fun EmptyStateCard(
             Modifier.padding(30.dp).fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            if (animAsset != null) {
+            // v0.31.0: حركة Lottie فقط خارج وضع الأداء — وضع الأداء يكفي بالأيقونة الثابتة
+            if (animAsset != null && !LocalPerformanceMode.current) {
                 // v0.30.0: حركة Lottie محلية — تختفي بلطافة لو فشل الملف (لا استثناءات)
                 val composition by rememberLottieComposition(
                     LottieCompositionSpec.Asset("lottie/$animAsset.json")

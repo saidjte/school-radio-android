@@ -53,7 +53,10 @@ data class AppSettings(
     // ===== v0.18.0: قص الفراغ الأول من المقاطع (أو تجاهله) =====
     val trimSilence: Boolean = true,       // true = قفز فوق الصمت الأول، false = تشغيل الملف كما هو
     // ===== v0.29.0: ترميز تسجيلات الميكروفون =====
-    val recordingHd: Boolean = true        // true = Opus HD ‎.ogg (أندرويد 10+)، false = AAC ‎.m4a دائماً
+    val recordingHd: Boolean = true,       // true = Opus HD ‎.ogg (أندرويد 10+)، false = AAC ‎.m4a دائماً
+    // ===== v0.31.0: وضع الأداء — واجهة مبسطة بلا زخارف للأجهزة الضعيفة =====
+    val performanceMode: Boolean = false,  // true = ألوان مصمتة بلا هالات/حركات زخرفية
+    val performanceDecided: Boolean = false // هل حُسم الافتراضي التلقائي مرة واحدة؟
 )
 
 /**
@@ -98,6 +101,9 @@ class SettingsStore(private val context: Context) {
         val TRIM_SILENCE = booleanPreferencesKey("trim_silence")
         // v0.29.0: ترميز تسجيلات الميكروفون (Opus HD / AAC)
         val RECORDING_HD = booleanPreferencesKey("recording_hd")
+        // v0.31.0: وضع الأداء
+        val PERFORMANCE_MODE = booleanPreferencesKey("performance_mode")
+        val PERFORMANCE_DECIDED = booleanPreferencesKey("performance_decided")
     }
 
     /** معرف المستخدم الحالي (لتوليفه مع جدول users في SessionRepository) */
@@ -134,7 +140,9 @@ class SettingsStore(private val context: Context) {
             prompterMirror = p[Keys.PROMPTER_MIRROR] ?: false,
             prompterGuide = p[Keys.PROMPTER_GUIDE] ?: true,
             trimSilence = p[Keys.TRIM_SILENCE] ?: true,
-            recordingHd = p[Keys.RECORDING_HD] ?: true
+            recordingHd = p[Keys.RECORDING_HD] ?: true,
+            performanceMode = p[Keys.PERFORMANCE_MODE] ?: false,
+            performanceDecided = p[Keys.PERFORMANCE_DECIDED] ?: false
         )
     }
 
@@ -188,6 +196,11 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit { it[Keys.PROMPTER_FONT] = v.coerceIn(18f, 64f) }
 
     suspend fun setPrompterMirror(v: Boolean) = context.dataStore.edit { it[Keys.PROMPTER_MIRROR] = v }
+
+    // ===== v0.31.0: وضع الأداء =====
+    suspend fun setPerformanceMode(v: Boolean) = context.dataStore.edit { it[Keys.PERFORMANCE_MODE] = v }
+
+    suspend fun setPerformanceDecided(v: Boolean) = context.dataStore.edit { it[Keys.PERFORMANCE_DECIDED] = v }
 
     suspend fun setPrompterGuide(v: Boolean) = context.dataStore.edit { it[Keys.PROMPTER_GUIDE] = v }
 

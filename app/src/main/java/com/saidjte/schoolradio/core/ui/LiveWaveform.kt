@@ -51,13 +51,21 @@ fun LiveWaveform(
     /** لون خط الوسط الخامل */
     trackColor: Color = Color.White.copy(alpha = 0.14f),
     /** يُخفي الأعمدة ويكفي بالخط الأوسط — للاستعمال في المساحات الضيقة */
-    showBars: Boolean = true
+    showBars: Boolean = true,
+    /**
+     * v0.31.0: مصدر المستوى المباشر — يُقرأ وقت أخذ العينة لا في التركيب.
+     * تمريره يلغي إعادة تركيب هذه الموجة (ومن يستدعيها) عند كل انبعاث مستوى:
+     * المعيّنة الداخلية (45ms) تقرأ القيمة الأحدث مباشرة من التدفق،
+     * وتحديثات المستوى تُحرّك الرسم وحده — لا إعادة تركيب إطلاقاً.
+     */
+    levelProvider: (() -> Float)? = null
 ) {
     // النافذة المنزلقة — أحدث قيمة في النهاية
     val history = remember { mutableStateListOf<Float>() }
     // القيمة المنعمة الحالية — تُعرض ولو توقف أخذ العينات
     val display = remember { mutableFloatStateOf(0f) }
     val currentLevel by rememberUpdatedState(level)
+    val providerRef by rememberUpdatedState(levelProvider)
     val bars = WaveformLogic.HISTORY_BARS
 
     // مُعيّنة بإيقاع ثابت — مستقلة عن وتيرة التحديثات الواردة (وميض 10ms مكتوم)
@@ -69,7 +77,8 @@ fun LiveWaveform(
         }
         var previous = 0f
         while (true) {
-            val target = WaveformLogic.normalize(currentLevel)
+            // v0.31.0: القراءة وقت العينة من المزوّد إن وُجد — بلمس شجرة التركيب
+            val target = WaveformLogic.normalize(providerRef?.invoke() ?: currentLevel)
             val smoothed = WaveformLogic.smooth(previous, target)
             previous = smoothed
             display.floatValue = smoothed

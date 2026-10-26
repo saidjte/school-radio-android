@@ -54,7 +54,13 @@ fun BigVuMeter(
     modifier: Modifier = Modifier,
     onDark: Color = Color.White,
     /** لون المنطقة السفلية (الخضراء) — زمردي شاشة العرض افتراضياً */
-    lowColor: Color = Color(0xFF5CDAC4)
+    lowColor: Color = Color(0xFF5CDAC4),
+    /**
+     * v0.31.0: مزوّدات المستوى المباشر — تُقرأ وقت العينة داخل عمود VU نفسه،
+     * فلا تُعاد شاشة العرض كاملة عند كل انبعاث مستوى (25Hz سابقاً).
+     */
+    mediaLevelProvider: (() -> Float)? = null,
+    micLevelProvider: (() -> Float)? = null
 ) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         VuBarColumn(
@@ -63,6 +69,7 @@ fun BigVuMeter(
             active = mediaActive,
             lowColor = lowColor,
             onDark = onDark,
+            levelProvider = mediaLevelProvider,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
@@ -74,6 +81,7 @@ fun BigVuMeter(
             active = micActive,
             lowColor = lowColor,
             onDark = onDark,
+            levelProvider = micLevelProvider,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
@@ -89,10 +97,13 @@ private fun VuBarColumn(
     active: Boolean,
     lowColor: Color,
     onDark: Color,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** v0.31.0: مصدر المستوى المباشر — يُقرأ وقت العينة لا في التركيب */
+    levelProvider: (() -> Float)? = null
 ) {
     val segs = OnAirDisplayLogic.VU_SEGMENTS
     val currentLevel by rememberUpdatedState(level)
+    val providerRef by rememberUpdatedState(levelProvider)
     val smooth = remember { mutableFloatStateOf(0f) }
     val peak = remember { mutableFloatStateOf(0f) }
 
@@ -105,7 +116,8 @@ private fun VuBarColumn(
         }
         var prev = 0f
         while (true) {
-            val target = WaveformLogic.normalize(currentLevel)
+            // v0.31.0: القراءة وقت العينة من المزوّد إن وُجد — بلمس شجرة التركيب
+            val target = WaveformLogic.normalize(providerRef?.invoke() ?: currentLevel)
             val smoothed = WaveformLogic.smooth(prev, target)
             prev = smoothed
             smooth.floatValue = smoothed

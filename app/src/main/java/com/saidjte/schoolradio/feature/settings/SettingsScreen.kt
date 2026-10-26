@@ -41,6 +41,7 @@ import com.saidjte.schoolradio.BuildConfig
 import com.saidjte.schoolradio.audio.AudioEffects
 import com.saidjte.schoolradio.core.ui.AppIcons
 import com.saidjte.schoolradio.core.ui.EqualizerCard
+import com.saidjte.schoolradio.core.util.PerformanceModeLogic
 import com.saidjte.schoolradio.data.backup.BackupRepository
 import com.saidjte.schoolradio.data.settings.AppSettings
 import com.saidjte.schoolradio.di.ServiceLocator
@@ -224,6 +225,32 @@ fun SettingsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                 snackbar.showSnackbar(
                                     if (it) "التسجيلات القادمة ستُكتب Opus HD عالية الدقة"
                                     else "التسجيلات القادمة ستُكتب AAC متوافقة (‎.m4a)"
+                                )
+                            }
+                        }
+                    )
+                }
+
+                HorizontalDivider()
+
+                // v0.31.0: وضع الأداء — واجهة مبسطة بلا زخارف للأجهزة الضعيفة
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("وضع الأداء")
+                        Text(
+                            PerformanceModeLogic.description(settings.performanceMode),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = settings.performanceMode,
+                        onCheckedChange = {
+                            scope.launch {
+                                locator.settings.setPerformanceMode(it)
+                                snackbar.showSnackbar(
+                                    if (it) "وضع الأداء مفعّل — واجهة مبسطة أسرع على هذا الجهاز"
+                                    else "عادت الواجهة الكريستالية الكاملة"
                                 )
                             }
                         }
