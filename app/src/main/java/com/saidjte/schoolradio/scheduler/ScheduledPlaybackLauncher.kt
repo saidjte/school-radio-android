@@ -9,6 +9,7 @@ import com.google.common.util.concurrent.MoreExecutors
 import com.saidjte.schoolradio.audio.PlaybackConnection
 import com.saidjte.schoolradio.audio.PlaybackService
 import com.saidjte.schoolradio.core.util.BreaksLogic
+import com.saidjte.schoolradio.core.util.RecordingIntegrityLogic
 import com.saidjte.schoolradio.core.util.ScheduleLogic
 import com.saidjte.schoolradio.data.local.entity.ExecutionStatus
 import com.saidjte.schoolradio.data.local.entity.ScheduledEventEntity
@@ -71,7 +72,7 @@ object ScheduledPlaybackLauncher {
                 }
             }
             event.recordingId != null -> {
-                // تسجيل من أرشيف التسجيلات — نتحقق من وجود الملف على القرص أولاً
+                // تسجيل من أرشيف التسجيلات — نتحقق من وجود الملف وسلامته البنيوية أولاً
                 val rec = locator.recordingsRepo.byId(event.recordingId)
                 when {
                     rec == null -> {
@@ -80,6 +81,17 @@ object ScheduledPlaybackLauncher {
                     }
                     !java.io.File(rec.filePath).exists() -> {
                         failNote = "ملف التسجيل «${rec.title}» غير موجود على الجهاز"
+                        emptyList()
+                    }
+                    // v0.39.0: ملف تالف من إصدار قديم لا يُطلق فقرة تفشل في فك الترميز —
+                    // ملاحظة السبب الحقيقي توثَّق في حالة الفقرة مباشرة
+                    RecordingIntegrityLogic.classify(
+                        exists = true,
+                        fileSize = java.io.File(rec.filePath).length(),
+                        head = RecordingIntegrityLogic.readFileHead(java.io.File(rec.filePath)),
+                        mimeType = rec.mimeType
+                    ) == RecordingIntegrityLogic.State.CORRUPT -> {
+                        failNote = RecordingIntegrityLogic.corruptScheduledNote(rec.title)
                         emptyList()
                     }
                     else ->

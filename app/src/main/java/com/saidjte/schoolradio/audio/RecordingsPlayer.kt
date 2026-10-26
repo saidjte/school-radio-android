@@ -9,6 +9,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.saidjte.schoolradio.core.util.CrashGuard
 import com.saidjte.schoolradio.core.util.PlaybackGuardLogic
+import com.saidjte.schoolradio.core.util.RecordingIntegrityLogic
 import com.saidjte.schoolradio.data.local.entity.RecordingEntity
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -146,6 +147,19 @@ class RecordingsPlayer(context: Context) {
             // ملف مفقود (استعادة نسخة على جهاز آخر مثلاً) — رسالة واضحة بدل انهيار أو صمت
             _state.value = State() // صفّر الاختيار
             return "ملف هذا التسجيل غير موجود على الجهاز — ربما حُذف أو نُقل"
+        }
+        // v0.39.0: الصدق البنيوي — ملف تالف من إصدار قديم (كاتب الحاويات قبل إصلاح
+        // v0.38.0) لا يُسلَّم لمشغل فك الترميز أصلاً: رسالة السبب الحقيقي بدل «فشل
+        // فك الترميز» العامة التي جعلت الأستاذ يظن أن كل التسجيلات معطلة.
+        val state = RecordingIntegrityLogic.classify(
+            exists = true,
+            fileSize = file.length(),
+            head = RecordingIntegrityLogic.readFileHead(file),
+            mimeType = recording.mimeType
+        )
+        if (state == RecordingIntegrityLogic.State.CORRUPT) {
+            _state.value = State(speed = _state.value.speed)
+            return RecordingIntegrityLogic.corruptMessage()
         }
         // v0.20.0 + v0.36.0: القص اليدوي (محرر الموجة) يطبّق هنا عبر الحارس —
         // قيم تالفة في التخزين لا تصل إلى المشغل أبداً (PlaybackGuardLogic محصّن ومختبر).

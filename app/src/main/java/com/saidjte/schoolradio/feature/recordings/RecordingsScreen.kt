@@ -72,6 +72,7 @@ import com.saidjte.schoolradio.core.ui.ScreenHeader
 import com.saidjte.schoolradio.core.ui.StatusBadge
 import com.saidjte.schoolradio.core.util.AppFormat
 import com.saidjte.schoolradio.core.util.RecordingCodecLogic
+import com.saidjte.schoolradio.core.util.RecordingIntegrityLogic
 import com.saidjte.schoolradio.core.util.RecordingLogic
 import com.saidjte.schoolradio.core.util.TrimLogic
 import com.saidjte.schoolradio.data.local.entity.RecordingEntity
@@ -118,6 +119,32 @@ fun RecordingsScreen(
     val playback by locator.recordingsPlayer.state.collectAsStateWithLifecycle()
     val canManage by locator.session.canManage
         .collectAsStateWithLifecycle(initialValue = true)
+
+    // v0.39.0: الصدق البنيوي — تصنيف سلامة ملف كل تسجيل (قراءة 64 بايت لكل سطر على IO)
+    // فتُعرض التسجيلات التالفة من الإصدار القديم بشارة صريحة بدل أن تُكتشف بالضغط عليها
+    var integrity by remember {
+        mutableStateOf<Map<Long, RecordingIntegrityLogic.State>>(emptyMap())
+    }
+    LaunchedEffect(recordings) {
+        if (recordings.isEmpty()) {
+            integrity = emptyMap()
+            return@LaunchedEffect
+        }
+        integrity = kotlinx.coroutines.withContext(Dispatchers.IO) {
+            recordings.associate { rec ->
+                val f = java.io.File(rec.filePath)
+                val exists = f.exists()
+                rec.id to RecordingIntegrityLogic.classify(
+                    exists = exists,
+                    fileSize = if (exists) f.length() else 0,
+                    head = RecordingIntegrityLogic.readFileHead(f),
+                    mimeType = rec.mimeType
+                )
+            }
+        }
+    }
+    val corruptCount = integrity.values
+        .count { it == RecordingIntegrityLogic.State.CORRUPT }
 
     var search by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf(RecFilter.ALL) }
@@ -219,7 +246,10 @@ fun RecordingsScreen(
         ScreenHeader(
             title = "أرشيف التسجيلات",
             subtitle = if (recordings.isEmpty()) "لا تسجيلات بعد"
-            else "${recordings.size} تسجيلاً • ${RecordingLogic.formatBytes(totalBytes)}"
+            else "${recordings.size} تسجيلاً • ${RecordingLogic.formatBytes(totalBytes)}" +
+                (if (corruptCount > 0)
+                    " • منها $corruptCount تالف من إصدار قديم لا يعمل"
+                else "")
         )
 
         if (recordings.isNotEmpty()) {
@@ -299,6 +329,7 @@ fun RecordingsScreen(
                         recording = rec,
                         playing = playback,
                         canManage = canManage,
+                        integrity = integrity[rec.id] ?: RecordingIntegrityLogic.State.OK,
                         onToggle = { togglePreview(rec) },
                         onSeek = { ms -> locator.recordingsPlayer.seekTo(ms) },
                         onStop = {
@@ -576,6 +607,7 @@ private fun RecordingRow(
     recording: RecordingEntity,
     playing: RecordingsPlayer.State,
     canManage: Boolean,
+    integrity: RecordingIntegrityLogic.State = RecordingIntegrityLogic.State.OK,
     onToggle: () -> Unit,
     onSeek: (Long) -> Unit,
     onStop: () -> Unit,
@@ -648,9 +680,26 @@ private fun RecordingRow(
                     ) {
                         StatusBadgeSource(isLiveSrc)
                         // v0.36.0: شارة الترميز — Opus HD للتسجيلات الجديدة عالية الدقة
-                        if (RecordingCodecLogic.isOpusRecord(recording.mimeType)) {
+                        // v0.39.0: لا شارة «Opus HD» على ملف تالف — الشارة تصف الملف لا النية
+                        if (integrity != RecordingIntegrityLogic.State.CORRUPT &&
+                            RecordingCodecLogic.isOpusRecord(recording.mimeType)
+                        ) {
                             val st = MaterialTheme.status
                             StatusBadge(RecordingCodecLogic.codecLabel(true), st.success)
+                        }
+                        // v0.39.0: شارات الحقيقة البنيوية — السبب الحقيقي أمام عيني الأستاذ
+                        when (integrity) {
+                            RecordingIntegrityLogic.State.CORRUPT ->
+                                StatusBadge(
+                                    "تالف — إصدار قديم",
+                                    MaterialTheme.colorScheme.error
+                                )
+                            RecordingIntegrityLogic.State.MISSING ->
+                                StatusBadge(
+                                    "الملف مفقود",
+                                    MaterialTheme.status.warning
+                                )
+                            RecordingIntegrityLogic.State.OK -> {}
                         }
                         recording.recordedByName?.let { name ->
                             val role = recording.recordedByRole?.let { UserRole.from(it) }
@@ -662,6 +711,15 @@ private fun RecordingRow(
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
+                    }
+                    if (integrity == RecordingIntegrityLogic.State.CORRUPT) {
+                        Text(
+                            "هذا الملف أُنشئ بإصدار قديم قبل إصلاح كاتب الحاويات — لا يمكن تشغيله؛ التسجيلات الجديدة سليمة، يمكنك حذف هذا من قائمة ⋮",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
                 // v0.17.0: قائمة أدوات واحدة بدل 5 أيقونات — لا ازدحام مهما كانت الصلاحيات
