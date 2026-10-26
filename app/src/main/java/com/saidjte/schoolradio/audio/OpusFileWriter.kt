@@ -4,6 +4,7 @@ import android.media.MediaCodec
 import android.media.MediaFormat
 import android.os.Build
 import com.saidjte.schoolradio.core.util.OggOpusWriter
+import com.saidjte.schoolradio.core.util.PcmChunkQueue
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -28,12 +29,16 @@ import java.io.OutputStream
  *   الأصلي الوحيد لـOpus: لا إعادة أخذ عينات، فالمدخل يُرمَّز كما يُلتقط.
  * - csd-0 (OpusHead من المشفر) لا يُكتب حزمة بيانات — منه نقرأ pre-skip فقط،
  *   ورأس الدفق نكتبه بأنفسنا.
- * - granule يُحسب من TOC كل حزمة مُصدَرة فعلاً — مدة الملف تطابق محتواه حتى
- *   مع سقوط دفعات إدخال عند انشغال المشفر مؤقتاً.
+ * - granule يُحسب من TOC كل حزمة مُصدَرة فعلاً — مدة الملف تطابق محتواه تماماً
+ *   (v0.40.0: لا سقوط دفعات إدخال أصلاً بفضل طابور الحجز PcmChunkQueue).
  * - عند الإغلاق: تحقق بنيوي (OggS + OpusHead + حجم معقول) — ملف غير سليم
  *   يُحذف ولا يعود للإدارة إطلاقاً، فلا ملفات مكسورة تتسلل إلى الأرشيف.
- * - feed() غير محظورة (dequeueInputBuffer بزمن 0) وfinish() ترسل EOS وتفرّغ
- *   حتى نهاية الدفق — نفس عقد AacFileWriter تماماً.
+ * - feed() غير محظورة: الدفعة تُحجز نسخاً في [PcmChunkQueue] (v0.40.0) ثم تُفرَّغ
+ *   بمدخل المشفر بزمن 0 — حتى لو انشغل المدخل لحظياً لا تُسقط دفعة ميكروفون
+ *   أبداً (كانت تُسقط فتخرج فجوات مسموعة في التسجيل).
+ * - finish() تفرّغ الطابور المحجوز كاملاً ثم ترسل EOS وتستنزف المخرجات حتى
+ *   نهايتها بميزانية زمنية موثقة (ثانيتان) بدل سقف محاولات اعتباطي كان
+ *   يقتطع ذيل التسجيل على الأجهزة البطيئة — نفس عقد AacFileWriter تماماً.
  */
 class OpusFileWriter(
     filePath: String,
@@ -45,6 +50,8 @@ class OpusFileWriter(
     private var codec: MediaCodec? = null
     private var sink: OutputStream? = null
     private var ogg: OggOpusWriter? = null
+    /** v0.40.0: دفعات الميكروفون المحجوزة — لا إسقاط بمدخل مشفر مشغول */
+    private val pending = PcmChunkQueue()
     private var samplesWritten = 0L
     private var preSkip = OggOpusWriter.DEFAULT_PRE_SKIP
     private val bufferInfo = MediaCodec.BufferInfo()
@@ -85,46 +92,72 @@ class OpusFileWriter(
         }
     }
 
-    /** تغذية دفعة PCM — من خيط الصوت فقط، بلا استثناءات أبداً */
+    /**
+     * تغذية دفعة PCM — من خيط الصوت فقط، بلا استثناءات ولا حجب أبداً.
+     * v0.40.0: الدفعة تُحجز أولاً في الطابور (نسخاً — المصدرو يعيد استخدام مخازنه)
+     * ثم يُفرَّغ الطابور بمدخل المشفر بزمن صفر: إن كان المشفر مشغولاً تبقى الدفعات
+     * محجوزة وتُفرَّغ في النداء القادم — صفر فجوات صوت في التسجيل.
+     */
     override fun feed(pcm: ShortArray, n: Int) {
         val c = codec ?: return
         if (failed != null || n <= 0) return
         try {
-            val inIndex = c.dequeueInputBuffer(0) // زمن صفر: لا نعطل خيط البث أبداً
-            if (inIndex >= 0) {
-                val input: java.nio.ByteBuffer = c.getInputBuffer(inIndex) ?: return
-                input.clear()
-                for (i in 0 until n) input.putShort(pcm[i])
-                val ptsUs = samplesWritten * 1_000_000L / sampleRate
-                c.queueInputBuffer(inIndex, 0, n * 2, ptsUs, 0)
-                samplesWritten += n
-            }
+            pending.push(pcm, n)
+            drainInput(c)
             drain(endOfStream = false)
         } catch (e: Exception) {
             failed = e.message ?: "خطأ أثناء التغذية"
         }
     }
 
-    /** إغلاق الملف: EOS + تفريغ كامل + صفحة EOS — يعيد (المدة_ms، الحجم_بايت) أو null */
+    /** تفريغ الطابور المحجوز إلى مدخل المشفر — زمن صفر: لا نعطل خيط البث أبداً */
+    private fun drainInput(c: MediaCodec) {
+        while (pending.isNotEmpty) {
+            val inIndex = c.dequeueInputBuffer(0)
+            if (inIndex < 0) return // مشغول — محجوز للنداء القادم
+            val chunk = pending.peek() ?: break
+            val input: java.nio.ByteBuffer = c.getInputBuffer(inIndex) ?: return
+            input.clear()
+            for (i in 0 until chunk.length) input.putShort(chunk.data[i])
+            val ptsUs = samplesWritten * 1_000_000L / sampleRate
+            c.queueInputBuffer(inIndex, 0, chunk.length * 2, ptsUs, 0)
+            pending.pop()
+            samplesWritten += chunk.length
+        }
+    }
+
+    /**
+     * إغلاق الملف: تفريغ الطابور المحجوز كاملاً + EOS + استنزاف المخرجات حتى النهاية
+     * — يعيد (المدة_ms، الحجم_بايت) أو null.
+     * v0.40.0: كل المراحل بميزانية زمنية موثقة ([FLUSH_BUDGET_NS]) بدل سقوف
+     * محاولات كانت تقتطع ذيل التسجيل على الأجهزة البطيئة.
+     */
     @Synchronized
     override fun finish(): Pair<Long, Long>? {
         val c = codec
         if (c != null && failed == null) {
             try {
-                var queued = false
-                var attempts = 0
-                while (!queued && attempts < 50) {
+                val deadline = System.nanoTime() + FLUSH_BUDGET_NS
+                // 1) الدفعات المحجوزة جزء من التسجيل — تُفرَّغ كلها قبل أي EOS
+                while (pending.isNotEmpty && failed == null && System.nanoTime() < deadline) {
+                    drain(endOfStream = false) // صفّر المخرجات ليُتحرر المدخل
+                    val inIndex = c.dequeueInputBuffer(10_000)
+                    if (inIndex >= 0) queueChunk(c, inIndex)
+                }
+                // 2) إشارة نهاية الدفق
+                var eosQueued = false
+                while (!eosQueued && System.nanoTime() < deadline) {
                     val inIndex = c.dequeueInputBuffer(10_000)
                     if (inIndex >= 0) {
                         val ptsUs = samplesWritten * 1_000_000L / sampleRate
                         c.queueInputBuffer(
                             inIndex, 0, 0, ptsUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM
                         )
-                        queued = true
+                        eosQueued = true
                     }
-                    attempts++
                 }
-                drain(endOfStream = queued)
+                // 3) استنزاف المخرجات حتى EOS — بميزانية زمنية لا سقف محاولات
+                drain(endOfStream = eosQueued, deadlineNs = deadline)
             } catch (e: Exception) {
                 failed = e.message ?: "خطأ عند إغلاق الملف"
             }
@@ -146,16 +179,27 @@ class OpusFileWriter(
         return if (ok) ((finalGranule - preSkip) * 1000L / sampleRate) to size else null
     }
 
-    /** تفريغ مخازن الإخراج إلى كاتب الحاوية حتى نفادها أو بلوغ EOS */
-    private fun drain(endOfStream: Boolean) {
+    /** إدخال أقدم دفعة محجوزة إلى مخزن مدخل جاهز — يُنادى بمدخل مؤكد الإتاحة */
+    private fun queueChunk(c: MediaCodec, inIndex: Int) {
+        val chunk = pending.peek() ?: return
+        val input: java.nio.ByteBuffer = c.getInputBuffer(inIndex) ?: return
+        input.clear()
+        for (i in 0 until chunk.length) input.putShort(chunk.data[i])
+        val ptsUs = samplesWritten * 1_000_000L / sampleRate
+        c.queueInputBuffer(inIndex, 0, chunk.length * 2, ptsUs, 0)
+        pending.pop()
+        samplesWritten += chunk.length
+    }
+
+    /** تفريغ مخازن الإخراج إلى كاتب الحاوية حتى نفادها أو بلوغ EOS أو بلوغ الميزانية */
+    private fun drain(endOfStream: Boolean, deadlineNs: Long = 0L) {
         val c = codec ?: return
-        var spins = 0
         while (true) {
             val outIndex = c.dequeueOutputBuffer(bufferInfo, if (endOfStream) 10_000 else 0)
             when {
                 outIndex == MediaCodec.INFO_TRY_AGAIN_LATER ->
                     if (!endOfStream) return
-                    else if (++spins > 100) return // حاجز أمان ضد الحلقة اللانهائية
+                    else if (System.nanoTime() >= deadlineNs) return // ميزانية موثقة — الذيل مضمون داخلها
 
                 outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED ->
                     if (ogg == null) startContainer(c.outputFormat)
@@ -227,6 +271,7 @@ class OpusFileWriter(
         try { sink?.close() } catch (_: Exception) {}
         sink = null
         ogg = null
+        pending.clear()
     }
 
     companion object {
@@ -235,6 +280,13 @@ class OpusFileWriter(
 
         /** 128kbps مونو: الشفافية الكاملة لكلام المذيع مع Opus */
         const val BIT_RATE = com.saidjte.schoolradio.core.util.RecordingCodecLogic.OPUS_BIT_RATE
+
+        /**
+         * v0.40.0: ميزانية إغلاق التدفق (تفريغ الطابور + EOS + استنزاف المخرجات) —
+         * ثانيتان تكفيان مشفر البرمجيات على أبطأ الأجهزة لآخر 320ms محجوزة + flush،
+         * وتمنع أي حلقة لا نهائية بشرط موثق بدل سقوف محاولات اعتباطية.
+         */
+        const val FLUSH_BUDGET_NS = 2_000_000_000L
 
         /**
          * هل يوجد مشفر Opus على هذا الجهاز؟ — يُفحص مرة واحدة عند بدء كل تسجيل
