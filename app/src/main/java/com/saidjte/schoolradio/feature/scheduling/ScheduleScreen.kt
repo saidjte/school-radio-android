@@ -25,10 +25,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -73,11 +73,13 @@ import com.saidjte.schoolradio.core.theme.gradients
 import com.saidjte.schoolradio.core.theme.status
 import com.saidjte.schoolradio.core.ui.AppIcons
 import com.saidjte.schoolradio.core.ui.EmptyStateCard
+import com.saidjte.schoolradio.core.ui.GlassCard
 import com.saidjte.schoolradio.core.ui.ScreenHeader
 import com.saidjte.schoolradio.core.ui.SegmentImage
 import com.saidjte.schoolradio.core.ui.diagonalBrush
 import com.saidjte.schoolradio.core.util.EventContentAr
 import com.saidjte.schoolradio.core.util.EventDateLogic
+import com.saidjte.schoolradio.core.util.ReminderLogic
 import com.saidjte.schoolradio.core.util.ScheduleLogic
 import com.saidjte.schoolradio.core.util.SegmentImageStore
 import com.saidjte.schoolradio.core.util.TimeEditLogic
@@ -164,7 +166,7 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                     }
                 }
             ) {
-                Icon(Icons.Filled.Add, null)
+                Icon(Icons.Rounded.Add, null)
                 Text("  فقرة مجدولة")
             }
         }
@@ -260,7 +262,7 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                         modifier = Modifier.weight(1f)
                     )
                     TextButton(onClick = { requireManage { creatingSchedule = true } }) {
-                        Icon(Icons.Filled.Add, null)
+                        Icon(Icons.Rounded.Add, null)
                         Text(" جدول جديد")
                     }
                 }
@@ -297,7 +299,7 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                 }
                             )
                             IconButton(onClick = { requireManage { renamingSchedule = s } }) {
-                                Icon(Icons.Filled.Edit, "تعديل الاسم")
+                                Icon(Icons.Rounded.Edit, "تعديل الاسم")
                             }
                             IconButton(onClick = {
                                 requireManage {
@@ -309,7 +311,7 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                         locator.rearmScheduleAlarms()
                                     }
                                 }
-                            }) { Icon(Icons.Filled.Delete, "حذف الجدول") }
+                            }) { Icon(Icons.Rounded.Delete, "حذف الجدول") }
                         }
                         // ===== v0.12.0: الفواصل المجدولة — إعداد الجينغل الآلي + التشغيل المتواصل =====
                         Spacer(Modifier.height(4.dp))
@@ -339,7 +341,7 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                 },
                                 enabled = events.any { it.scheduleId == s.id }
                             ) {
-                                Icon(Icons.Filled.PlayArrow, null, Modifier.size(16.dp))
+                                Icon(Icons.Rounded.PlayArrow, null, Modifier.size(16.dp))
                                 Text(" تشغيل")
                             }
                         }
@@ -372,14 +374,13 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                     trackTitle = e.singleTrackId?.let { tid -> tracks.firstOrNull { it.id == tid }?.title },
                     recordingTitle = e.recordingId?.let { rid -> recordings.firstOrNull { it.id == rid }?.title }
                 )
-                Card(
+                // v0.28.0: بطاقة الفقرة زجاجية كريستالية — حد زمردي للفقرة القادمة
+                GlassCard(
                     Modifier.fillMaxWidth().animateContentSize(),
-                    colors = if (isNextUp) CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
-                    ) else CardDefaults.cardColors(),
-                    border = if (isNextUp) BorderStroke(
-                        1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
-                    ) else null
+                    shape = MaterialTheme.shapes.large,
+                    borderColor = if (isNextUp)
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.45f) else null,
+                    shadowElevation = if (isNextUp) 4.dp else 2.dp
                 ) {
                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (e.imagePath != null) {
@@ -454,7 +455,10 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                             (EventDateLogic.formatDateAr(e.specificDate!!) ?: e.specificDate!!) +
                                             (EventDateLogic.relativeLabelAr(
                                                 e.specificDate!!, System.currentTimeMillis()
-                                            )?.let { " • $it" } ?: ""),
+                                            )?.let { " • $it" } ?: "") +
+                                            // v0.28.0: شارة التنبيه — «تنبيه قبل يوم» مثلاً
+                                            (ReminderLogic.badgeAr(e.reminderBeforeMinutes)
+                                                ?.let { " • $it" } ?: ""),
                                         Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSecondaryContainer
@@ -496,7 +500,7 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                             }
                         }
                         IconButton(onClick = { requireManage { editingEvent = EventEditorState.from(e) } }) {
-                            Icon(Icons.Filled.Edit, "تعديل الفقرة")
+                            Icon(Icons.Rounded.Edit, "تعديل الفقرة")
                         }
                         IconButton(onClick = {
                             requireManage {
@@ -507,7 +511,7 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                     locator.rearmScheduleAlarms()
                                 }
                             }
-                        }) { Icon(Icons.Filled.Delete, "حذف الفقرة") }
+                        }) { Icon(Icons.Rounded.Delete, "حذف الفقرة") }
                     }
                 }
             }
@@ -872,7 +876,9 @@ data class EventEditorState(
     val imagePath: String? = null,
     val scriptId: Long? = null,
     // v0.27.0: تاريخ الموعد الواحد (yyyy-MM-dd) — null يعني أسبوعي متكرر
-    val specificDate: String? = null
+    val specificDate: String? = null,
+    // v0.28.0: تنبيه قبل الفقرة المؤرخة — دقائق قبل البدء (null = بلا تنبيه)
+    val reminderBeforeMinutes: Int? = null
 ) {
     companion object {
         fun from(e: ScheduledEventEntity) = EventEditorState(
@@ -887,7 +893,8 @@ data class EventEditorState(
             noteText = e.noteText,
             imagePath = e.imagePath,
             scriptId = e.scriptId,
-            specificDate = e.specificDate
+            specificDate = e.specificDate,
+            reminderBeforeMinutes = e.reminderBeforeMinutes
         )
     }
 }
@@ -997,6 +1004,8 @@ private fun EventEditorDialog(
     // v0.27.0: نمط التكرار — أسبوعي متكرر أو موعد واحد بتاريخ محدد (تخرّج، احتفال…)
     var oneTime by remember { mutableStateOf(initial.specificDate != null) }
     var specificDate by remember { mutableStateOf(initial.specificDate) }
+    // v0.28.0: تنبيه قبل الفقرة المؤرخة — الافتراضي «قبل يوم» (طلب المستخدم المثالي)
+    var reminderBefore by remember { mutableStateOf(initial.reminderBeforeMinutes) }
     // v0.27.0: رسالة فشل حفظ الصورة بدل الفشل الصامت
     var imageError by remember { mutableStateOf<String?>(null) }
 
@@ -1069,6 +1078,8 @@ private fun EventEditorDialog(
                                     ScheduleLogic.dateKey(System.currentTimeMillis()), 1
                                 )
                             }
+                            // v0.28.0: فقرة موعد واحد تنبه تلقائياً «قبل يوم» ما لم يعدّلها المذيع
+                            if (reminderBefore == null) reminderBefore = ReminderLogic.DAY
                         },
                         label = { Text("موعد واحد") }
                     )
@@ -1077,6 +1088,29 @@ private fun EventEditorDialog(
                     DateEditorSection(
                         dateKey = specificDate,
                         onChange = { specificDate = it }
+                    )
+                    // ===== v0.28.0: تنبيه إشعار قبل الفقرة المؤرخة =====
+                    Text("تنبيه قبل الفقرة", style = MaterialTheme.typography.labelLarge)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        ReminderLogic.OPTIONS.forEach { opt ->
+                            FilterChip(
+                                selected = (reminderBefore ?: ReminderLogic.OFF) == opt,
+                                onClick = {
+                                    reminderBefore = opt.takeIf { it != ReminderLogic.OFF }
+                                },
+                                label = {
+                                    Text(
+                                        ReminderLogic.labelAr(opt),
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            )
+                        }
+                    }
+                    Text(
+                        "سيصلك إشعار تذكير على هذا الجهاز قبل انطلاق الفقرة المؤرخة",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else {
                     Text("أيام التشغيل", style = MaterialTheme.typography.labelLarge)
@@ -1170,7 +1204,7 @@ private fun EventEditorDialog(
                             imageError = null
                             imagePicker.launch("image/*")
                         }) {
-                            Icon(Icons.Filled.Add, null)
+                            Icon(Icons.Rounded.Add, null)
                             Text(if (imagePath == null) " إضافة صورة" else " تغيير الصورة")
                         }
                         if (imagePath != null) {
@@ -1224,7 +1258,8 @@ private fun EventEditorDialog(
                                 noteText = noteText.trim().takeIf { it.isNotBlank() },
                                 imagePath = imagePath,
                                 scriptId = scriptId,
-                                specificDate = if (oneTime) specificDate else null
+                                specificDate = if (oneTime) specificDate else null,
+                                reminderBeforeMinutes = if (oneTime) reminderBefore else null
                             )
                         )
                     }
@@ -1294,7 +1329,7 @@ private fun TimeEditorSection(
                 }
                 Spacer(Modifier.weight(1f))
                 Icon(
-                    Icons.Filled.Edit, "فتح منتقي الساعة",
+                    Icons.Rounded.Edit, "فتح منتقي الساعة",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp)
                 )
@@ -1423,7 +1458,7 @@ private fun DateEditorSection(
                 }
                 Spacer(Modifier.weight(1f))
                 Icon(
-                    Icons.Filled.Edit, "فتح منتقي التاريخ",
+                    Icons.Rounded.Edit, "فتح منتقي التاريخ",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp)
                 )

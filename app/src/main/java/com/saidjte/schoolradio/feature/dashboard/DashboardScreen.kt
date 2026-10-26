@@ -19,7 +19,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -41,7 +41,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.CardDefaults
@@ -87,6 +87,7 @@ import com.saidjte.schoolradio.core.theme.gradients
 import com.saidjte.schoolradio.core.theme.status
 import com.saidjte.schoolradio.core.ui.AppIcons
 import com.saidjte.schoolradio.core.ui.EmptyStateCard
+import com.saidjte.schoolradio.core.ui.GlassCard
 import com.saidjte.schoolradio.core.ui.LiveWaveform
 import com.saidjte.schoolradio.core.ui.OrientationLogic
 import com.saidjte.schoolradio.core.ui.StatusBadge
@@ -326,7 +327,7 @@ fun DashboardScreen(
                         .padding(6.dp)
                 ) {
                     Icon(
-                        Icons.Filled.Settings, "الإعدادات",
+                        Icons.Rounded.Settings, "الإعدادات",
                         tint = Color.White
                     )
                 }
@@ -396,7 +397,7 @@ fun DashboardScreen(
                             IconButton(onClick = { locator.playback.playPause() }) {
                                 Icon(
                                     if (playback.isPlaying) AppIcons.Pause
-                                    else Icons.Filled.PlayArrow,
+                                    else Icons.Rounded.PlayArrow,
                                     "تشغيل/إيقاف"
                                 )
                             }
@@ -708,12 +709,12 @@ private fun EventRow(
     val next = all.filter { it.startMinutes > event.startMinutes }
         .minByOrNull { it.startMinutes }
 
-    Card(
+    // v0.28.0: بطاقة الفقرة زجاجية — صبغة زرقاء حيّة أثناء التشغيل
+    GlassCard(
         Modifier.fillMaxWidth().animateContentSize(),
-        border = if (isRunning) BorderStroke(2.dp, st.running.copy(alpha = 0.5f)) else null,
-        colors = if (isRunning) CardDefaults.cardColors(
-            containerColor = st.running.copy(alpha = 0.08f)
-        ) else CardDefaults.cardColors()
+        borderColor = if (isRunning) st.running.copy(alpha = 0.5f) else null,
+        tint = if (isRunning) st.running.copy(alpha = 0.14f) else null,
+        shadowElevation = if (isRunning) 4.dp else 2.dp
     ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             // شارة الوقت — تدرج أزرق حيّ أثناء التشغيل (v0.7.0)

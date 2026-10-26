@@ -24,10 +24,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.rounded.DateRange
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.List
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -61,6 +61,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.saidjte.schoolradio.core.theme.SchoolRadioTheme
 import com.saidjte.schoolradio.core.ui.AppIcons
+import com.saidjte.schoolradio.core.ui.CrystalBackground
+import com.saidjte.schoolradio.core.ui.GlassCard
 import com.saidjte.schoolradio.core.ui.OrientationLogic
 import com.saidjte.schoolradio.data.settings.AppSettings
 import com.saidjte.schoolradio.di.ServiceLocator
@@ -97,7 +99,10 @@ class MainActivity : ComponentActivity() {
             // اتجاه عربي صريح RTL على مستوى الجذر
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                 SchoolRadioTheme(themeMode = themeMode()) {
-                    AppScaffold()
+                    // v0.28.0: خلفية الأورورا الكريستالية — تطفو فوقها كل الشاشات
+                    CrystalBackground {
+                        AppScaffold()
+                    }
                 }
             }
         }
@@ -128,6 +133,8 @@ private fun AppScaffold() {
     val showNav = currentRoute != AppRoute.ON_AIR && currentRoute != AppRoute.TELEPROMPTER
 
     Scaffold(
+        // v0.28.0: شفاف ليظهر تدرج الأورورا الكريستالي خلف كل الشاشات
+        containerColor = Color.Transparent,
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
             if (showNav) {
@@ -143,13 +150,12 @@ private fun AppScaffold() {
                         snackbar,
                         onOpenOnAir = { nav.navigateSafely(AppRoute.ON_AIR) }
                     )
-                    // شريط تنقل عائم بحواف دائرية وظل ناعم — لمسة عصرية (v0.7.0)
-                    Surface(
+                    // شريط تنقل عائم زجاجي بحواف دائرية وحد كريستالي ولمعة علوية (v0.28.0)
+                    GlassCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 14.dp, vertical = 4.dp),
                         shape = RoundedCornerShape(26.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainer,
                         shadowElevation = 10.dp
                     ) {
                         NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp) {
@@ -287,9 +293,14 @@ private fun AppSideNavRail(
             .fillMaxHeight()
             .padding(start = 8.dp, end = 2.dp, top = 8.dp, bottom = 8.dp),
         shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        shadowElevation = 10.dp
+        color = Color.Transparent
     ) {
+        // v0.28.0: القائمة الجانبية زجاجية بنفس لغة الشريط السفلي
+        GlassCard(
+            modifier = Modifier.fillMaxHeight(),
+            shape = RoundedCornerShape(22.dp),
+            shadowElevation = 10.dp
+        ) {
         Column(
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -305,6 +316,7 @@ private fun AppSideNavRail(
                     onClick = { onNavigate(item.route) }
                 )
             }
+        }
         }
     }
 }
@@ -392,11 +404,11 @@ enum class NavigationItem(
     val label: String,
     val icon: androidx.compose.ui.graphics.vector.ImageVector
 ) {
-    HOME(AppRoute.DASHBOARD, "الرئيسية", Icons.Filled.Home),
+    HOME(AppRoute.DASHBOARD, "الرئيسية", Icons.Rounded.Home),
     STUDIO(AppRoute.STUDIO, "الاستوديو", AppIcons.Tune),
-    LIBRARY(AppRoute.LIBRARY, "المكتبة", Icons.Filled.PlayArrow),
-    PLAYLISTS(AppRoute.PLAYLISTS, "القوائم", Icons.Filled.List),
+    LIBRARY(AppRoute.LIBRARY, "المكتبة", Icons.Rounded.PlayArrow),
+    PLAYLISTS(AppRoute.PLAYLISTS, "القوائم", Icons.Rounded.List),
     RECORDINGS(AppRoute.RECORDINGS, "التسجيلات", AppIcons.LibraryMusic),
-    SCHEDULE(AppRoute.SCHEDULING, "الجدولة", Icons.Filled.DateRange),
+    SCHEDULE(AppRoute.SCHEDULING, "الجدولة", Icons.Rounded.DateRange),
     SCRIPTS(AppRoute.SCRIPTS, "السكربتات", AppIcons.Article),
 }

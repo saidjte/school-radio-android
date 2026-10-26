@@ -20,13 +20,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -135,7 +135,7 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
             FloatingActionButton(onClick = {
                 importLauncher.launch(arrayOf("audio/*"))
             }) {
-                Icon(Icons.Filled.Add, "استيراد ملفات صوتية")
+                Icon(Icons.Rounded.Add, "استيراد ملفات صوتية")
             }
         }
     ) { padding ->
@@ -153,11 +153,11 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                 onValueChange = { search = it },
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                 placeholder = { Text("ابحث باسم المقطع…") },
-                leadingIcon = { Icon(Icons.Filled.Search, null) },
+                leadingIcon = { Icon(Icons.Rounded.Search, null) },
                 trailingIcon = {
                     if (search.isNotEmpty()) {
                         IconButton(onClick = { search = "" }) {
-                            Icon(Icons.Filled.Close, "مسح البحث")
+                            Icon(Icons.Rounded.Close, "مسح البحث")
                         }
                     }
                 },
@@ -190,7 +190,7 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                         onClick = { addCategoryOpen = true },
                         label = { Text("+ تصنيف") },
                         leadingIcon = {
-                            Icon(Icons.Filled.Add, "إضافة تصنيف جديد", Modifier.size(16.dp))
+                            Icon(Icons.Rounded.Add, "إضافة تصنيف جديد", Modifier.size(16.dp))
                         }
                     )
                 }
@@ -202,7 +202,7 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                     onClick = { manageCategoriesOpen = true },
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                 ) {
-                    Icon(Icons.Filled.Edit, null, Modifier.size(15.dp))
+                    Icon(Icons.Rounded.Edit, null, Modifier.size(15.dp))
                     Text("إدارة التصنيفات", style = MaterialTheme.typography.labelMedium)
                 }
                 Spacer(Modifier.width(8.dp))
@@ -260,7 +260,7 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                         // v0.8.0: تشغيل كل القائمة المرئية — زر متدرج واضح أعلى القائمة
                         com.saidjte.schoolradio.core.ui.GradientButton(
                             label = "تشغيل الكل (${visible.size} مقطعاً)",
-                            icon = Icons.Filled.PlayArrow,
+                            icon = Icons.Rounded.PlayArrow,
                             onClick = {
                                 val first = visible.firstOrNull { it.isAvailable } ?: return@GradientButton
                                 playFromLibrary(first)
@@ -525,7 +525,7 @@ private fun TrackRow(
                     )
                 ) {
                     Icon(
-                        if (isPlayingNow) AppIcons.Pause else Icons.Filled.PlayArrow,
+                        if (isPlayingNow) AppIcons.Pause else Icons.Rounded.PlayArrow,
                         "تشغيل/إيقاف مؤقت"
                     )
                 }
@@ -582,7 +582,7 @@ private fun TrackRow(
                 if (!track.isAvailable) {
                     IconButton(onClick = onRelink) {
                         Icon(
-                            Icons.Filled.Warning, "أعد ربط الملف",
+                            Icons.Rounded.Warning, "أعد ربط الملف",
                             tint = MaterialTheme.colorScheme.secondary
                         )
                     }
@@ -637,7 +637,7 @@ private fun TrackRow(
                         }
                         DropdownMenuItem(
                             text = { Text("تعديل") },
-                            leadingIcon = { Icon(Icons.Filled.Edit, null, Modifier.size(20.dp)) },
+                            leadingIcon = { Icon(Icons.Rounded.Edit, null, Modifier.size(20.dp)) },
                             onClick = { menuOpen = false; onEdit() }
                         )
                         DropdownMenuItem(
@@ -647,7 +647,7 @@ private fun TrackRow(
                             ) },
                             leadingIcon = {
                                 Icon(
-                                    Icons.Filled.Delete, null, Modifier.size(20.dp),
+                                    Icons.Rounded.Delete, null, Modifier.size(20.dp),
                                     tint = MaterialTheme.colorScheme.error
                                 )
                             },
@@ -841,7 +841,7 @@ private fun ManageCategoriesDialog(
                         onClick = { run { onAdd(newName) { err -> clearBusy(err) }; newName = "" } },
                         enabled = newName.isNotBlank() && !busy
                     ) {
-                        Icon(Icons.Filled.Add, "إضافة التصنيف")
+                        Icon(Icons.Rounded.Add, "إضافة التصنيف")
                     }
                 }
 
@@ -885,7 +885,7 @@ private fun ManageCategoriesDialog(
                                         id = c.id, name = c.name,
                                         sortOrder = c.sortOrder, isBuiltIn = c.isBuiltIn
                                     ) }) {
-                                    Icon(Icons.Filled.Edit, "إعادة تسمية", Modifier.size(18.dp))
+                                    Icon(Icons.Rounded.Edit, "إعادة تسمية", Modifier.size(18.dp))
                                 }
                                 IconButton(
                                     onClick = {
@@ -898,7 +898,7 @@ private fun ManageCategoriesDialog(
                                     enabled = !c.isBuiltIn
                                 ) {
                                     Icon(
-                                        Icons.Filled.Delete, "حذف التصنيف",
+                                        Icons.Rounded.Delete, "حذف التصنيف",
                                         Modifier.size(18.dp),
                                         tint = if (c.isBuiltIn)
                                             MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)

@@ -12,9 +12,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -104,7 +104,7 @@ fun ScriptsScreen(
             containerColor = MaterialTheme.colorScheme.primaryContainer,
             contentColor = MaterialTheme.colorScheme.onPrimaryContainer
         ) {
-            Icon(Icons.Filled.Add, null)
+            Icon(Icons.Rounded.Add, null)
             Text("  سكربت جديد")
         }
     }
@@ -189,11 +189,11 @@ private fun ScriptRow(
                     )
                 }
                 IconButton(onClick = onEdit) {
-                    Icon(Icons.Filled.Edit, "تعديل")
+                    Icon(Icons.Rounded.Edit, "تعديل")
                 }
                 IconButton(onClick = onDelete) {
                     Icon(
-                        Icons.Filled.Delete, "حذف",
+                        Icons.Rounded.Delete, "حذف",
                         tint = MaterialTheme.colorScheme.error
                     )
                 }

@@ -20,9 +20,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -150,7 +150,7 @@ fun PlayerBar(
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                if (playing) AppIcons.Pause else Icons.Filled.PlayArrow,
+                                if (playing) AppIcons.Pause else Icons.Rounded.PlayArrow,
                                 "تشغيل/إيقاف مؤقت",
                                 modifier = Modifier.size(22.dp),
                                 tint = Color.White
@@ -163,7 +163,7 @@ fun PlayerBar(
                 }
                 IconButton(onClick = { playback.stopAll() }) {
                     Icon(
-                        Icons.Filled.Close, "إيقاف كامل",
+                        Icons.Rounded.Close, "إيقاف كامل",
                         tint = MaterialTheme.colorScheme.error
                     )
                 }
@@ -225,7 +225,7 @@ private fun FullPlayerDialog(onDismiss: () -> Unit) {
                 )
                 if (state.errorMessage != null) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.Warning, null, tint = MaterialTheme.colorScheme.error)
+                        Icon(Icons.Rounded.Warning, null, tint = MaterialTheme.colorScheme.error)
                         Text(
                             " ${state.errorMessage}",
                             color = MaterialTheme.colorScheme.error

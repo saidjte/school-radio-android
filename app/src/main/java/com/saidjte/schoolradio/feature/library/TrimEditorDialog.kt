@@ -15,7 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -349,7 +349,7 @@ fun TrimEditorDialog(
                         enabled = duration > 0 && validationError == null
                     ) {
                         Icon(
-                            if (previewing) AppIcons.Stop else Icons.Filled.PlayArrow,
+                            if (previewing) AppIcons.Stop else Icons.Rounded.PlayArrow,
                             null, Modifier.padding(end = 4.dp)
                         )
                         Text(if (previewing) "إيقاف المعاينة" else "معاينة القص")

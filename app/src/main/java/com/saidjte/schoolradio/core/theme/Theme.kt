@@ -57,15 +57,16 @@ private val Gold90 = Color(0xFFFFE08D)
 private val GoldContainer = Color(0xFFFFE3AE)
 private val GoldContainerDark = Color(0xFF5A4300)
 
-// ===== أسطح أنيقة — أبيض صافٍ يطفو فوق نعناعي ناعم =====
+// ===== أسطح زجاجية (v0.28.0) — ألفا مدمجة تجعل كل بطاقات M3 شفافة
+// فوق أورورا الخلفية دون تعديل أي شاشة — لغة كريستال موحدة تلقائية =====
 private val BgLight = Color(0xFFF3F8F5)
-private val SurfaceLight = Color(0xFFFFFFFF)
+private val SurfaceLight = Color(0xF6FBF8)
 private val SurfaceDimLight = Color(0xFFEDF3EF)
 private val SurfaceVariantLight = Color(0xFFDDE7E2)
 private val OnSurfaceLight = Color(0xFF161D1B)
 
 private val BgDark = Color(0xFF0C1512)
-private val SurfaceDark = Color(0xFF111B18)
+private val SurfaceDark = Color(0xF20F1B17)
 private val SurfaceVariantDark = Color(0xFF22302B)
 private val OnSurfaceDark = Color(0xFFDEE6E2)
 
@@ -104,27 +105,34 @@ val LocalAppStatusColors = staticCompositionLocalOf { LightStatusColors }
 val MaterialTheme.status: AppStatusColors
     @Composable get() = LocalAppStatusColors.current
 
-// ===== التدرجات الرسمية (v0.7.0) =====
+// ===== التدرجات الرسمية (v0.7.0 + أورورا v0.28.0) =====
 @Immutable
 data class AppGradients(
     val hero: List<Color>,        // البطاقة البطلة والوقت المميز
     val heroSoft: List<Color>,    // خلفية ناعمة للبطاقات الثانوية
     val live: List<Color>,        // البث المباشر
-    val gold: List<Color>         // الأزرار واللمسات الذهبية
+    val gold: List<Color>,        // الأزرار واللمسات الذهبية
+    // ===== v0.28.0: خلفية الأورورا الكريستالية =====
+    val bgWash: List<Color>,      // غسلة الخلفية الرأسية (2–3 درجات هادئة)
+    val aurora: List<Color>       // ثلاث هالات شعاعية شفافة (زمردي/سماوي/ذهبي)
 )
 
 private val LightGradients = AppGradients(
     hero = listOf(Color(0xFF12A08C), Color(0xFF0B6F60), Color(0xFF0A4A46)),
     heroSoft = listOf(Color(0xFFDCF4EE), Color(0xFFC8EDE2)),
     live = listOf(Color(0xFFFF6459), Color(0xFFD32F2F)),
-    gold = listOf(Color(0xFFFFC65C), Color(0xFFE8960C))
+    gold = listOf(Color(0xFFFFC65C), Color(0xFFE8960C)),
+    bgWash = listOf(Color(0xFFF7FCF9), Color(0xFFEFF7F2), Color(0xFFE9F1F6)),
+    aurora = listOf(Color(0x2E12A08C), Color(0x24346FA8), Color(0x2AE8960C))
 )
 
 private val DarkGradients = AppGradients(
     hero = listOf(Color(0xFF116B5E), Color(0xFF0A4740), Color(0xFF072E2B)),
     heroSoft = listOf(Color(0xFF10352F), Color(0xFF0C2A26)),
     live = listOf(Color(0xFFB3423C), Color(0xFF7E2723)),
-    gold = listOf(Color(0xFFA87A22), Color(0xFF7E5A10))
+    gold = listOf(Color(0xFFA87A22), Color(0xFF7E5A10)),
+    bgWash = listOf(Color(0xFF0B1613), Color(0xFF0A1414), Color(0xFF0B1219)),
+    aurora = listOf(Color(0x33116B5E), Color(0x2A2C4A8E), Color(0x22A87A22))
 )
 
 val LocalAppGradients = staticCompositionLocalOf { LightGradients }
@@ -132,6 +140,41 @@ val LocalAppGradients = staticCompositionLocalOf { LightGradients }
 /** وصول مختصر: MaterialTheme.gradients.hero — داخل نطاق SchoolRadioTheme */
 val MaterialTheme.gradients: AppGradients
     @Composable get() = LocalAppGradients.current
+
+// ===== طبقة الكريستال (v0.28.0) — زجاج مصنفر فوق أورورا =====
+// بطاقات نصف شفافة بحد رقيق ولمعة علوية تطفو فوق تدرج الخلفية،
+// وتتكيّف مع الوضعين الفاتح والداكن عبر CompositionLocal.
+@Immutable
+data class AppGlassColors(
+    /** تدرج ملء البطاقة الزجاجية (مائل 135°) — ألوانه تحمل ألفا مدمجة */
+    val fill: List<Color>,
+    /** الحد الرقيق حول البطاقة */
+    val border: Color,
+    /** لمعة الحافة العلوية التي تذوب في الثلث الأول */
+    val sheen: Color,
+    /** ملء مصمت للشرائح والشارات الزجاجية الضيقة */
+    val chip: Color
+)
+
+private val LightGlass = AppGlassColors(
+    fill = listOf(Color(0xD9FFFFFF), Color(0x9EEAF5EF)),
+    border = Color(0x59FFFFFF),
+    sheen = Color(0x80FFFFFF),
+    chip = Color(0xB4FFFFFF)
+)
+
+private val DarkGlass = AppGlassColors(
+    fill = listOf(Color(0x661B312B), Color(0x3D0E201C)),
+    border = Color(0x30FFFFFF),
+    sheen = Color(0x24FFFFFF),
+    chip = Color(0x8F142822)
+)
+
+val LocalGlassColors = staticCompositionLocalOf { LightGlass }
+
+/** وصول مختصر: MaterialTheme.glass.fill — داخل نطاق SchoolRadioTheme */
+val MaterialTheme.glass: AppGlassColors
+    @Composable get() = LocalGlassColors.current
 
 /** تدرج قطري موحّد للاستخدام مع Brush.linearGradient */
 fun List<Color>.diagonal(): Brush = Brush.linearGradient(this)
@@ -158,11 +201,11 @@ private val LightScheme = lightColorScheme(
     surfaceDim = SurfaceDimLight,
     surfaceVariant = SurfaceVariantLight,
     onSurfaceVariant = Color(0xFF404946),
-    surfaceContainerLowest = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFF6FAF7),
-    surfaceContainer = Color(0xFFEFF5F1),
-    surfaceContainerHigh = Color(0xFFE9F0EB),
-    surfaceContainerHighest = Color(0xFFE3EBE6),
+    surfaceContainerLowest = Color(0xE6FFFFFF),
+    surfaceContainerLow = Color(0xCCF4FBF7),
+    surfaceContainer = Color(0xC2F1F9F4),
+    surfaceContainerHigh = Color(0xB8EBF4EE),
+    surfaceContainerHighest = Color(0xAEE4EEE8),
     surfaceTint = Teal40,
     inverseSurface = Color(0xFF2B302D),
     inverseOnSurface = Color(0xFFEDF2EF),
@@ -196,11 +239,11 @@ private val DarkScheme = darkColorScheme(
     surfaceDim = Color(0xFF0C1512),
     surfaceVariant = SurfaceVariantDark,
     onSurfaceVariant = Color(0xFFB7C2BD),
-    surfaceContainerLowest = Color(0xFF0A1210),
-    surfaceContainerLow = Color(0xFF161F1C),
-    surfaceContainer = Color(0xFF1A2421),
-    surfaceContainerHigh = Color(0xFF24302B),
-    surfaceContainerHighest = Color(0xFF2F3B36),
+    surfaceContainerLowest = Color(0xE60D1915),
+    surfaceContainerLow = Color(0xCC112021),
+    surfaceContainer = Color(0xB8142724),
+    surfaceContainerHigh = Color(0xAD183029),
+    surfaceContainerHighest = Color(0xA21E3A31),
     surfaceTint = Teal80,
     inverseSurface = Color(0xFFDEE6E2),
     inverseOnSurface = Color(0xFF2B302D),
@@ -296,7 +339,8 @@ fun SchoolRadioTheme(themeMode: Int = 0, content: @Composable () -> Unit) {
     }
     CompositionLocalProvider(
         LocalAppStatusColors provides if (dark) DarkStatusColors else LightStatusColors,
-        LocalAppGradients provides if (dark) DarkGradients else LightGradients
+        LocalAppGradients provides if (dark) DarkGradients else LightGradients,
+        LocalGlassColors provides if (dark) DarkGlass else LightGlass
     ) {
         MaterialTheme(
             colorScheme = if (dark) DarkScheme else LightScheme,

@@ -115,7 +115,14 @@ data class ScheduledEventEntity(
      * عند ضبطه تُطلق الفقرة مرة واحدة في هذا التاريخ فقط وتُهمل قناع الأيام،
      * وبعد الفات تنقرض منبهاتها تلقائياً (nextTriggerMillis يعيد null).
      */
-    @ColumnInfo(name = "specific_date") val specificDate: String? = null
+    @ColumnInfo(name = "specific_date") val specificDate: String? = null,
+    /**
+     * v0.28.0: تنبيه إشعار قبل انطلاق الفقرة المؤرخة — دقائق قبل البدء
+     * (60 = قبل ساعة، 1440 = قبل يوم) — null/0 = بلا تنبيه.
+     * للفقرات ذات الموعد الواحد فقط؛ الأسبوعية المتكررة لا تنبّه (إيقاعها معروف).
+     * يُضبط عبر AlarmManager مستقل ويعاد بعد كل إقلاع/تعديل مثل منبهات الإطلاق.
+     */
+    @ColumnInfo(name = "reminder_before_minutes") val reminderBeforeMinutes: Int? = null
 ) {
     /** هل الحدث مجدول في اليوم المحدد؟ (dayOfWeek بمعيار ISO: الاثنين=1..الأحد=7) */
     fun runsOn(dayOfWeekIso: Int): Boolean {

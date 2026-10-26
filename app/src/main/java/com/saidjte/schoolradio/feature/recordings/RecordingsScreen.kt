@@ -23,11 +23,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -222,11 +222,11 @@ fun RecordingsScreen(
                 onValueChange = { search = it },
                 modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
                 placeholder = { Text("ابحث في التسجيلات…") },
-                leadingIcon = { Icon(Icons.Filled.Search, null) },
+                leadingIcon = { Icon(Icons.Rounded.Search, null) },
                 trailingIcon = {
                     if (search.isNotEmpty()) {
                         IconButton(onClick = { search = "" }) {
-                            Icon(Icons.Filled.Close, "مسح البحث")
+                            Icon(Icons.Rounded.Close, "مسح البحث")
                         }
                     }
                 },
@@ -461,7 +461,7 @@ private fun RecordingsMiniPlayer(
                     )
                 ) {
                     Icon(
-                        if (isPlaying) AppIcons.Pause else Icons.Filled.PlayArrow,
+                        if (isPlaying) AppIcons.Pause else Icons.Rounded.PlayArrow,
                         "تشغيل/إيقاف مؤقت"
                     )
                 }
@@ -607,7 +607,7 @@ private fun RecordingRow(
                 ) {
                     Icon(
                         if (isPlayingNow) AppIcons.Pause
-                        else Icons.Filled.PlayArrow,
+                        else Icons.Rounded.PlayArrow,
                         contentDescription = "تشغيل/إيقاف"
                     )
                 }
@@ -686,7 +686,7 @@ private fun RecordingRow(
                             HorizontalDivider(Modifier.padding(vertical = 4.dp))
                             DropdownMenuItem(
                                 text = { Text("تسمية") },
-                                leadingIcon = { Icon(Icons.Filled.Edit, null, Modifier.size(20.dp)) },
+                                leadingIcon = { Icon(Icons.Rounded.Edit, null, Modifier.size(20.dp)) },
                                 onClick = { menuOpen = false; onRename() }
                             )
                             DropdownMenuItem(
@@ -698,7 +698,7 @@ private fun RecordingRow(
                                 },
                                 leadingIcon = {
                                     Icon(
-                                        Icons.Filled.Delete, null, Modifier.size(20.dp),
+                                        Icons.Rounded.Delete, null, Modifier.size(20.dp),
                                         tint = MaterialTheme.colorScheme.error
                                     )
                                 },

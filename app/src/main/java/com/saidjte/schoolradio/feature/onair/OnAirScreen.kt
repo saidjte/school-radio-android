@@ -26,8 +26,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -249,7 +249,7 @@ fun OnAirScreen(onExit: () -> Unit) {
                     }
                 }
                 IconButton(onClick = onExit) {
-                    Icon(Icons.Filled.Close, "إغلاق شاشة العرض", tint = onDark)
+                    Icon(Icons.Rounded.Close, "إغلاق شاشة العرض", tint = onDark)
                 }
             }
 
@@ -749,7 +749,7 @@ fun OnAirScreen(onExit: () -> Unit) {
                     ) {
                         IconButton(onClick = { locator.playback.playPause() }) {
                             Icon(
-                                if (playback.isPlaying) AppIcons.Pause else Icons.Filled.PlayArrow,
+                                if (playback.isPlaying) AppIcons.Pause else Icons.Rounded.PlayArrow,
                                 "تشغيل/إيقاف مؤقت",
                                 tint = Color(0xFF062A25),
                                 modifier = Modifier.size(44.dp)

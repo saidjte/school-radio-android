@@ -39,6 +39,10 @@ import com.saidjte.schoolradio.data.local.entity.UserEntity
  *   trim_manual على recordings) + معرض شكل موجي داخل محرر القص.
  * الإصدار 10 = v0.23.0: استيراد من الإنترنت (is_remote + source_url على audio_tracks)
  *   — مقاطع بث من يوتوب/ساوندكلاود/Drive مع تنزيل محلي يحولها لملفات دائمة.
+ * الإصدار 11 = v0.27.0: تاريخ الموعد الواحد (specific_date على scheduled_events)
+ *   — فقرات مناسبات تُطلق مرة واحدة ثم تنقرض منبهاتها.
+ * الإصدار 12 = v0.28.0: تنبيه إشعار قبل الفقرة المؤرخة (reminder_before_minutes
+ *   على scheduled_events) — دقائق قبل البدء، يُضبط عبر AlarmManager مستقل.
  * عند أي تعديل مستقبلي: زد الإصدار واكتب Migration() صريحاً (لا fallback في الإنتاج)
  * — بيانات المدارس الحقيقية (مكتبة + جداول + أرشيف) لا يجوز فقدانها أبداً.
  */
@@ -54,7 +58,7 @@ import com.saidjte.schoolradio.data.local.entity.UserEntity
         UserEntity::class,
         RecordingEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -279,6 +283,21 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * ترحيل 11 → 12 (v0.27.0 → v0.28.0): عمود تنبيه الفقرة المؤرخة —
+         * دقائق قبل انطلاق الفقرة يُرسل عندها إشعار تذكير (60 = ساعة، 1440 = يوم).
+         * ADD COLUMN قيمته NULL افتراضياً ولا تُكتب صفوف أثناء الترحيل —
+         * كل الفقرات القائمة تبقى «بدون تنبيه» كما هي، لا مساس بأي بيانات.
+         * SQL هنا يجب أن يطابق حرفياً ما يولّده Room من الكيانات (يُفحص مخطط app/schemas/12.json).
+         */
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `scheduled_events` ADD COLUMN `reminder_before_minutes` INTEGER"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -289,7 +308,7 @@ abstract class AppDatabase : RoomDatabase() {
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
                         MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
-                        MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11
+                        MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12
                     )
                     .build().also { INSTANCE = it }
             }
