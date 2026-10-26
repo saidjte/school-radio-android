@@ -254,6 +254,16 @@ interface ScheduleDao {
     )
     suspend fun eventsForDayBit(dayBit: Int): List<ScheduledEventEntity>
 
+    // v0.27.0: فقرات الموعد الواحد بتاريخ محدد (أحداث اليوم تشملها)
+    @Query(
+        """
+        SELECT * FROM scheduled_events
+        WHERE specific_date = :dateKey
+        ORDER BY start_minutes
+        """
+    )
+    suspend fun eventsForDate(dateKey: String): List<ScheduledEventEntity>
+
     // ----- سجل التنفيذ -----
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)

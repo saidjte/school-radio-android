@@ -26,7 +26,9 @@ object AutomationLogic {
         val eventId: Long,
         val title: String,
         val startMinutes: Int,
-        val weekDaysMask: Int
+        val weekDaysMask: Int,
+        /** v0.27.0: تاريخ الموعد الواحد — عند ضبطه تُقارن اليوم به مباشرة بدل قناع الأيام */
+        val specificDate: String? = null
     )
 
     /**
@@ -42,8 +44,13 @@ object AutomationLogic {
     ): List<Long> {
         val dayBit = ScheduleLogic.dayBitOf(nowMillis)
         val minutesNow = ScheduleLogic.minutesOfDay(nowMillis)
+        val todayKey = ScheduleLogic.dateKey(nowMillis)
         return events
-            .filter { (it.weekDaysMask and dayBit) != 0 }
+            .filter {
+                // v0.27.0: موعد واحد يقارن بتاريخ اليوم مباشرة، والأسبوعي بقناع الأيام
+                if (it.specificDate != null) it.specificDate == todayKey
+                else (it.weekDaysMask and dayBit) != 0
+            }
             .filter { minutesNow >= it.startMinutes && minutesNow < it.startMinutes + graceMinutes }
             .filter { !executedToday(it.eventId) }
             .sortedBy { it.startMinutes }
@@ -61,8 +68,12 @@ object AutomationLogic {
     ): EventTiming? {
         val dayBit = ScheduleLogic.dayBitOf(nowMillis)
         val minutesNow = ScheduleLogic.minutesOfDay(nowMillis)
+        val todayKey = ScheduleLogic.dateKey(nowMillis)
         return events
-            .filter { (it.weekDaysMask and dayBit) != 0 }
+            .filter {
+                if (it.specificDate != null) it.specificDate == todayKey
+                else (it.weekDaysMask and dayBit) != 0
+            }
             .filter { it.startMinutes > minutesNow }
             .filter { !executedToday(it.eventId) }
             .minByOrNull { it.startMinutes }

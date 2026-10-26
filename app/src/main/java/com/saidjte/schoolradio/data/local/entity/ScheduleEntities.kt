@@ -109,7 +109,13 @@ data class ScheduledEventEntity(
      * خارج Room). عند إطلاق الفقرة أوتوماتيكياً يظهر السكربت جاهزاً للقراءة على شاشة
      * العرض؛ حذف السكربت من المستودع لا يكسر شيئاً — يُتحقق من وجوده لحظة الإطلاق.
      */
-    @ColumnInfo(name = "script_id") val scriptId: Long? = null
+    @ColumnInfo(name = "script_id") val scriptId: Long? = null,
+    /**
+     * v0.27.0: تاريخ واحد yyyy-MM-dd للفقرات غير المتكررة (تخرّج، احتفال…) —
+     * عند ضبطه تُطلق الفقرة مرة واحدة في هذا التاريخ فقط وتُهمل قناع الأيام،
+     * وبعد الفات تنقرض منبهاتها تلقائياً (nextTriggerMillis يعيد null).
+     */
+    @ColumnInfo(name = "specific_date") val specificDate: String? = null
 ) {
     /** هل الحدث مجدول في اليوم المحدد؟ (dayOfWeek بمعيار ISO: الاثنين=1..الأحد=7) */
     fun runsOn(dayOfWeekIso: Int): Boolean {

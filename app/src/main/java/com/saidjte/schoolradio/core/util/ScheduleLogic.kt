@@ -55,6 +55,13 @@ object ScheduleLogic {
 
     /** أقرب موعد إطلاق مستقبلي لحدث (ملي ثانية) — يراعي أيام الأسبوع */
     fun nextTriggerMillis(event: NextTriggerInput, nowMillis: Long): Long? {
+        // v0.27.0: الموعد الواحد — تاريخ محدد يُطلق مرة واحدة ثم لا يعود (فات = لا منبه)
+        event.specificDate?.let { date ->
+            val midnight = com.saidjte.schoolradio.core.util.EventDateLogic.millisOfDateKey(date)
+                ?: return null
+            val t = midnight + event.startMinutes * 60_000L
+            return if (t > nowMillis) t else null
+        }
         val cal = Calendar.getInstance().apply { timeInMillis = nowMillis }
         cal.set(Calendar.SECOND, 0)
         cal.set(Calendar.MILLISECOND, 0)
@@ -77,7 +84,12 @@ object ScheduleLogic {
     }
 
     /** صورة مبسطة لحدث الجدولة تُمرر للمنطق الصرف (فصل عن الكيان) */
-    data class NextTriggerInput(val startMinutes: Int, val weekDaysMask: Int)
+    data class NextTriggerInput(
+        val startMinutes: Int,
+        val weekDaysMask: Int,
+        /** v0.27.0: تاريخ واحد yyyy-MM-dd — يلغي اعتبار weekDaysMask عند ضبطه */
+        val specificDate: String? = null
+    )
 
     /**
      * كشف تعارض المواعيد: حدثان في اليوم نفسه يتقاطعان زمنياً.

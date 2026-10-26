@@ -1,7 +1,6 @@
 package com.saidjte.schoolradio.feature.scheduling
 
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
@@ -33,6 +32,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -51,6 +51,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -76,6 +77,7 @@ import com.saidjte.schoolradio.core.ui.ScreenHeader
 import com.saidjte.schoolradio.core.ui.SegmentImage
 import com.saidjte.schoolradio.core.ui.diagonalBrush
 import com.saidjte.schoolradio.core.util.EventContentAr
+import com.saidjte.schoolradio.core.util.EventDateLogic
 import com.saidjte.schoolradio.core.util.ScheduleLogic
 import com.saidjte.schoolradio.core.util.SegmentImageStore
 import com.saidjte.schoolradio.core.util.TimeEditLogic
@@ -441,8 +443,26 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                 )
                             }
                             Spacer(Modifier.height(4.dp))
-                            // v0.8.0: الأيام كرقائق مصغرة — أسرع قراءة من النص الطويل
-                            WeekDayPills(e.weekDaysMask)
+                            // v0.27.0: فقرة الموعد الواحد تعرض تاريخها بدل رقائق الأيام
+                            if (e.specificDate != null) {
+                                Surface(
+                                    shape = MaterialTheme.shapes.small,
+                                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+                                ) {
+                                    Text(
+                                        "مرة واحدة • " +
+                                            (EventDateLogic.formatDateAr(e.specificDate!!) ?: e.specificDate!!) +
+                                            (EventDateLogic.relativeLabelAr(
+                                                e.specificDate!!, System.currentTimeMillis()
+                                            )?.let { " • $it" } ?: ""),
+                                        Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                }
+                            } else {
+                                WeekDayPills(e.weekDaysMask)
+                            }
                             Text(
                                 contentLabel,
                                 style = MaterialTheme.typography.labelSmall,
@@ -850,7 +870,9 @@ data class EventEditorState(
     val recordingId: Long? = null,
     val noteText: String? = null,
     val imagePath: String? = null,
-    val scriptId: Long? = null
+    val scriptId: Long? = null,
+    // v0.27.0: تاريخ الموعد الواحد (yyyy-MM-dd) — null يعني أسبوعي متكرر
+    val specificDate: String? = null
 ) {
     companion object {
         fun from(e: ScheduledEventEntity) = EventEditorState(
@@ -864,7 +886,8 @@ data class EventEditorState(
             recordingId = e.recordingId,
             noteText = e.noteText,
             imagePath = e.imagePath,
-            scriptId = e.scriptId
+            scriptId = e.scriptId,
+            specificDate = e.specificDate
         )
     }
 }
@@ -971,11 +994,19 @@ private fun EventEditorDialog(
     // v0.13.0: سكربت المذيع المرتبط بالفقرة — يفتح على شاشة العرض لحظة الإطلاق
     var scriptId by remember { mutableStateOf(initial.scriptId) }
 
-    // v0.26.0: كشف التعارض حيّاً أثناء التعديل — بدل انتظار زر الحفظ
-    // (حدث آخر في نفس الجدول والوقت مع تقاطع أيام)
+    // v0.27.0: نمط التكرار — أسبوعي متكرر أو موعد واحد بتاريخ محدد (تخرّج، احتفال…)
+    var oneTime by remember { mutableStateOf(initial.specificDate != null) }
+    var specificDate by remember { mutableStateOf(initial.specificDate) }
+    // v0.27.0: رسالة فشل حفظ الصورة بدل الفشل الصامت
+    var imageError by remember { mutableStateOf<String?>(null) }
+
+    // v0.27.0: كشف التعارض حيّاً أثناء التعديل — أسبوعي مقابل أسبوعي،
+    // وموعد واحد مقابل موعد واحد بنفس التاريخ (النمطان لا يتقاطعان)
     val conflictNow = events.any {
         it.id != initial.originalId && it.scheduleId == scheduleId &&
-            it.startMinutes == startMinutes && (it.weekDaysMask and mask) != 0
+            it.startMinutes == startMinutes &&
+            (if (oneTime) it.specificDate != null && it.specificDate == specificDate
+            else it.specificDate == null && (it.weekDaysMask and mask) != 0)
     }
     val conflictMsg = if (conflictNow)
         "توجد فقرة أخرى في نفس الوقت والأيام المحددة — عدّل الوقت أو الأيام"
@@ -984,9 +1015,10 @@ private fun EventEditorDialog(
     val playlists by locator.playlists.playlists.collectAsStateWithLifecycle(initialValue = emptyList())
     val tracks by locator.library.tracks.collectAsStateWithLifecycle(initialValue = emptyList())
 
-    // اختيار صورة الفقرة عبر Photo Picker (بلا صلاحيات تخزين) + نسخة مضغوطة داخل التطبيق
+    // v0.27.0: منتقي GetContent بدل Photo Picker — يعمل على كل أجهزة المدارس القديمة
+    // (minSdk 24 بلا وحدة منتقي الصور النظامية)، ومع رسالة خطأ ظاهرة بدل الصمت
     val imagePicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
+        ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri != null) {
             imageScope.launch {
@@ -994,6 +1026,9 @@ private fun EventEditorDialog(
                 if (saved != null) {
                     SegmentImageStore.delete(imagePath)
                     imagePath = saved
+                    imageError = null
+                } else {
+                    imageError = "تعذر حفظ الصورة — جرّب صورة أخرى من معرض الجهاز"
                 }
             }
         }
@@ -1017,24 +1052,52 @@ private fun EventEditorDialog(
                     onChange = { startMinutes = it },
                     conflictText = conflictMsg
                 )
-                Text("أيام التشغيل", style = MaterialTheme.typography.labelLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    ARABIC_DAYS.take(4).forEachIndexed { i, day ->
-                        FilterChip(
-                            selected = (mask shr i) and 1 == 1,
-                            onClick = { mask = mask xor (1 shl i) },
-                            label = { Text(day, style = MaterialTheme.typography.labelSmall) }
-                        )
-                    }
+                // v0.27.0: نمط التكرار — أسبوعي متكرر أو موعد واحد بتاريخ محدد
+                Text("نمط التكرار", style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(
+                        selected = !oneTime,
+                        onClick = { oneTime = false },
+                        label = { Text("أسبوعي متكرر") }
+                    )
+                    FilterChip(
+                        selected = oneTime,
+                        onClick = {
+                            oneTime = true
+                            if (specificDate == null) {
+                                specificDate = EventDateLogic.plusDays(
+                                    ScheduleLogic.dateKey(System.currentTimeMillis()), 1
+                                )
+                            }
+                        },
+                        label = { Text("موعد واحد") }
+                    )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    ARABIC_DAYS.drop(4).forEachIndexed { idx, day ->
-                        val i = idx + 4
-                        FilterChip(
-                            selected = (mask shr i) and 1 == 1,
-                            onClick = { mask = mask xor (1 shl i) },
-                            label = { Text(day, style = MaterialTheme.typography.labelSmall) }
-                        )
+                if (oneTime) {
+                    DateEditorSection(
+                        dateKey = specificDate,
+                        onChange = { specificDate = it }
+                    )
+                } else {
+                    Text("أيام التشغيل", style = MaterialTheme.typography.labelLarge)
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        ARABIC_DAYS.take(4).forEachIndexed { i, day ->
+                            FilterChip(
+                                selected = (mask shr i) and 1 == 1,
+                                onClick = { mask = mask xor (1 shl i) },
+                                label = { Text(day, style = MaterialTheme.typography.labelSmall) }
+                            )
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        ARABIC_DAYS.drop(4).forEachIndexed { idx, day ->
+                            val i = idx + 4
+                            FilterChip(
+                                selected = (mask shr i) and 1 == 1,
+                                onClick = { mask = mask xor (1 shl i) },
+                                label = { Text(day, style = MaterialTheme.typography.labelSmall) }
+                            )
+                        }
                     }
                 }
 
@@ -1104,9 +1167,8 @@ private fun EventEditorDialog(
                     }
                     Column {
                         TextButton(onClick = {
-                            imagePicker.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
+                            imageError = null
+                            imagePicker.launch("image/*")
                         }) {
                             Icon(Icons.Filled.Add, null)
                             Text(if (imagePath == null) " إضافة صورة" else " تغيير الصورة")
@@ -1118,6 +1180,13 @@ private fun EventEditorDialog(
                             }) { Text("إزالة الصورة") }
                         }
                     }
+                }
+                imageError?.let {
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
 
                 // اختيار الجدول
@@ -1132,11 +1201,12 @@ private fun EventEditorDialog(
         },
         confirmButton = {
             TextButton(
-                // v0.26.0: زر الحفظ يتعطل ذاتياً عند تعارض حي أو نقص البيانات —
-                // رسالة الخطأ لا تنتظر محاولة الحفظ بعد اليوم
-                enabled = title.isNotBlank() && mask != 0 && !conflictNow,
+                // v0.27.0: زر الحفظ يتعطل ذاتياً عند نقص نمط التكرار أو تعارض حي
+                enabled = title.isNotBlank() &&
+                    (if (oneTime) specificDate != null else mask != 0) && !conflictNow,
                 onClick = {
-                    if (title.isNotBlank() && mask != 0) {
+                    val recurrenceOk = if (oneTime) specificDate != null else mask != 0
+                    if (title.isNotBlank() && recurrenceOk) {
                         // استُبدلت صورة قديمة؟ نحذف ملفها من القرص (لا ملفات يتيمة)
                         if (initial.imagePath != null && initial.imagePath != imagePath) {
                             SegmentImageStore.delete(initial.imagePath)
@@ -1146,14 +1216,15 @@ private fun EventEditorDialog(
                                 id = initial.originalId ?: 0,
                                 scheduleId = scheduleId,
                                 startMinutes = startMinutes,
-                                weekDaysMask = mask,
+                                weekDaysMask = if (oneTime) 0 else mask,
                                 title = title.trim(),
                                 playlistId = playlistId,
                                 singleTrackId = singleTrackId,
                                 recordingId = recordingId,
                                 noteText = noteText.trim().takeIf { it.isNotBlank() },
                                 imagePath = imagePath,
-                                scriptId = scriptId
+                                scriptId = scriptId,
+                                specificDate = if (oneTime) specificDate else null
                             )
                         )
                     }
@@ -1295,6 +1366,118 @@ private fun TimePickerHostDialog(
         },
         confirmButton = {
             TextButton(onClick = { onPick(state.hour * 60 + state.minute) }) { Text("تحديد") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
+    )
+}
+
+/**
+ * v0.27.0 — محرر تاريخ الموعد الواحد:
+ *  - بطاقة تاريخ قابلة للنقر تفتح منتقي التاريخ المادي (تقويم M3)
+ *  - عرض عربي كامل «الخميس 5 نوفمبر 2026» + وصف نسبي حي (غداً/بعد 3 أيام/فائتة)
+ *  - رقائق سريعة: اليوم / غداً / بعد أسبوع
+ */
+@OptIn(
+    androidx.compose.foundation.layout.ExperimentalLayoutApi::class,
+    androidx.compose.material3.ExperimentalMaterial3Api::class
+)
+@Composable
+private fun DateEditorSection(
+    dateKey: String?,
+    onChange: (String) -> Unit
+) {
+    var showPicker by remember { mutableStateOf(false) }
+    val nowMillis = remember { System.currentTimeMillis() }
+    val todayKey = remember(nowMillis) { ScheduleLogic.dateKey(nowMillis) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Surface(
+            onClick = { showPicker = true },
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(AppIcons.Event, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        dateKey?.let { EventDateLogic.formatDateAr(it) } ?: "اختر التاريخ",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    dateKey?.let {
+                        EventDateLogic.relativeLabelAr(it, nowMillis)?.let { rel ->
+                            Text(
+                                rel,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (rel == "فائتة") MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                Icon(
+                    Icons.Filled.Edit, "فتح منتقي التاريخ",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("اليوم" to 0, "غداً" to 1, "بعد أسبوع" to 7).forEach { (label, days) ->
+                FilterChip(
+                    selected = false,
+                    onClick = { EventDateLogic.plusDays(todayKey, days)?.let(onChange) },
+                    label = { Text(label, style = MaterialTheme.typography.labelMedium) }
+                )
+            }
+        }
+    }
+
+    if (showPicker) {
+        DatePickerHostDialog(
+            initialDateKey = dateKey,
+            onPick = { onChange(it); showPicker = false },
+            onDismiss = { showPicker = false }
+        )
+    }
+}
+
+/** منتقي التاريخ المادي (تقويم M3) داخل حوار — v0.27.0 لفقرات الموعد الواحد */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun DatePickerHostDialog(
+    initialDateKey: String?,
+    onPick: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val initialMillis = remember(initialDateKey) {
+        initialDateKey?.let { EventDateLogic.millisOfDateKey(it) }
+    }
+    val state = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("اختر تاريخ الفقرة") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                DatePicker(state = state)
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = state.selectedDateMillis != null,
+                onClick = {
+                    state.selectedDateMillis?.let { ms ->
+                        onPick(EventDateLogic.dateKeyFromUtcPickerMillis(ms))
+                    }
+                }
+            ) { Text("تحديد") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
     )

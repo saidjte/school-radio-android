@@ -166,8 +166,28 @@ class LibraryRepository(
         pending.size
     }
 
-    suspend fun rename(track: AudioTrackEntity, newTitle: String) {
-        trackDao.update(track.copy(title = newTitle))
+    /**
+     * v0.27.0: إعادة تسمية بقراءة حديثة من القاعدة أولاً — الكود القديم كان
+     * يكتب بكائن قديم مرر من الواجهة فيمسح تعديلات متتالية على نفس الصف.
+     */
+    suspend fun rename(trackId: Long, newTitle: String) {
+        val fresh = trackDao.byId(trackId) ?: return
+        trackDao.update(fresh.copy(title = newTitle))
+    }
+
+    /**
+     * v0.27.0: تحديث ذري للعنوان والتصنيف معاً بقراءة حديثة —
+     * إصلاح «لا يمكن إعادة تسمية المقاطع»: الواجهة كانت تستدعي rename ثم
+     * moveToCategory بكائن track قديم فأعاد الثاني العنوان القديم ومحو الجديد.
+     */
+    suspend fun updateMeta(trackId: Long, newTitle: String, categoryId: Long?) {
+        val fresh = trackDao.byId(trackId) ?: return
+        trackDao.update(fresh.copy(title = newTitle, categoryId = categoryId))
+    }
+
+    suspend fun moveToCategory(trackId: Long, categoryId: Long?) {
+        val fresh = trackDao.byId(trackId) ?: return
+        trackDao.update(fresh.copy(categoryId = categoryId))
     }
 
     // ================== v0.19.0: القص اليدوي ==================
@@ -193,10 +213,6 @@ class LibraryRepository(
      */
     suspend fun clearManualTrim(trackId: Long) = withContext(Dispatchers.IO) {
         trackDao.clearTrim(trackId)
-    }
-
-    suspend fun moveToCategory(track: AudioTrackEntity, categoryId: Long?) {
-        trackDao.update(track.copy(categoryId = categoryId))
     }
 
     /** حذف المقطع من المكتبة فقط — لا يمس الملف الأصلي على الإطلاق */

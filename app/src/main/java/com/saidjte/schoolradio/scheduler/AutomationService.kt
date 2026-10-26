@@ -136,7 +136,8 @@ class AutomationService : Service() {
             .map {
                 AutomationLogic.EventTiming(
                     eventId = it.id, title = it.title,
-                    startMinutes = it.startMinutes, weekDaysMask = it.weekDaysMask
+                    startMinutes = it.startMinutes, weekDaysMask = it.weekDaysMask,
+                    specificDate = it.specificDate
                 )
             }
 

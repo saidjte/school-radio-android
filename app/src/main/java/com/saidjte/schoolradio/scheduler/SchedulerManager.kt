@@ -72,7 +72,9 @@ class SchedulerManager(private val context: Context) {
         var armed = 0
         for (event in events) {
             val trigger = ScheduleLogic.nextTriggerMillis(
-                ScheduleLogic.NextTriggerInput(event.startMinutes, event.weekDaysMask), now
+                ScheduleLogic.NextTriggerInput(
+                    event.startMinutes, event.weekDaysMask, event.specificDate
+                ), now
             ) ?: continue
             armAlarm(event.id, trigger, exact = canScheduleExact())
             armed++

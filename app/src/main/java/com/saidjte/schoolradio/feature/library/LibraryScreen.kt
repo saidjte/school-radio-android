@@ -336,8 +336,9 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
             onDismiss = { editing = null },
             onSave = { newTitle, newCategory ->
                 scope.launch {
-                    locator.library.rename(track, newTitle)
-                    locator.library.moveToCategory(track, newCategory)
+                    // v0.27.0: تحديث ذري واحد — كان الاستدعان المتتاليان بكائن قديم
+                    // يمحو الثاني إعادة التسمية فلا تعمل أبداً (خلل v0.10.0)
+                    locator.library.updateMeta(track.id, newTitle, newCategory)
                     snackbar.showSnackbar("حُدّث المقطع")
                 }
                 editing = null

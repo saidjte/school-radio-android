@@ -62,12 +62,23 @@ class ScheduleRepository(private val db: AppDatabase) {
         dao.eventsForDayBit(ScheduleLogic.dayBitOf(nowMillis))
 
     /**
+     * v0.27.0: أحداث اليوم تشمل فقرات الموعد الواحد بتاريخ اليوم —
+     * الأسبوعية من قناع الأيام (بلا تاريخ محدد) + المؤرخة بمفتاح اليوم.
+     */
+    suspend fun todayEventsIncludingDated(nowMillis: Long): List<ScheduledEventEntity> {
+        val weekly = dao.eventsForDayBit(ScheduleLogic.dayBitOf(nowMillis))
+            .filter { it.specificDate == null }
+        val dated = dao.eventsForDate(ScheduleLogic.dateKey(nowMillis))
+        return weekly + dated
+    }
+
+    /**
      * تدفق أحداث اليوم للواجهة — يجدد القراءة كل 30 ثانية
      * (ينتقل تلقائياً بين أيام الأسبوع ويكتشف تغيّر اليوم).
      */
     fun todayEventsFlow(): Flow<List<ScheduledEventEntity>> = kotlinx.coroutines.flow.flow {
         while (true) {
-            emit(todayEvents(System.currentTimeMillis()))
+            emit(todayEventsIncludingDated(System.currentTimeMillis()))
             kotlinx.coroutines.delay(30_000)
         }
     }
