@@ -1,8 +1,6 @@
 package com.saidjte.schoolradio.di
 
-import android.app.ActivityManager
 import android.content.Context
-import android.os.Build
 import com.saidjte.schoolradio.audio.AudioEffects
 import com.saidjte.schoolradio.audio.AudioRoutingManager
 import com.saidjte.schoolradio.audio.CartPlayer
@@ -77,9 +75,6 @@ object ServiceLocator {
     // v0.18.0: إعداد «قص الفراغ الأول» كلقطة حية — يقرأه QueueItem.toMediaItem
     // متزامناً عند بناء عناصر الوسائط (بلا تعليق) ويحدّثه جامع الإعدادات الدائم
     val trimSilenceEnabled = MutableStateFlow(true)
-
-    // v0.29.0: تفضيل «عالي الدقة Opus HD» كلقطة حية — يقرأه RecordingManager لحظة بدء كل تسجيل
-    val recordingHdPreferred = MutableStateFlow(true)
 
     private lateinit var appContext: Context
     val appScope: CoroutineScope
@@ -567,8 +562,7 @@ object ServiceLocator {
                 appContext,
                 recordingsRepo,
                 currentUserProvider = { session.currentUser.first() },
-                isLiveProvider = { _micLive.value },
-                hdPreferredProvider = { recordingHdPreferred.value }
+                isLiveProvider = { _micLive.value }
             )
             // v0.9.0: تحميل إعدادات الاستوديو المحفوظة مسبقاً (كسب الميك + مستوى الموسيقى)
             // + استرجاع المؤثرات فور توفر أول جلسة صوتية
@@ -603,29 +597,6 @@ object ServiceLocator {
                     )
                     // v0.18.0: لقطة حية لإعداد قص الفراغ الأول
                     trimSilenceEnabled.value = s.trimSilence
-                    // v0.29.0: لقطة حية لتفضيل Opus HD
-                    recordingHdPreferred.value = s.recordingHd
-                }
-            }
-            // v0.31.0: قرار وضع الأداء الأول — تلقائي حسب قوة الجهاز مرة واحدة فقط،
-            // ثم يبقى اختيار المستخدم حرّاً من الإعدادات (لا يُعاد الحسم أبداً)
-            appScope.launch {
-                runCatching {
-                    val s = settings.settings.first()
-                    if (!s.performanceDecided) {
-                        val am = appContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-                        val memInfo = ActivityManager.MemoryInfo()
-                        am.getMemoryInfo(memInfo)
-                        val memMb = com.saidjte.schoolradio.core.util.PerformanceModeLogic
-                            .bytesToMb(memInfo.totalMem)
-                        val auto = com.saidjte.schoolradio.core.util.PerformanceModeLogic.autoDefault(
-                            isLowRamDevice = am.isLowRamDevice,
-                            totalMemMb = memMb,
-                            apiLevel = Build.VERSION.SDK_INT
-                        )
-                        settings.setPerformanceMode(auto)
-                        settings.setPerformanceDecided(true)
-                    }
                 }
             }
             initialized = true

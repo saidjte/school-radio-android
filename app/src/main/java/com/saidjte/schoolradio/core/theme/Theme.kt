@@ -11,6 +11,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.material3.Typography
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
@@ -21,10 +22,9 @@ import androidx.compose.ui.unit.sp
 import com.saidjte.schoolradio.R
 
 /**
- * نظام التصميم الكامل (v0.32.0 — الأسطح النظيفة):
+ * نظام التصميم الكامل (v0.7.0 — إعادة صياغة عصرية أنيقة):
  *  - لوحة «زمرد مدرسي» أعمق وأرقى: primary فيروزي عميق + ذهبي دافئ كثانوي
- *  - أسطح مصمتة معتمة كاملاً (بلا ألفا مدمجة) — عمق بثلاث طبقات حاويات
- *    وظلال خفيفة بلا أي شفافية: أوضح عيناً وأخف رسماً على كل الأجهزة
+ *  - أسطح صافية تطفو فوق خلفية نعناعية ناعمة (عمق بثلاث طبقات حاويات)
  *  - تدرجات رسمية (AppGradients) للبطاقة البطلة والبث الحي والأزرار الرئيسية
  *    تتكيّف مع الوضع الداكن عبر CompositionLocal
  *  - ألوان دلالية theme-aware للحالات (نجاح/تشغيل/فشل/تحذير/بث حي)
@@ -57,15 +57,15 @@ private val Gold90 = Color(0xFFFFE08D)
 private val GoldContainer = Color(0xFFFFE3AE)
 private val GoldContainerDark = Color(0xFF5A4300)
 
-// ===== الأسطح المصمتة (v0.32.0) — ألوان معتمة كاملة بلا ألفا مدمجة =====
+// ===== أسطح أنيقة — أبيض صافٍ يطفو فوق نعناعي ناعم =====
 private val BgLight = Color(0xFFF3F8F5)
-private val SurfaceLight = Color(0xFFFFFBF8)
+private val SurfaceLight = Color(0xFFFFFFFF)
 private val SurfaceDimLight = Color(0xFFEDF3EF)
 private val SurfaceVariantLight = Color(0xFFDDE7E2)
 private val OnSurfaceLight = Color(0xFF161D1B)
 
 private val BgDark = Color(0xFF0C1512)
-private val SurfaceDark = Color(0xFF0F1B17)
+private val SurfaceDark = Color(0xFF111B18)
 private val SurfaceVariantDark = Color(0xFF22302B)
 private val OnSurfaceDark = Color(0xFFDEE6E2)
 
@@ -133,6 +133,9 @@ val LocalAppGradients = staticCompositionLocalOf { LightGradients }
 val MaterialTheme.gradients: AppGradients
     @Composable get() = LocalAppGradients.current
 
+/** تدرج قطري موحّد للاستخدام مع Brush.linearGradient */
+fun List<Color>.diagonal(): Brush = Brush.linearGradient(this)
+
 // ===== المخططات الكاملة =====
 private val LightScheme = lightColorScheme(
     primary = Teal40,
@@ -156,10 +159,10 @@ private val LightScheme = lightColorScheme(
     surfaceVariant = SurfaceVariantLight,
     onSurfaceVariant = Color(0xFF404946),
     surfaceContainerLowest = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFF4FBF7),
-    surfaceContainer = Color(0xFFF1F9F4),
-    surfaceContainerHigh = Color(0xFFEBF4EE),
-    surfaceContainerHighest = Color(0xFFE4EEE8),
+    surfaceContainerLow = Color(0xFFF6FAF7),
+    surfaceContainer = Color(0xFFEFF5F1),
+    surfaceContainerHigh = Color(0xFFE9F0EB),
+    surfaceContainerHighest = Color(0xFFE3EBE6),
     surfaceTint = Teal40,
     inverseSurface = Color(0xFF2B302D),
     inverseOnSurface = Color(0xFFEDF2EF),
@@ -193,11 +196,11 @@ private val DarkScheme = darkColorScheme(
     surfaceDim = Color(0xFF0C1512),
     surfaceVariant = SurfaceVariantDark,
     onSurfaceVariant = Color(0xFFB7C2BD),
-    surfaceContainerLowest = Color(0xFF0D1915),
-    surfaceContainerLow = Color(0xFF112021),
-    surfaceContainer = Color(0xFF142724),
-    surfaceContainerHigh = Color(0xFF183029),
-    surfaceContainerHighest = Color(0xFF1E3A31),
+    surfaceContainerLowest = Color(0xFF0A1210),
+    surfaceContainerLow = Color(0xFF161F1C),
+    surfaceContainer = Color(0xFF1A2421),
+    surfaceContainerHigh = Color(0xFF24302B),
+    surfaceContainerHighest = Color(0xFF2F3B36),
     surfaceTint = Teal80,
     inverseSurface = Color(0xFFDEE6E2),
     inverseOnSurface = Color(0xFF2B302D),

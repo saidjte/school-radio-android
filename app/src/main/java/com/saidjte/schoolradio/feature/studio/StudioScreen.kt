@@ -46,7 +46,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,16 +74,9 @@ import com.saidjte.schoolradio.core.ui.GradientButton
 import com.saidjte.schoolradio.core.ui.ScreenHeader
 import com.saidjte.schoolradio.core.ui.StatusBadge
 import com.saidjte.schoolradio.core.ui.driftingGradient
-import com.saidjte.schoolradio.core.util.MicPermissionFlowLogic
 import com.saidjte.schoolradio.core.util.MixerLogic
-import com.saidjte.schoolradio.core.util.WaveformLogic
-import kotlinx.coroutines.delay
 import com.saidjte.schoolradio.data.settings.AppSettings
 import com.saidjte.schoolradio.di.ServiceLocator
-import com.google.accompanist.permissions.ExperimentalPermissionsApi
-import com.google.accompanist.permissions.isGranted
-import com.google.accompanist.permissions.rememberPermissionState
-import com.google.accompanist.permissions.shouldShowRationale
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -101,7 +93,7 @@ import kotlin.math.roundToInt
  *
  * كل الإعدادات تُحفظ محلياً وتُسترجع عند تشغيل التطبيق.
  */
-@OptIn(ExperimentalLayoutApi::class, ExperimentalPermissionsApi::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun StudioScreen(
     snackbar: androidx.compose.material3.SnackbarHostState,
@@ -113,8 +105,8 @@ fun StudioScreen(
 
     val micPhase by mic.phase.collectAsStateWithLifecycle()
     val micGain by mic.micGain.collectAsStateWithLifecycle()
-    // v0.31.0: المستويات الحية لم تعد تُجمَع في رأس الشاشة — مزوّدات تُقرأ وقت العينة
-    // داخل أشرطة VU نفسها، وإعادة تركيب شاشة الاستوديو عند كل انبعاث صارت صفراً
+    val micLevelRaw by locator.micLevel.collectAsStateWithLifecycle()
+    val mediaLevelRaw by locator.mediaLevel.collectAsStateWithLifecycle()
     val playbackState by locator.playback.state.collectAsStateWithLifecycle()
     val fx by AudioEffects.state.collectAsStateWithLifecycle()
     val settings by locator.settings.settings
@@ -124,16 +116,15 @@ fun StudioScreen(
     // v0.16.0: عدّاد تطبيق المشاهد — يُبادل وحدة المزج برفع الكتم الجلسي عند كل مشهد
     var sceneTick by remember { mutableIntStateOf(0) }
 
-    // v0.30.0: صلاحيات حالة-محورة عبر Accompanist — بلا لانشر يدوي
-    val micPermissionState = rememberPermissionState(Manifest.permission.RECORD_AUDIO)
-    var micRequestedOnce by rememberSaveable { mutableStateOf(false) }
-    var pendingMicStart by rememberSaveable { mutableStateOf(false) }
-
-    // عند المنح بعد الطلب — أكمل بدء الميكروفون تلقائياً بنفس المسار المختار
-    LaunchedEffect(micPermissionState.status) {
-        if (micPermissionState.status.isGranted && pendingMicStart) {
-            pendingMicStart = false
-            mic.start(route) { err -> err?.let { m -> scope.launch { snackbar.showSnackbar(m) } } }
+    val micPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        scope.launch {
+            if (granted) {
+                mic.start(route) { err -> err?.let { m -> scope.launch { snackbar.showSnackbar(m) } } }
+            } else {
+                snackbar.showSnackbar("بدون صلاحية الميكروفون لا يمكن البث المباشر")
+            }
         }
     }
 
@@ -141,28 +132,10 @@ fun StudioScreen(
         when (micPhase) {
             MicPhase.LIVE, MicPhase.STARTING -> mic.stop()
             MicPhase.IDLE, MicPhase.STOPPING -> {
-                // v0.30.0: تدفق صلاحية موحّد (Accompanist + MicPermissionFlowLogic)
-                val step = MicPermissionFlowLogic.decide(
-                    granted = micPermissionState.status.isGranted,
-                    shouldShowRationale = micPermissionState.status.shouldShowRationale,
-                    alreadyRequested = micRequestedOnce
-                )
-                when (step) {
-                    MicPermissionFlowLogic.Step.START ->
-                        mic.start(route) { err -> err?.let { m -> scope.launch { snackbar.showSnackbar(m) } } }
-                    MicPermissionFlowLogic.Step.REQUEST -> {
-                        micRequestedOnce = true
-                        pendingMicStart = true
-                        micPermissionState.launchPermissionRequest()
-                    }
-                    MicPermissionFlowLogic.Step.REQUEST_WITH_RATIONALE -> {
-                        scope.launch { snackbar.showSnackbar(MicPermissionFlowLogic.rationaleMessage(false)) }
-                        micRequestedOnce = true
-                        pendingMicStart = true
-                        micPermissionState.launchPermissionRequest()
-                    }
-                    MicPermissionFlowLogic.Step.OPEN_SETTINGS ->
-                        scope.launch { snackbar.showSnackbar(MicPermissionFlowLogic.rationaleMessage(true)) }
+                if (mic.hasPermission()) {
+                    mic.start(route) { err -> err?.let { m -> scope.launch { snackbar.showSnackbar(m) } } }
+                } else {
+                    micPermission.launch(Manifest.permission.RECORD_AUDIO)
                 }
             }
         }
@@ -204,9 +177,9 @@ fun StudioScreen(
         item {
             MixerConsole(
                 micFader = micGain,
-                micLevelProvider = { locator.micLevel.value },
+                micLevel = micLevelRaw,
                 musicFader = settings.defaultVolume,
-                mediaLevelProvider = { locator.mediaLevel.value },
+                mediaLevel = mediaLevelRaw,
                 breaksFader = settings.cartVolume,
                 previewFader = settings.previewVolume,
                 masterFader = settings.masterVolume,
@@ -514,11 +487,9 @@ private fun ProcessingSwitch(
 @Composable
 private fun MixerConsole(
     micFader: Float,
-    /** v0.31.0: مزوّد مستوى الميكروفون — يُقرأ وقت العينة داخل شريط VU */
-    micLevelProvider: () -> Float,
+    micLevel: Float,
     musicFader: Float,
-    /** v0.31.0: مزوّد مستوى الموسيقى — يُقرأ وقت العينة داخل شريط VU */
-    mediaLevelProvider: () -> Float,
+    mediaLevel: Float,
     breaksFader: Float,
     previewFader: Float,
     masterFader: Float,
@@ -621,8 +592,7 @@ private fun MixerConsole(
                 step = 0.05f,
                 muted = micMuted,
                 accent = st.live,
-                vu = null,
-                vuProvider = { if (micMuted) 0f else micLevelProvider() },
+                vu = if (micMuted) 0f else micLevel,
                 onValue = { v ->
                     micLocal = MixerLogic.clampFader(MixerLogic.Channel.MIC, v)
                     onMicVolume(if (micMuted) 0f else micLocal)
@@ -648,8 +618,7 @@ private fun MixerConsole(
                 step = 0.02f,
                 muted = musicMuted,
                 accent = MaterialTheme.colorScheme.primary,
-                vu = null,
-                vuProvider = { if (musicMuted) 0f else mediaLevelProvider() },
+                vu = if (musicMuted) 0f else mediaLevel,
                 onValue = { v ->
                     musicLocal = MixerLogic.clampFader(MixerLogic.Channel.MUSIC, v)
                     onMusicVolume(musicEffective(musicLocal, musicMuted))
@@ -843,8 +812,6 @@ private fun MixerChannelRow(
     muted: Boolean,
     accent: Color,
     vu: Float?,
-    /** v0.31.0: مصدر مستوى حي يُقرأ وقت العينة — يلغي إعادة تركيب الصف عند كل انبعاث */
-    vuProvider: (() -> Float)? = null,
     onValue: (Float) -> Unit,
     onFinished: () -> Unit,
     onStep: (Float) -> Unit,
@@ -908,11 +875,9 @@ private fun MixerChannelRow(
             ) { onStep((value + step).coerceIn(range.start, range.endInclusive)) }
         }
         // شريط مستوى رفيع (الميكروفون والموسيقى فقط)
-        // v0.31.0: مزوّد المستوى يُقرأ وقت العينة داخل الشريط — بلا إعادة تركيب الصف
-        if (vu != null || vuProvider != null) {
+        if (vu != null) {
             LinearVu(
-                level = vu ?: 0f,
-                levelProvider = vuProvider,
+                level = vu,
                 modifier = Modifier.fillMaxWidth().height(5.dp)
             )
         }
@@ -972,35 +937,24 @@ private fun StepButton(
 /**
  * شريط مستوى أفقي رفيع — تعبئة بتدرج حراري (أخضر ← كهرماني ← أحمر)
  * تنمو من جهة البداية (يمين الشاشة في العربية) مع تنعيم بسيط.
- * v0.31.0: معيّنة داخلية 45ms تقرأ المزوّد مباشرة — تحديثات المستوى تُحرّك
- * الرسم وحده (smooth داخل State يُقرأ في طوري الرسم) بلا أي إعادة تركيب.
  */
 @Composable
 private fun LinearVu(
     level: Float,
-    modifier: Modifier = Modifier,
-    /** v0.31.0: مصدر المستوى المباشر — يُقرأ وقت العينة لا في التركيب */
-    levelProvider: (() -> Float)? = null
+    modifier: Modifier = Modifier
 ) {
     val track = MaterialTheme.colorScheme.surfaceVariant
+    val smooth by animateFloatAsState(
+        targetValue = level.coerceIn(0f, 1f),
+        animationSpec = tween(80),
+        label = "linvu"
+    )
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
-    val currentLevel by rememberUpdatedState(level)
-    val providerRef by rememberUpdatedState(levelProvider)
-    val smooth = remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(Unit) {
-        var prev = 0f
-        while (true) {
-            val target = (providerRef?.invoke() ?: currentLevel).coerceIn(0f, 1f)
-            prev = WaveformLogic.smooth(prev, target)
-            smooth.floatValue = prev
-            delay(45)
-        }
-    }
     Canvas(modifier) {
         val w = size.width
         val h = size.height
         drawRoundRect(color = track, cornerRadius = CornerRadius(h / 2))
-        val lvl = smooth.floatValue
+        val lvl = smooth
         if (lvl > 0.005f) {
             val green = Color(0xFF2E9E6B)
             val amber = Color(0xFFE8B33C)

@@ -28,8 +28,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -297,7 +297,7 @@ fun TeleprompterScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = onExit) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, "رجوع")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "رجوع")
                     }
                     Column(Modifier.weight(1f)) {
                         Text(
@@ -369,7 +369,7 @@ fun TeleprompterScreen(
                         IconButton(onClick = ::togglePlay) {
                             Icon(
                                 if (autoScroll || countdown != null) AppIcons.Pause
-                                else Icons.Rounded.PlayArrow,
+                                else Icons.Filled.PlayArrow,
                                 "تشغيل/إيقاف التمرير",
                                 tint = Color(0xFF5CDAC4)
                             )

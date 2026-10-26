@@ -23,11 +23,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -47,7 +47,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -71,7 +70,6 @@ import com.saidjte.schoolradio.core.ui.PlayingEqualizer
 import com.saidjte.schoolradio.core.ui.ScreenHeader
 import com.saidjte.schoolradio.core.ui.StatusBadge
 import com.saidjte.schoolradio.core.util.AppFormat
-import com.saidjte.schoolradio.core.util.RecordingCodecLogic
 import com.saidjte.schoolradio.core.util.RecordingLogic
 import com.saidjte.schoolradio.core.util.TrimLogic
 import com.saidjte.schoolradio.data.local.entity.RecordingEntity
@@ -210,11 +208,6 @@ fun RecordingsScreen(
         }
     }
 
-    // v0.33.0: أخطاء التشغيل غير المتزامنة (صيغة غير مدعومة/ملف تالف) — snackbar بدل الصمت
-    LaunchedEffect(Unit) {
-        locator.recordingsPlayer.errors.collect { msg -> snackbar.showSnackbar(msg) }
-    }
-
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
         ScreenHeader(
             title = "أرشيف التسجيلات",
@@ -229,11 +222,11 @@ fun RecordingsScreen(
                 onValueChange = { search = it },
                 modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
                 placeholder = { Text("ابحث في التسجيلات…") },
-                leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                leadingIcon = { Icon(Icons.Filled.Search, null) },
                 trailingIcon = {
                     if (search.isNotEmpty()) {
                         IconButton(onClick = { search = "" }) {
-                            Icon(Icons.Rounded.Close, "مسح البحث")
+                            Icon(Icons.Filled.Close, "مسح البحث")
                         }
                     }
                 },
@@ -274,8 +267,7 @@ fun RecordingsScreen(
             EmptyStateCard(
                 icon = AppIcons.LibraryMusic,
                 title = "لا توجد تسجيلات بعد",
-                body = "اضغط زر التسجيل في الصفحة الرئيسية أثناء البث المباشر، أو سجّل فقرة تحضيرية قبل وقت الإذاعة",
-                animAsset = "mic_waves"
+                body = "اضغط زر التسجيل في الصفحة الرئيسية أثناء البث المباشر، أو سجّل فقرة تحضيرية قبل وقت الإذاعة"
             )
         } else if (visible.isEmpty()) {
             EmptyStateCard(
@@ -469,7 +461,7 @@ private fun RecordingsMiniPlayer(
                     )
                 ) {
                     Icon(
-                        if (isPlaying) AppIcons.Pause else Icons.Rounded.PlayArrow,
+                        if (isPlaying) AppIcons.Pause else Icons.Filled.PlayArrow,
                         "تشغيل/إيقاف مؤقت"
                     )
                 }
@@ -615,7 +607,7 @@ private fun RecordingRow(
                 ) {
                     Icon(
                         if (isPlayingNow) AppIcons.Pause
-                        else Icons.Rounded.PlayArrow,
+                        else Icons.Filled.PlayArrow,
                         contentDescription = "تشغيل/إيقاف"
                     )
                 }
@@ -648,11 +640,6 @@ private fun RecordingRow(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         StatusBadgeSource(isLiveSrc)
-                        // v0.29.0: شارة الترميز — Opus HD للتسجيلات الجديدة عالية الدقة
-                        if (RecordingCodecLogic.isOpusRecord(recording.mimeType)) {
-                            val st = MaterialTheme.status
-                            StatusBadge(RecordingCodecLogic.codecLabel(true), st.success)
-                        }
                         recording.recordedByName?.let { name ->
                             val role = recording.recordedByRole?.let { UserRole.from(it) }
                             Text(
@@ -699,7 +686,7 @@ private fun RecordingRow(
                             HorizontalDivider(Modifier.padding(vertical = 4.dp))
                             DropdownMenuItem(
                                 text = { Text("تسمية") },
-                                leadingIcon = { Icon(Icons.Rounded.Edit, null, Modifier.size(20.dp)) },
+                                leadingIcon = { Icon(Icons.Filled.Edit, null, Modifier.size(20.dp)) },
                                 onClick = { menuOpen = false; onRename() }
                             )
                             DropdownMenuItem(
@@ -711,7 +698,7 @@ private fun RecordingRow(
                                 },
                                 leadingIcon = {
                                     Icon(
-                                        Icons.Rounded.Delete, null, Modifier.size(20.dp),
+                                        Icons.Filled.Delete, null, Modifier.size(20.dp),
                                         tint = MaterialTheme.colorScheme.error
                                     )
                                 },

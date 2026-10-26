@@ -89,12 +89,4 @@ object CrashGuard {
         val f = File(dir, FILE_NAME)
         return if (f.exists()) f.readText() else null
     }
-
-    /** v0.33.0: مسح السجل — بعد مشاركة التقرير أو حل المشكلة */
-    fun clear() {
-        runCatching {
-            val dir = logDir ?: return
-            File(dir, FILE_NAME).delete()
-        }
-    }
 }

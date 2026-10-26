@@ -24,10 +24,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.DateRange
-import androidx.compose.material.icons.rounded.Home
-import androidx.compose.material.icons.rounded.List
-import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -61,9 +61,6 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.saidjte.schoolradio.core.theme.SchoolRadioTheme
 import com.saidjte.schoolradio.core.ui.AppIcons
-import com.saidjte.schoolradio.core.ui.AppBackground
-import com.saidjte.schoolradio.core.ui.AppCard
-import com.saidjte.schoolradio.core.ui.LocalPerformanceMode
 import com.saidjte.schoolradio.core.ui.OrientationLogic
 import com.saidjte.schoolradio.data.settings.AppSettings
 import com.saidjte.schoolradio.di.ServiceLocator
@@ -100,14 +97,7 @@ class MainActivity : ComponentActivity() {
             // اتجاه عربي صريح RTL على مستوى الجذر
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                 SchoolRadioTheme(themeMode = themeMode()) {
-                    // v0.31.0: وضع الأداء يقرأ من الإعدادات ويُقدَّم لكل الزخارف
-                    val perf = performanceMode()
-                    CompositionLocalProvider(LocalPerformanceMode provides perf) {
-                        // v0.32.0: خلفية مصمتة نظيفة — وداعاً للأورورا الكريستالية
-                        AppBackground {
-                            AppScaffold()
-                        }
-                    }
+                    AppScaffold()
                 }
             }
         }
@@ -118,13 +108,6 @@ class MainActivity : ComponentActivity() {
         val settings by ServiceLocator.settings.settings
             .collectAsStateWithLifecycle(initialValue = AppSettings())
         return settings.themeMode
-    }
-
-    @Composable
-    private fun performanceMode(): Boolean {
-        val settings by ServiceLocator.settings.settings
-            .collectAsStateWithLifecycle(initialValue = AppSettings())
-        return settings.performanceMode
     }
 }
 
@@ -145,8 +128,6 @@ private fun AppScaffold() {
     val showNav = currentRoute != AppRoute.ON_AIR && currentRoute != AppRoute.TELEPROMPTER
 
     Scaffold(
-        // v0.32.0: نفس لون الخلفية — الأسطح المصمتة لا تحتاج شفافية
-        containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
             if (showNav) {
@@ -162,13 +143,14 @@ private fun AppScaffold() {
                         snackbar,
                         onOpenOnAir = { nav.navigateSafely(AppRoute.ON_AIR) }
                     )
-                    // شريط تنقل عائم بحواف دائرية وظل خفيف (v0.32.0: سطح مصمت)
-                    AppCard(
+                    // شريط تنقل عائم بحواف دائرية وظل ناعم — لمسة عصرية (v0.7.0)
+                    Surface(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 14.dp, vertical = 4.dp),
                         shape = RoundedCornerShape(26.dp),
-                        shadowElevation = 6.dp
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        shadowElevation = 10.dp
                     ) {
                         NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp) {
                             // عدد التسجيلات — شارة حية على تبويب الأرشيف
@@ -305,14 +287,9 @@ private fun AppSideNavRail(
             .fillMaxHeight()
             .padding(start = 8.dp, end = 2.dp, top = 8.dp, bottom = 8.dp),
         shape = RoundedCornerShape(22.dp),
-        color = Color.Transparent
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        shadowElevation = 10.dp
     ) {
-        // v0.32.0: القائمة الجانبية سطح مصمت بظل خفيف
-        AppCard(
-            modifier = Modifier.fillMaxHeight(),
-            shape = RoundedCornerShape(22.dp),
-            shadowElevation = 6.dp
-        ) {
         Column(
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -328,7 +305,6 @@ private fun AppSideNavRail(
                     onClick = { onNavigate(item.route) }
                 )
             }
-        }
         }
     }
 }
@@ -416,11 +392,11 @@ enum class NavigationItem(
     val label: String,
     val icon: androidx.compose.ui.graphics.vector.ImageVector
 ) {
-    HOME(AppRoute.DASHBOARD, "الرئيسية", Icons.Rounded.Home),
+    HOME(AppRoute.DASHBOARD, "الرئيسية", Icons.Filled.Home),
     STUDIO(AppRoute.STUDIO, "الاستوديو", AppIcons.Tune),
-    LIBRARY(AppRoute.LIBRARY, "المكتبة", Icons.Rounded.PlayArrow),
-    PLAYLISTS(AppRoute.PLAYLISTS, "القوائم", Icons.Rounded.List),
+    LIBRARY(AppRoute.LIBRARY, "المكتبة", Icons.Filled.PlayArrow),
+    PLAYLISTS(AppRoute.PLAYLISTS, "القوائم", Icons.Filled.List),
     RECORDINGS(AppRoute.RECORDINGS, "التسجيلات", AppIcons.LibraryMusic),
-    SCHEDULE(AppRoute.SCHEDULING, "الجدولة", Icons.Rounded.DateRange),
+    SCHEDULE(AppRoute.SCHEDULING, "الجدولة", Icons.Filled.DateRange),
     SCRIPTS(AppRoute.SCRIPTS, "السكربتات", AppIcons.Article),
 }

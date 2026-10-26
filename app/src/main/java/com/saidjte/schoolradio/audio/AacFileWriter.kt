@@ -30,7 +30,7 @@ class AacFileWriter(
     private val sampleRate: Int = MicrophoneController.SAMPLE_RATE,
     private val channelCount: Int = 1,
     private val bitRate: Int = BIT_RATE
-) : PcmAudioWriter {
+) {
     private val outFile = File(filePath)
     private var codec: MediaCodec? = null
     private var muxer: MediaMuxer? = null
@@ -41,17 +41,17 @@ class AacFileWriter(
 
     /** رسالة فشل إن حدث — تفحصها الإدارة قبل الاعتماد على الناتج */
     @Volatile
-    override var failed: String? = null
+    var failed: String? = null
         private set
 
     /** مجموع العينات المشفَّرة فعلاً — أساس حساب المدة */
-    override val totalSamples: Long get() = samplesWritten
+    val totalSamples: Long get() = samplesWritten
 
     /** المسار النهائي للملف (يُستخدم عند إدراج سجل الأرشيف) */
-    override val filePath: String get() = outFile.absolutePath
+    val filePath: String get() = outFile.absolutePath
 
     /** تهيئة المُشفّر والحاوية — يعيد null عند النجاح أو رسالة خطأ */
-    override fun start(): String? {
+    fun start(): String? {
         return try {
             val format = MediaFormat.createAudioFormat(
                 MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, channelCount
@@ -78,7 +78,7 @@ class AacFileWriter(
      * تغذية دفعة PCM — تُستدعى من خيط الصوت فقط (خيط البث أو خيط الفقرة).
      * لا تُلقي استثناءات أبداً: أي خطأ يُسجَّل في failed ويستمر البث الحي كما هو.
      */
-    override fun feed(pcm: ShortArray, n: Int) {
+    fun feed(pcm: ShortArray, n: Int) {
         val c = codec ?: return
         if (failed != null || n <= 0) return
         try {
@@ -102,7 +102,7 @@ class AacFileWriter(
      * يعيد (المدة_ms، الحجم_بايت) عند النجاح أو null عند فشل سابق/حالي.
      */
     @Synchronized
-    override fun finish(): Pair<Long, Long>? {
+    fun finish(): Pair<Long, Long>? {
         val c = codec ?: return null
         if (failed == null) {
             try {

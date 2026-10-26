@@ -14,8 +14,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -155,11 +155,11 @@ fun ImportLinkDialog(
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("رابط المقطع") },
                         placeholder = { Text("https://…") },
-                        leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                        leadingIcon = { Icon(Icons.Filled.Search, null) },
                         trailingIcon = {
                             if (url.isNotEmpty() && !busy) {
                                 IconButton(onClick = { url = ""; preview = null; error = null }) {
-                                    Icon(Icons.Rounded.Close, "مسح الرابط")
+                                    Icon(Icons.Filled.Close, "مسح الرابط")
                                 }
                             }
                         },
@@ -203,11 +203,11 @@ fun ImportLinkDialog(
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("كلمة البحث") },
                         placeholder = { Text("مثال: نشيد العلم") },
-                        leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                        leadingIcon = { Icon(Icons.Filled.Search, null) },
                         trailingIcon = {
                             if (query.isNotBlank() && !searching) {
                                 IconButton(onClick = { doSearch() }) {
-                                    Icon(Icons.Rounded.Search, "ابحث")
+                                    Icon(Icons.Filled.Search, "ابحث")
                                 }
                             }
                         },
@@ -399,7 +399,7 @@ fun ImportLinkDialog(
                         enabled = query.isNotBlank() && !searching,
                         onClick = { doSearch() }
                     ) {
-                        Icon(Icons.Rounded.Search, null, Modifier.size(18.dp))
+                        Icon(Icons.Filled.Search, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
                         Text(if (results.isEmpty()) "ابحث" else "بحث جديد")
                     }

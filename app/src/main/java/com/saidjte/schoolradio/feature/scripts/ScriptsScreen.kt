@@ -12,9 +12,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -78,8 +78,7 @@ fun ScriptsScreen(
                     title = "لا سكربتات بعد",
                     body = "اكتب نص الإعلان أو التقديم هنا ليقرأه المذيع من شاشة الهاتف بخط كبير وتمرير تلقائي أثناء الإذاعة",
                     ctaLabel = "أضف سكربتاً جديداً",
-                    onCta = { showNewEditor = true },
-                    animAsset = "mic_waves"
+                    onCta = { showNewEditor = true }
                 )
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -105,7 +104,7 @@ fun ScriptsScreen(
             containerColor = MaterialTheme.colorScheme.primaryContainer,
             contentColor = MaterialTheme.colorScheme.onPrimaryContainer
         ) {
-            Icon(Icons.Rounded.Add, null)
+            Icon(Icons.Filled.Add, null)
             Text("  سكربت جديد")
         }
     }
@@ -190,11 +189,11 @@ private fun ScriptRow(
                     )
                 }
                 IconButton(onClick = onEdit) {
-                    Icon(Icons.Rounded.Edit, "تعديل")
+                    Icon(Icons.Filled.Edit, "تعديل")
                 }
                 IconButton(onClick = onDelete) {
                     Icon(
-                        Icons.Rounded.Delete, "حذف",
+                        Icons.Filled.Delete, "حذف",
                         tint = MaterialTheme.colorScheme.error
                     )
                 }

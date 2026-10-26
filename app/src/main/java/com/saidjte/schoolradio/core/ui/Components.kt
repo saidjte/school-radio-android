@@ -28,11 +28,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import com.airbnb.lottie.compose.LottieAnimation
-import com.airbnb.lottie.compose.LottieCompositionSpec
-import com.airbnb.lottie.compose.LottieConstants
-import com.airbnb.lottie.compose.animateLottieCompositionAsState
-import com.airbnb.lottie.compose.rememberLottieComposition
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -105,9 +100,7 @@ fun ScreenHeader(
     }
 }
 
-/** حالة فارغة موحّدة: قرص متدرج ناعم + عنوان + شرح + زر متدرج اختياري
- *  v0.30.0: بتمرير animAsset (اسم ملف Lottie من assets/lottie) يُعرض رسم متحرك
- *  محلي 100% بدل القرص الثابت — الحلقات سلسة بلا انقطاع وبلا أي شبكة. */
+/** حالة فارغة موحّدة: قرص متدرج ناعم + عنوان + شرح + زر متدرج اختياري */
 @Composable
 fun EmptyStateCard(
     icon: ImageVector,
@@ -115,8 +108,7 @@ fun EmptyStateCard(
     body: String,
     modifier: Modifier = Modifier,
     ctaLabel: String? = null,
-    onCta: (() -> Unit)? = null,
-    animAsset: String? = null
+    onCta: (() -> Unit)? = null
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -129,49 +121,31 @@ fun EmptyStateCard(
             Modifier.padding(30.dp).fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // v0.31.0: حركة Lottie فقط خارج وضع الأداء — وضع الأداء يكفي بالأيقونة الثابتة
-            if (animAsset != null && !LocalPerformanceMode.current) {
-                // v0.30.0: حركة Lottie محلية — تختفي بلطافة لو فشل الملف (لا استثناءات)
-                val composition by rememberLottieComposition(
-                    LottieCompositionSpec.Asset("lottie/$animAsset.json")
+            Box(contentAlignment = Alignment.Center) {
+                // هالة ناعمة خلف القرص
+                Box(
+                    Modifier
+                        .size(84.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.gradients.heroSoft.diagonalBrush())
                 )
-                val progress by animateLottieCompositionAsState(
-                    composition,
-                    iterations = LottieConstants.IterateForever,
-                    isPlaying = true
-                )
-                LottieAnimation(
-                    composition = composition,
-                    progress = { progress },
-                    modifier = Modifier.size(132.dp)
-                )
-            } else {
-                Box(contentAlignment = Alignment.Center) {
-                    // هالة ناعمة خلف القرص
+                Surface(
+                    shape = CircleShape,
+                    shadowElevation = 4.dp,
+                    color = Color.Transparent
+                ) {
                     Box(
                         Modifier
-                            .size(84.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.gradients.heroSoft.diagonalBrush())
-                    )
-                    Surface(
-                        shape = CircleShape,
-                        shadowElevation = 4.dp,
-                        color = Color.Transparent
+                            .size(58.dp)
+                            .background(MaterialTheme.gradients.hero.diagonalBrush(), CircleShape),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Box(
-                            Modifier
-                                .size(58.dp)
-                                .background(MaterialTheme.gradients.hero.diagonalBrush(), CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                icon,
-                                contentDescription = null,
-                                modifier = Modifier.size(26.dp),
-                                tint = Color.White
-                            )
-                        }
+                        Icon(
+                            icon,
+                            contentDescription = null,
+                            modifier = Modifier.size(26.dp),
+                            tint = Color.White
+                        )
                     }
                 }
             }

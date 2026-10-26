@@ -14,14 +14,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.ArrowForward
-import androidx.compose.material.icons.automirrored.rounded.List
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -86,7 +86,7 @@ fun PlaylistsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
     Scaffold(
         floatingActionButton = {
             FloatingActionButton(onClick = { creating = true }) {
-                Icon(Icons.Rounded.Add, "قائمة جديدة")
+                Icon(Icons.Filled.Add, "قائمة جديدة")
             }
         }
     ) { padding ->
@@ -105,8 +105,7 @@ fun PlaylistsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                     EmptyStateCard(
                         icon = AppIcons.QueueMusic,
                         title = "لا توجد قوائم بعد",
-                        body = "أنشئ قائمة (طابور الصباح، نشيد الأسبوع…) ثم أضف إليها مقاطع من المكتبة",
-                        animAsset = "radio_waves"
+                        body = "أنشئ قائمة (طابور الصباح، نشيد الأسبوع…) ثم أضف إليها مقاطع من المكتبة"
                     )
                 }
                 LazyColumn(
@@ -189,7 +188,7 @@ fun PlaylistsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                 }) {
                                     Icon(
                                         if (isThisPlaying && playback.isPlaying) AppIcons.Pause
-                                        else Icons.Rounded.PlayArrow,
+                                        else Icons.Filled.PlayArrow,
                                         "تشغيل/إيقاف القائمة"
                                     )
                                 }
@@ -207,7 +206,7 @@ fun PlaylistsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                             text = { Text("إدارة العناصر") },
                                             leadingIcon = {
                                                 Icon(
-                                                    Icons.AutoMirrored.Rounded.List,
+                                                    Icons.AutoMirrored.Filled.List,
                                                     null,
                                                     Modifier.size(20.dp)
                                                 )
@@ -220,7 +219,7 @@ fun PlaylistsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                         DropdownMenuItem(
                                             text = { Text("تعديل الاسم") },
                                             leadingIcon = {
-                                                Icon(Icons.Rounded.Edit, null, Modifier.size(20.dp))
+                                                Icon(Icons.Filled.Edit, null, Modifier.size(20.dp))
                                             },
                                             onClick = {
                                                 menuOpen = false
@@ -236,7 +235,7 @@ fun PlaylistsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                             },
                                             leadingIcon = {
                                                 Icon(
-                                                    Icons.Rounded.Delete, null, Modifier.size(20.dp),
+                                                    Icons.Filled.Delete, null, Modifier.size(20.dp),
                                                     tint = MaterialTheme.colorScheme.error
                                                 )
                                             },
@@ -307,7 +306,7 @@ private fun PlaylistItemsScreen(
     Scaffold(
         floatingActionButton = {
             ExtendedFloatingActionButton(onClick = { adding = true }) {
-                Icon(Icons.Rounded.Add, null)
+                Icon(Icons.Filled.Add, null)
                 Text("  أضف مقاطع")
             }
         }
@@ -315,7 +314,7 @@ private fun PlaylistItemsScreen(
         Column(Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, "رجوع")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "رجوع")
                 }
                 Column(Modifier.weight(1f)) {
                     Text(playlist?.name ?: "…", style = MaterialTheme.typography.titleLarge)
@@ -358,7 +357,7 @@ private fun PlaylistItemsScreen(
                             )
                         }
                     }
-                }) { Icon(Icons.Rounded.PlayArrow, "تشغيل القائمة") }
+                }) { Icon(Icons.Filled.PlayArrow, "تشغيل القائمة") }
             }
 
             if (items.isEmpty()) {
@@ -407,7 +406,7 @@ private fun PlaylistItemsScreen(
                                 },
                                 enabled = index > 0
                             ) {
-                                Icon(Icons.AutoMirrored.Rounded.ArrowForward, "تحريك لأعلى")
+                                Icon(Icons.AutoMirrored.Filled.ArrowForward, "تحريك لأعلى")
                             }
                             IconButton(
                                 onClick = {
@@ -417,14 +416,14 @@ private fun PlaylistItemsScreen(
                                 },
                                 enabled = index < items.size - 1
                             ) {
-                                Icon(Icons.AutoMirrored.Rounded.ArrowBack, "تحريك لأسفل")
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, "تحريك لأسفل")
                             }
                             IconButton(onClick = {
                                 scope.launch {
                                     locator.playlists.removeItem(item.id)
                                     snackbar.showSnackbar("أُزيل المقطع من القائمة")
                                 }
-                            }) { Icon(Icons.Rounded.Close, "إزالة") }
+                            }) { Icon(Icons.Filled.Close, "إزالة") }
                         }
                     }
                 }

@@ -1,6 +1,8 @@
 package com.saidjte.schoolradio.core.ui
 
 import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -18,12 +20,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -38,10 +36,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.google.accompanist.permissions.isGranted
-import com.google.accompanist.permissions.shouldShowRationale
 import com.saidjte.schoolradio.audio.MicPhase
-import com.saidjte.schoolradio.core.util.MicPermissionFlowLogic
 import com.saidjte.schoolradio.di.ServiceLocator
 
 /**
@@ -56,15 +51,12 @@ import com.saidjte.schoolradio.di.ServiceLocator
  *  - نفس حالة البث المركزية (ServiceLocator): يعمل مع أي نمط ويعكس الحالة الحقيقية.
  *  - حلقة مستوى صوت حيّة حول الزر أثناء البث (VU من الميكروفون).
  *  - نبض تحذيري عند العمل + اهتزاز لمسي عند كل تبديل.
- *  - يطلب صلاحية الميكروفون ذاتياً عند أول استخدام (v0.30.0: عبر Accompanist
- *    Permissions — حالة محورة مع قرار موحّد من MicPermissionFlowLogic:
- *    طلب/شرح ثم طلب/رفض دائم ⇒ توجيه للإعدادات، وإكمال البدء تلقائياً عند المنح).
+ *  - يطلب صلاحية الميكروفون ذاتياً عند أول استخدام.
  *  - يعمل في النمطين: ضغطة للبدء/الإنهاء (سلوكه الافتراضي كزر مستقل).
  *
  * @param size قطر الزر (افتراضي 68dp — كبير بما يكفي لإصبع متوتر أثناء الإذاعة)
  * @param onResult رسائل البدء/الخطأ تخرج هنا (snackbar الشاشة المضيفة)
  */
-@OptIn(com.google.accompanist.permissions.ExperimentalPermissionsApi::class)
 @Composable
 fun MicQuickToggle(
     modifier: Modifier = Modifier,
@@ -77,18 +69,13 @@ fun MicQuickToggle(
     val phase by locator.mic.phase.collectAsStateWithLifecycle()
     val levelRaw by locator.micLevel.collectAsStateWithLifecycle()
 
-    // v0.30.0: صلاحيات حالة-محورة عبر Accompanist — بلا لانشر يدوي
-    val micPermissionState = com.google.accompanist.permissions.rememberPermissionState(
-        Manifest.permission.RECORD_AUDIO
-    )
-    var requestedOnce by rememberSaveable { mutableStateOf(false) }
-    var pendingStart by rememberSaveable { mutableStateOf(false) }
-
-    // عند المنح بعد الطلب — أكمل بدء البث تلقائياً بلا ضغطة ثانية
-    LaunchedEffect(micPermissionState.status) {
-        if (micPermissionState.status.isGranted && pendingStart) {
-            pendingStart = false
+    val micPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
             locator.startMicBroadcast { err -> err?.let(onResult) }
+        } else {
+            onResult("بدون صلاحية الميكروفون لا يمكن البث المباشر")
         }
     }
 
@@ -128,30 +115,8 @@ fun MicQuickToggle(
                             try { awaitRelease() } finally {
                                 when (stateRef) {
                                     MicPhase.IDLE -> {
-                                        // v0.30.0: تدفق صلاحية موحّد (Accompanist + منطق صافٍ):
-                                        // ممنوحة → بث فوراً، غير ممنوحة → طلب (+شرح إن لزم)،
-                                        // رفض دائم → توجيه للإعدادات، وعند المنح يكتمل البدء تلقائياً
-                                        val step = MicPermissionFlowLogic.decide(
-                                            granted = micPermissionState.status.isGranted,
-                                            shouldShowRationale = micPermissionState.status.shouldShowRationale,
-                                            alreadyRequested = requestedOnce
-                                        )
-                                        when (step) {
-                                            MicPermissionFlowLogic.Step.START ->
-                                                locator.startMicBroadcast { err -> err?.let(onResult) }
-                                            MicPermissionFlowLogic.Step.REQUEST -> {
-                                                requestedOnce = true
-                                                pendingStart = true
-                                                micPermissionState.launchPermissionRequest()
-                                            }
-                                            MicPermissionFlowLogic.Step.REQUEST_WITH_RATIONALE -> {
-                                                onResult(MicPermissionFlowLogic.rationaleMessage(false))
-                                                requestedOnce = true
-                                                pendingStart = true
-                                                micPermissionState.launchPermissionRequest()
-                                            }
-                                            MicPermissionFlowLogic.Step.OPEN_SETTINGS ->
-                                                onResult(MicPermissionFlowLogic.rationaleMessage(true))
+                                        if (!locator.startMicBroadcast { err -> err?.let(onResult) }) {
+                                            micPermission.launch(Manifest.permission.RECORD_AUDIO)
                                         }
                                     }
                                     MicPhase.LIVE -> locator.mic.stop()

@@ -26,8 +26,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -59,7 +59,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.saidjte.schoolradio.core.ui.AppIcons
 import com.saidjte.schoolradio.core.ui.BigVuMeter
 import com.saidjte.schoolradio.core.ui.LiveWaveform
-import com.saidjte.schoolradio.core.ui.LocalPerformanceMode
 import com.saidjte.schoolradio.core.ui.MicQuickToggle
 import com.saidjte.schoolradio.core.ui.RoundedProgressBar
 import com.saidjte.schoolradio.core.ui.SegmentImage
@@ -93,12 +92,22 @@ fun OnAirScreen(onExit: () -> Unit) {
     val view = LocalView.current
 
     // v0.12.0: الموجات الحية — نبض الميكروفون أثناء الإعلان ونبض الموسيقى أثناء الفقرات
-    // v0.31.0: المستويات لم تعد تُجمَع في رأس شاشة العرض — مزوّدات تُقرأ وقت العينة
-    // داخل الموجات وأعمدة VU نفسها، فإعادة تركيب الشاشة عند كل انبعاث صارت صفراً
     val micLive by locator.micLive.collectAsStateWithLifecycle()
+    val micLevelRaw by locator.micLevel.collectAsStateWithLifecycle()
+    val mediaLevelRaw by locator.mediaLevel.collectAsStateWithLifecycle()
     // v0.13.0: السكربتات — لحل السكربت المرتبط بالفقرة الجارية على شاشة العرض
     val scripts by locator.scripts.scripts.collectAsStateWithLifecycle(initialValue = emptyList())
     val onAirScript = onAir?.scriptId?.let { sid -> scripts.firstOrNull { it.id == sid } }
+    val onAirMicLevel by animateFloatAsState(
+        targetValue = micLevelRaw.coerceIn(0f, 1f),
+        animationSpec = tween(80),
+        label = "onair-mic-wave"
+    )
+    val onAirMediaLevel by animateFloatAsState(
+        targetValue = mediaLevelRaw.coerceIn(0f, 1f),
+        animationSpec = tween(80),
+        label = "onair-media-wave"
+    )
     val airTeal = Color(0xFF5CDAC4)
 
     // ===== v0.24.0: مؤقت ترتيل المذيع — لحظة فتح الميكروفون تُحفظ لبدء العد =====
@@ -240,7 +249,7 @@ fun OnAirScreen(onExit: () -> Unit) {
                     }
                 }
                 IconButton(onClick = onExit) {
-                    Icon(Icons.Rounded.Close, "إغلاق شاشة العرض", tint = onDark)
+                    Icon(Icons.Filled.Close, "إغلاق شاشة العرض", tint = onDark)
                 }
             }
 
@@ -265,8 +274,7 @@ fun OnAirScreen(onExit: () -> Unit) {
                     }
                     Spacer(Modifier.width(10.dp))
                     LiveWaveform(
-                        level = 0f,
-                        levelProvider = { locator.micLevel.value.coerceIn(0f, 1f) },
+                        level = onAirMicLevel,
                         active = true,
                         modifier = Modifier
                             .weight(1f)
@@ -699,12 +707,10 @@ fun OnAirScreen(onExit: () -> Unit) {
                         .height(132.dp)
                 ) {
                     BigVuMeter(
-                        mediaLevel = 0f,
-                        micLevel = 0f,
+                        mediaLevel = onAirMediaLevel,
+                        micLevel = onAirMicLevel,
                         mediaActive = playback.isPlaying,
                         micActive = micLive,
-                        mediaLevelProvider = { locator.mediaLevel.value.coerceIn(0f, 1f) },
-                        micLevelProvider = { locator.micLevel.value.coerceIn(0f, 1f) },
                         modifier = Modifier
                             .width(118.dp)
                             .fillMaxHeight(),
@@ -712,8 +718,7 @@ fun OnAirScreen(onExit: () -> Unit) {
                     )
                     Spacer(Modifier.width(14.dp))
                     LiveWaveform(
-                        level = 0f,
-                        levelProvider = { locator.mediaLevel.value.coerceIn(0f, 1f) },
+                        level = onAirMediaLevel,
                         active = playback.isPlaying,
                         modifier = Modifier
                             .weight(1f)
@@ -723,7 +728,7 @@ fun OnAirScreen(onExit: () -> Unit) {
                     )
                 }
 
-                // ===== تحكم سريع: أزرار دائرية شفافة فوق المسرح الداكن + تشغيل بارز =====
+                // ===== تحكم سريع: أزرار دائرية زجاجية + تشغيل بارز =====
                 Row(
                     Modifier.padding(top = 20.dp),
                     horizontalArrangement = Arrangement.spacedBy(22.dp),
@@ -744,7 +749,7 @@ fun OnAirScreen(onExit: () -> Unit) {
                     ) {
                         IconButton(onClick = { locator.playback.playPause() }) {
                             Icon(
-                                if (playback.isPlaying) AppIcons.Pause else Icons.Rounded.PlayArrow,
+                                if (playback.isPlaying) AppIcons.Pause else Icons.Filled.PlayArrow,
                                 "تشغيل/إيقاف مؤقت",
                                 tint = Color(0xFF062A25),
                                 modifier = Modifier.size(44.dp)
@@ -764,33 +769,20 @@ fun OnAirScreen(onExit: () -> Unit) {
                 // ===== بلا تشغيل: ساعة فخمة داخل هالات نابضة + التاريخ =====
                 Spacer(Modifier.weight(1f))
                 Box(contentAlignment = Alignment.Center) {
-                    // v0.31.0: النبض حركة 60fps دائمة على شاشة تُترك مفتوحة ساعات —
-                    // وضع الأداء يجعل الهالات ثابتة جميلة بلا أي كلفة حركة
-                    if (LocalPerformanceMode.current) {
-                        repeat(3) { ring ->
-                            Box(
-                                Modifier
-                                    .size((240 - ring * 46).dp)
-                                    .alpha(0.14f + ring * 0.04f)
-                                    .background(Color(0xFF5CDAC4).copy(alpha = 0.12f), CircleShape)
-                            )
-                        }
-                    } else {
-                        // ثلاث هالات بنبض متفاوت — عمق مسرحي
-                        val halo = rememberInfiniteTransition(label = "halo")
-                        val haloAlpha by halo.animateFloat(
-                            initialValue = 0.22f, targetValue = 0.05f,
-                            animationSpec = infiniteRepeatable(tween(1800), RepeatMode.Reverse),
-                            label = "halo-alpha"
+                    // ثلاث هالات بنبض متفاوت — عمق مسرحي
+                    val halo = rememberInfiniteTransition(label = "halo")
+                    val haloAlpha by halo.animateFloat(
+                        initialValue = 0.22f, targetValue = 0.05f,
+                        animationSpec = infiniteRepeatable(tween(1800), RepeatMode.Reverse),
+                        label = "halo-alpha"
+                    )
+                    repeat(3) { ring ->
+                        Box(
+                            Modifier
+                                .size((240 - ring * 46).dp)
+                                .alpha(haloAlpha + ring * 0.04f)
+                                .background(Color(0xFF5CDAC4).copy(alpha = 0.12f), CircleShape)
                         )
-                        repeat(3) { ring ->
-                            Box(
-                                Modifier
-                                    .size((240 - ring * 46).dp)
-                                    .alpha(haloAlpha + ring * 0.04f)
-                                    .background(Color(0xFF5CDAC4).copy(alpha = 0.12f), CircleShape)
-                            )
-                        }
                     }
                     Icon(
                         AppIcons.ScheduleClock, null,

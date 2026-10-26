@@ -46,14 +46,14 @@ object RecordingLogic {
 
     /**
      * اسم ملف ASCII آمن (تجنب مشاكل بعض أنظمة الملفات/المزامنة مع العربية):
-     * broadcast-20261024-0815.m4a — وv0.29.0: ‎.ogg لتسجيلات Opus HD.
+     * broadcast-20261024-0815.m4a
      */
-    fun newFileName(source: RecordingSource, at: Long, ext: String = "m4a"): String {
+    fun newFileName(source: RecordingSource, at: Long): String {
         val stamp = SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date(at))
         val prefix = when (source) {
             RecordingSource.PTT -> "broadcast"
             RecordingSource.MEMO -> "segment"
         }
-        return "$prefix-$stamp.$ext"
+        return "$prefix-$stamp.m4a"
     }
 }

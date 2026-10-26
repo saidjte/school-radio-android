@@ -13,14 +13,13 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import kotlinx.coroutines.flow.StateFlow
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -42,7 +41,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.CardDefaults
@@ -88,9 +87,7 @@ import com.saidjte.schoolradio.core.theme.gradients
 import com.saidjte.schoolradio.core.theme.status
 import com.saidjte.schoolradio.core.ui.AppIcons
 import com.saidjte.schoolradio.core.ui.EmptyStateCard
-import com.saidjte.schoolradio.core.ui.AppCard
 import com.saidjte.schoolradio.core.ui.LiveWaveform
-import com.saidjte.schoolradio.core.ui.LocalPerformanceMode
 import com.saidjte.schoolradio.core.ui.OrientationLogic
 import com.saidjte.schoolradio.core.ui.StatusBadge
 import com.saidjte.schoolradio.core.ui.diagonalBrush
@@ -165,13 +162,17 @@ fun DashboardScreen(
     val minutesNow = ScheduleLogic.minutesOfDay(nowTick)
 
     // حالة الميكروفون والمستوى الحي — من مركز الحالة المشترك (ServiceLocator)
-    // v0.31.0: المستويات الحية لم تعد تُجمَع هنا — تمرّ كمجرى إلى أوراق الرسم
-    // فقرأها وقت العينة، وإعادة تركيب الشاشة كاملة عند كل انبعاث (25Hz) صارت صفراً
     val mic = locator.mic
     val isLive by locator.micLive.collectAsStateWithLifecycle()
     // v0.8.0: مرحلة البث (جارٍ البدء/مباشر/جارٍ الإيقاف) لاستجابة زر فورية وسلسة
     val micPhase by mic.phase.collectAsStateWithLifecycle()
+    val micLevelRaw by locator.micLevel.collectAsStateWithLifecycle()
     val micError by locator.micMessage.collectAsStateWithLifecycle()
+    val micLevel by animateFloatAsState(
+        targetValue = micLevelRaw.coerceIn(0f, 1f),
+        animationSpec = tween(90),
+        label = "mic-level-smooth"
+    )
     // v0.10.0: المسار المشترك مركزياً — الرئيسية وقارئ السكربت يتقاسمان نفس الاختيار
     val route by locator.broadcastRoute.collectAsStateWithLifecycle()
     // v0.10.0: نمط البث (استمرار / ضغطة) محفوظ في الإعدادات
@@ -185,9 +186,17 @@ fun DashboardScreen(
     val recActive by locator.recordings.isRecording.collectAsStateWithLifecycle()
     val recElapsed by locator.recordings.elapsedMs.collectAsStateWithLifecycle()
     val recMode by locator.recordings.mode.collectAsStateWithLifecycle()
+    // v0.12.0: مستوى الموجة الحية للتسجيل — ما يُكتب في الملف فعلاً (بث PTT أو فقرة MEMO)
+    val recLevelRaw by locator.recordings.recordLevel.collectAsStateWithLifecycle()
 
-    // v0.12.0: الموجة الحية تعمل أثناء البث أو التسجيل — مصدرها يُحسم داخل الورقة
+    // v0.12.0: مصدر الموجة الموحد — أثناء التسجيل مستوى الملف، وإلا مستوى البث الحي
     val waveActive = isLive || recActive
+    val waveSource = if (recActive) recLevelRaw else micLevelRaw
+    val waveLevel by animateFloatAsState(
+        targetValue = waveSource.coerceIn(0f, 1f),
+        animationSpec = tween(80),
+        label = "wave-source-smooth"
+    )
 
     val micPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -243,11 +252,7 @@ fun DashboardScreen(
                         spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
                     )
                     .clip(MaterialTheme.shapes.extraLarge)
-                    .driftingGradient(
-                        MaterialTheme.gradients.hero,
-                        // v0.31.0: الانسياب حركة 60fps دائمة — وضع الأداء يجعله تدرجاً ثابتاً
-                        animate = !LocalPerformanceMode.current
-                    )
+                    .driftingGradient(MaterialTheme.gradients.hero)
             ) {
                 // حلقات زخرفية شفافة تمنح عمقاً بلا تكلفة
                 Canvas(Modifier.matchParentSize()) {
@@ -321,7 +326,7 @@ fun DashboardScreen(
                         .padding(6.dp)
                 ) {
                     Icon(
-                        Icons.Rounded.Settings, "الإعدادات",
+                        Icons.Filled.Settings, "الإعدادات",
                         tint = Color.White
                     )
                 }
@@ -391,7 +396,7 @@ fun DashboardScreen(
                             IconButton(onClick = { locator.playback.playPause() }) {
                                 Icon(
                                     if (playback.isPlaying) AppIcons.Pause
-                                    else Icons.Rounded.PlayArrow,
+                                    else Icons.Filled.PlayArrow,
                                     "تشغيل/إيقاف"
                                 )
                             }
@@ -409,7 +414,7 @@ fun DashboardScreen(
             LiveBroadcastCard(
                 isLive = isLive,
                 phase = micPhase,
-                micLevelFlow = locator.micLevel,
+                level = micLevel,
                 route = route,
                 error = micError,
                 recActive = recActive,
@@ -417,7 +422,7 @@ fun DashboardScreen(
                 recMode = recMode,
                 micMode = micMode,
                 waveActive = waveActive,
-                recLevelFlow = locator.recordings.recordLevel,
+                waveLevel = waveLevel,
                 onRouteChange = { locator.setBroadcastRoute(it) },
                 onMicModeChange = { mode ->
                     scope.launch {
@@ -510,8 +515,7 @@ fun DashboardScreen(
                     title = "لا توجد فقرات مجدولة لليوم",
                     body = "أنشئ فقرات الصباح من تبويب الجدولة ليعمل النظام تلقائياً في مواعيدها",
                     ctaLabel = "الذهاب إلى الجدولة",
-                    onCta = onNavigateToSchedule,
-                    animAsset = "calendar_dots"
+                    onCta = onNavigateToSchedule
                 )
             }
         } else {
@@ -704,12 +708,12 @@ private fun EventRow(
     val next = all.filter { it.startMinutes > event.startMinutes }
         .minByOrNull { it.startMinutes }
 
-    // v0.32.0: بطاقة الفقرة مصمتة — صبغة زرقاء حيّة أثناء التشغيل
-    AppCard(
+    Card(
         Modifier.fillMaxWidth().animateContentSize(),
-        borderColor = if (isRunning) st.running.copy(alpha = 0.5f) else null,
-        tint = if (isRunning) st.running.copy(alpha = 0.14f) else null,
-        shadowElevation = if (isRunning) 4.dp else 2.dp
+        border = if (isRunning) BorderStroke(2.dp, st.running.copy(alpha = 0.5f)) else null,
+        colors = if (isRunning) CardDefaults.cardColors(
+            containerColor = st.running.copy(alpha = 0.08f)
+        ) else CardDefaults.cardColors()
     ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             // شارة الوقت — تدرج أزرق حيّ أثناء التشغيل (v0.7.0)
@@ -797,8 +801,7 @@ private fun EventRow(
 private fun LiveBroadcastCard(
     isLive: Boolean,
     phase: MicPhase,
-    /** v0.31.0: مجرى مستوى الميكروفون — يُقرأ وقت الرسم داخل الحلقة فلا يُعيد تركيب البطاقة */
-    micLevelFlow: StateFlow<Float>,
+    level: Float,
     route: AudioRoutingManager.Route,
     error: String?,
     recActive: Boolean,
@@ -806,8 +809,7 @@ private fun LiveBroadcastCard(
     recMode: com.saidjte.schoolradio.data.local.entity.RecordingSource?,
     micMode: com.saidjte.schoolradio.audio.MicMode,
     waveActive: Boolean,
-    /** v0.31.0: مجرى مستوى التسجيل — مصدر الموجة أثناء MEMO/PTT */
-    recLevelFlow: StateFlow<Float>,
+    waveLevel: Float,
     onRouteChange: (AudioRoutingManager.Route) -> Unit,
     onMicModeChange: (com.saidjte.schoolradio.audio.MicMode) -> Unit,
     onTalkStart: () -> Unit,
@@ -817,8 +819,12 @@ private fun LiveBroadcastCard(
     val st = MaterialTheme.status
     val haptics = LocalHapticFeedback.current
 
-    // v0.31.0: حُذف نبض الخمول اللانهائي — كان يُعيد رسم حلقة البث 60fps كل ثانية
-    // حتى في السكون التام على الشاشة الرئيسية. الخمول الآن حلقة ثابتة هادئة.
+    val pulse = rememberInfiniteTransition(label = "live-pulse")
+    val pulseAlpha by pulse.animateFloat(
+        initialValue = 0.15f, targetValue = 0.55f,
+        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
+        label = "live-alpha"
+    )
 
     Card(
         Modifier.fillMaxWidth(),
@@ -877,9 +883,6 @@ private fun LiveBroadcastCard(
             Box(Modifier.size(160.dp).padding(16.dp), contentAlignment = Alignment.Center) {
                 val baseRing = MaterialTheme.colorScheme.primary
                 val startingRing = MaterialTheme.colorScheme.tertiary
-                // v0.31.0: قراءة المستوى من المجرى داخل طوري الرسم — انبعاث المستوى
-                // يُحرّك رسم الحلقة وحده بلا أي إعادة تركيب للبطاقة أو الشاشة
-                val ringLv = micLevelFlow.collectAsStateWithLifecycle()
                 Canvas(Modifier.fillMaxSize()) {
                     val transitioning = phase == MicPhase.STARTING || phase == MicPhase.STOPPING
                     val ringColor = when {
@@ -887,11 +890,10 @@ private fun LiveBroadcastCard(
                         phase == MicPhase.STARTING -> startingRing
                         else -> baseRing
                     }
-                    val level = ringLv.value.coerceIn(0f, 1f)
                     val alpha = when {
                         isLive -> 0.25f + level * 0.75f
                         transitioning -> 0.45f
-                        else -> 0.25f
+                        else -> pulseAlpha
                     }
                     drawCircle(
                         color = ringColor.copy(alpha = alpha),
@@ -1067,15 +1069,8 @@ private fun LiveBroadcastCard(
             // وأثناء البث بلا تسجيل تعرض صوت الميكروفون على الهواء.
             AnimatedVisibility(visible = waveActive) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    // v0.31.0: مصدر الموجة يُحسم وقت كل عينة (45ms) — أثناء التسجيل مستوى
-                    // الملف وإلا مستوى البث الحي — بلا إعادة تركيب ولا تنعيم في التركيب
-                    val recActiveRef by rememberUpdatedState(recActive)
                     LiveWaveform(
-                        level = 0f,
-                        levelProvider = {
-                            (if (recActiveRef) recLevelFlow.value else micLevelFlow.value)
-                                .coerceIn(0f, 1f)
-                        },
+                        level = waveLevel,
                         active = waveActive,
                         modifier = Modifier
                             .fillMaxWidth()

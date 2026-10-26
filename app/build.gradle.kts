@@ -126,12 +126,6 @@ dependencies {
     // ===== Coroutines =====
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
-    // ===== v0.30.0: Lottie for Compose — حركات احترافية من ملفات JSON محلية (Offline 100%) =====
-    implementation("com.airbnb.android:lottie-compose:6.7.1")
-
-    // ===== v0.30.0: Accompanist Permissions — صلاحيات حالة-محورة بدل اللانشرات اليدوية =====
-    implementation("com.google.accompanist:accompanist-permissions:0.36.0")
-
     // ===== اختبارات الوحدات =====
     testImplementation("junit:junit:4.13.2")
 }
