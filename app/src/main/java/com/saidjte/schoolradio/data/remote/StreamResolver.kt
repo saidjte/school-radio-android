@@ -306,19 +306,24 @@ object StreamResolver {
         val probe = runCatching { probeRange(url) }
             .getOrDefault(RangeProbe(total = -1L, acceptRanges = false))
         val plan = ParallelDownloadLogic.plan(probe.total, probe.acceptRanges)
+        // v0.43.0: ملف .part فريد لكل عملية — كان الاسم الثابت «name.part»
+        // يجعل تنزيلين متنافسين لنفس العنوان يكتبان الملف الوسيط نفسه فيفسده
+        // أو ينهار أحدهما باختفائه تحت قدميه — الفريدة تلغي التصادم بنيوياً
+        val part = File(outFile.parentFile, outFile.name + ".part-" + java.util.UUID.randomUUID())
         if (plan != null) {
             try {
-                return@withContext downloadSegmented(url, outFile, plan, probe.total, onProgress)
+                return@withContext downloadSegmented(url, outFile, part, plan, probe.total, onProgress)
             } catch (e: RemoteImportException) {
+                part.delete()
                 throw e // رفض خادم صادق (403/410/صفحة HTML) — لا يحجبه سقوط للتدفق الواحد
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
                 // شبكة متقطعة أو خادم تجاهل Range وسط التفرع — هبوط واحد موثوق
-                File(outFile.parentFile, outFile.name + ".part").delete()
+                part.delete()
             }
         }
-        downloadSequential(url, outFile, onProgress)
+        downloadSequential(url, outFile, part, onProgress)
     }
 
     /** نتيجة استطلاع التدفق: الحجم المعلن وهل يعلن الخادم دعم محارف Range */
@@ -373,11 +378,11 @@ object StreamResolver {
     private suspend fun downloadSegmented(
         url: String,
         outFile: File,
+        part: File,
         plan: List<ParallelDownloadLogic.Segment>,
         total: Long,
         onProgress: (Long, Long) -> Unit
     ): Long = withContext(Dispatchers.IO) {
-        val part = File(outFile.parentFile, outFile.name + ".part")
         val raf = java.io.RandomAccessFile(part, "rw")
         try {
             raf.setLength(total)
@@ -463,6 +468,7 @@ object StreamResolver {
     private suspend fun downloadSequential(
         url: String,
         outFile: File,
+        tmp: File,
         onProgress: (downloaded: Long, total: Long) -> Unit
     ): Long = withContext(Dispatchers.IO) {
         val conn = URL(url).openConnection() as HttpURLConnection
@@ -481,7 +487,6 @@ object StreamResolver {
             // الحجم الكلي إن أعلنه الخادم — يُغذي شريط التقدم بالنسبة
             val total = conn.contentLengthLong
             onProgress(0L, total.toLong())
-            val tmp = File(outFile.parentFile, outFile.name + ".part")
             conn.inputStream.use { input ->
                 tmp.outputStream().use { out ->
                     val buf = ByteArray(ParallelDownloadLogic.READ_BUFFER_BYTES)

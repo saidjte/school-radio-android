@@ -293,7 +293,11 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                             // v0.25.0: مع إعلان البداية — التقدم يظهر حياً في الصف نفسه
                             onDownload = {
                                 scope.launch {
-                                    snackbar.showSnackbar("بدأ تنزيل «${track.title}» — التقدم يظهر تحت الصف")
+                                    // v0.43.0: الإعلان لا يعلّق بدء التنزيل — showSnackbar
+                                    // استدعاء suspend كان يحبس 4 ثوانٍ بلا أي مؤشر تقدم،
+                                    // ونافذة الصمت تلك كانت تدعو لضغطة ثانية فتنطلق
+                                    // تنزيلان متنافسان — يبدأ التنزيل فوراً الآن
+                                    launch { snackbar.showSnackbar("بدأ تنزيل «${track.title}» — التقدم يظهر تحت الصف") }
                                     try {
                                         val msg = locator.remote.downloadToLibrary(track)
                                         snackbar.showSnackbar(msg)
@@ -465,7 +469,8 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                         val track = locator.remote.saveRemoteTrack(preview, catId)
                         // v0.25.0: إعلان البداية فوراً + ربط التقدم الحي بالحوار والصف
                         activeDownloadTrackId = track.id
-                        snackbar.showSnackbar("بدأ تنزيل «${track.title}»…")
+                        // v0.43.0: نفس إصلاح الصف — الإعلان لا يعلّق بدء التنزيل 4 ثوانٍ
+                        launch { snackbar.showSnackbar("بدأ تنزيل «${track.title}»…") }
                         val msg = locator.remote.downloadToLibrary(track, preview.streamUrl)
                         snackbar.showSnackbar(msg)
                     } catch (e: Exception) {

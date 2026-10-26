@@ -84,6 +84,14 @@ class PlaybackConnection(private val context: Context) {
     private var controller: MediaController? = null
     private var positionPollJob: kotlinx.coroutines.Job? = null
 
+    /**
+     * v0.43.0: عقد media3 الرسمي — MediaController يُبنى على لوب التطبيق
+     * (الرئيسي) ويُلمس منه حصراً. كل أوامر الإحلال/التبني القادمة من خيوط
+     * خلفية (تنزيلات IO) تُنشر هنا قبل لمس المتحكم — نفس القاعدة التي يعمل
+     * بها حلقة الاستطلاع منذ البداية (scope على Dispatchers.Main).
+     */
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
     /** v0.9.0: مستوى صوت مرغوب قبل جاهزية المتحكم — يُطبق فور الاتصال */
     @Volatile private var pendingVolume: Float? = null
 
@@ -294,6 +302,10 @@ class PlaybackConnection(private val context: Context) {
      * وأي فشل في الأمر يُتجاهل بهدوء — سلوك رسالة الخطأ القائم يكفي.
      */
     fun replaceItemUri(trackId: Long, uri: String) {
+        mainHandler.post { replaceItemUriOnMainThread(trackId, uri) }
+    }
+
+    private fun replaceItemUriOnMainThread(trackId: Long, uri: String) {
         val c = controller ?: return
         val count = c.mediaItemCount
         for (i in 0 until count) {
@@ -326,6 +338,10 @@ class PlaybackConnection(private val context: Context) {
      * فشل الأمر غير متوقع يُترك للبث من المصدر — لا قتل للتشغيل الجاري.
      */
     fun adoptLocalFile(trackId: Long, localUri: String) {
+        mainHandler.post { adoptLocalFileOnMainThread(trackId, localUri) }
+    }
+
+    private fun adoptLocalFileOnMainThread(trackId: Long, localUri: String) {
         val c = controller ?: return
         val count = c.mediaItemCount
         for (i in 0 until count) {

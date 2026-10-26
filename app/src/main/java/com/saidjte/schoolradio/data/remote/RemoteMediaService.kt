@@ -139,16 +139,33 @@ class RemoteMediaService(
      * تنزيل مقطع بعيد إلى ملف محلي — يحوله إلى مقطع مكتبة كامل يعمل دون إنترنت،
      * ويحلل فراغه الأول مثل أي استيراد محلي (توحيد سلوك v0.18.0).
      *
-     * v0.25.0:
-     *  - يُبلّغ عن بدايته ونهايته عبر [downloads] فترى الواجهة التقدم حياً
-     *    (شريط نسبة في الحوار وفي صف المقطع) بدل صمت طويل بلا مؤشر.
-     *  - الروابط التي تحتاج تجديداً (يوتوب/ساوندكلاود) **تُجدد إجبارياً**:
-     *    الرابط القديم المحفوظ يرفضه الخادم بـ403 دوماً، فالفشل الصامت في
-     *    التجديد يخرج الآن برسالة إرشادية بدل تنزيل مضمون الفشل.
+     * v0.25.0: تقدم حي عبر [downloads] + تجديد إجباري لروابط يوتوب/ساوندكلاود
+     * المنتهية برسالة إرشادية بدل تنزيل مضمون الفشل.
+     *
+     * v0.43.0: رحلة تنزيل واحدة لكل مقطع (single-flight) — عقد العملية بنيوياً.
+     * كان غياب هذا العقد سبب سباق التنزيل المزدوج: نافذة الصمت قبل ظهور أول
+     * تقدم كانت تسمح بضغطتين متتاليتين فتنطلق تنزيلان متنافسان لنفس المقطع —
+     * الأول يُكمل ويُبّئ بالنجاح والثاني يصطدم بنفس ملف .part فيفشل — فيرى
+     * الأستاذ «التنزيل نجح والتطبيق يعرض رسالة فشل». مع single-flight لا سباق
+     * أصلاً: النداء الثاني يعود فوراً برسالة صادقة بدل انطلاق عمل مكرر.
      *
      * @return رسالة النجاح العربية
      */
+    private val inFlight = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<Long, Boolean>())
+
     suspend fun downloadToLibrary(track: AudioTrackEntity, knownFreshUrl: String? = null): String =
+        withContext(Dispatchers.IO) {
+            if (!inFlight.add(track.id)) {
+                return@withContext "«${track.title}» قيد التنزيل بالفعل — التقدم يظهر في الصف"
+            }
+            try {
+                downloadToLibraryUnsafe(track, knownFreshUrl)
+            } finally {
+                inFlight.remove(track.id)
+            }
+        }
+
+    private suspend fun downloadToLibraryUnsafe(track: AudioTrackEntity, knownFreshUrl: String?): String =
         withContext(Dispatchers.IO) {
             reportProgress(track.id, track.title, 0L, -1L, DownloadPhase.RUNNING)
             try {
@@ -183,14 +200,16 @@ class RemoteMediaService(
                         sizeBytes = out.length()
                     )
                 )
+                // v0.43.0: صدق الترتيب — رسالة نجاح التنزيل أولاً (العملية انتهت
+                // فعلاً) ثم تبنّي المشغل للملف كأثر تالٍ لا يجوز أن يقلب النتيجة
+                val msg = "نُزّل «${track.title}» إلى المكتبة — يعمل الآن دون إنترنت"
+                reportProgress(track.id, track.title, out.length(), out.length(), DownloadPhase.DONE, msg)
+                cleanupLater(track.id, 6_000L)
                 // v0.42.0: الملف محلي الآن — المشغل يتبناه فوراً فيصير التشغيل
                 // من الملف لا من المصدر (العنصر الجاري سماعه بنفس الموضع)
                 onLocalFileAdopted?.invoke(track.id, localUri)
                 // تحليل الفراغ الأول — الملف محلي الآن فالتحليل آمن ومفيد
                 runCatching { library.analyzeSilenceById(track.id) }
-                val msg = "نُزّل «${track.title}» إلى المكتبة — يعمل الآن دون إنترنت"
-                reportProgress(track.id, track.title, out.length(), out.length(), DownloadPhase.DONE, msg)
-                cleanupLater(track.id, 6_000L)
                 msg
             } catch (e: Exception) {
                 val msg = (e as? RemoteImportException)?.message
