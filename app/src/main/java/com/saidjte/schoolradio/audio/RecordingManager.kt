@@ -6,6 +6,7 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Process
 import com.saidjte.schoolradio.core.util.CrashGuard
+import com.saidjte.schoolradio.core.util.RecordingCodecLogic
 import com.saidjte.schoolradio.core.util.RecordingLogic
 import com.saidjte.schoolradio.core.util.WaveformLogic
 import com.saidjte.schoolradio.data.local.entity.RecordingEntity
@@ -33,8 +34,8 @@ import java.io.File
  *     AudioRecord خاصاً به (مصدر MIC الخام بجودة أنقى، بلا AEC/AGC للمكالمات)
  *     لتحضير الفقرات مسبقاً قبل يوم الإذاعة.
  *
- * الحفظ النهائي: finish() في AacFileWriter ثم إدراج سجل في Room مع لقطة
- * (اسم + دور) المستخدم الحالي عند لحظة التسجيل.
+ * الحفظ النهائي: finish() في الكاتب (AacFileWriter أو OpusFileWriter — v0.29.0)
+ * ثم إدراج سجل في Room مع لقطة (اسم + دور) المستخدم الحالي عند لحظة التسجيل.
  */
 class RecordingManager(
     private val context: Context,
@@ -42,7 +43,9 @@ class RecordingManager(
     /** مزوّد المستخدم الحالي — يُقرأ عند الحفظ فقط (لا حالة مكررة) */
     private val currentUserProvider: suspend () -> UserEntity?,
     /** مزوّد حالة البث الحي — لمنع بدء تسجيل بث بلا بث فعلي */
-    private val isLiveProvider: () -> Boolean = { false }
+    private val isLiveProvider: () -> Boolean = { false },
+    /** v0.29.0: تفضيل «عالي الدقة Opus HD» من الإعدادات — لقطة حية يحدّثها جامع الإعدادات */
+    private val hdPreferredProvider: () -> Boolean = { true }
 ) {
     // v0.15.0: أي استثناء في كوروتين الحفظ (فشل قرص مثلاً) يُسجّل في CrashGuard
     // بدل أن يتصاعد إلى القاتل الافتراضي ويغلق التطبيق أثناء إنهاء البث
@@ -71,8 +74,11 @@ class RecordingManager(
     val recordLevel: StateFlow<Float> = _recordLevel.asStateFlow()
 
     // ===== الحالة الداخلية =====
-    private var writer: AacFileWriter? = null
+    private var writer: PcmAudioWriter? = null
     private var source: RecordingSource = RecordingSource.PTT
+
+    /** v0.29.0: هل التسجيل الجاري بترميز Opus HD؟ — يقرر نوع MIME في سجل الأرشيف */
+    private var writerUsesOpus = false
 
     // وضع الفقرة المستقلة (AudioRecord خاص + خيط قراءة خاص)
     private var memoRecord: AudioRecord? = null
@@ -102,16 +108,43 @@ class RecordingManager(
         return begin(RecordingSource.MEMO)
     }
 
-    /** المسار المشترك للوضعين: تهيئة الكاتب ثم تجهيز حسب الوضع */
+    /** المسار المشترك للوضعين: اختيار الترميز ثم تهيئة الكاتب ثم التجهيز حسب الوضع */
     private fun begin(newSource: RecordingSource): String? {
         val startedAt = System.currentTimeMillis()
         val dir = recordingsDir()
-        val file = File(dir, RecordingLogic.newFileName(newSource, startedAt))
-        val w = AacFileWriter(file.absolutePath)
-        val err = w.start()
-        if (err != null) return "تعذر بدء التسجيل: $err"
 
+        // v0.29.0: قرار Opus HD — تفضيل المستخدم + أندرويد 10+ + وجود المشفر فعلاً
+        val wantOpus = RecordingCodecLogic.preferOpus(
+            android.os.Build.VERSION.SDK_INT,
+            OpusFileWriter.encoderAvailable(),
+            hdPreferredProvider()
+        )
+        var opusError: String? = null
+        if (wantOpus) {
+            val f = File(dir, RecordingLogic.newFileName(newSource, startedAt, RecordingCodecLogic.extension(true)))
+            val w = OpusFileWriter(f.absolutePath)
+            val err = w.start()
+            if (err == null) {
+                return startCommon(w, newSource, usesOpus = true)
+            }
+            // فشل تهيئة Opus (جهاز شاذ) — رجوع شفاف إلى AAC بدل إفشال التسجيل كله
+            opusError = err
+            CrashGuard.record("OpusFileWriter.start", IllegalStateException(err))
+        }
+        val f2 = File(dir, RecordingLogic.newFileName(newSource, startedAt, RecordingCodecLogic.extension(false)))
+        val w2 = AacFileWriter(f2.absolutePath)
+        val err2 = w2.start()
+        if (err2 != null) {
+            return if (opusError != null) "تعذر بدء التسجيل: $opusError — وAAC أيضاً: $err2"
+            else "تعذر بدء التسجيل: $err2"
+        }
+        return startCommon(w2, newSource, usesOpus = false)
+    }
+
+    /** التجهيز المشترك بعد نجاح تهيئة الكاتب (v0.29.0: استُخرج لدعم الترميزين) */
+    private fun startCommon(w: PcmAudioWriter, newSource: RecordingSource, usesOpus: Boolean): String? {
         writer = w
+        writerUsesOpus = usesOpus
         source = newSource
         _mode.value = newSource
         _elapsedMs.value = 0L
@@ -188,6 +221,8 @@ class RecordingManager(
                     durationMs = durationMs,
                     sizeBytes = sizeBytes,
                     source = finishedSource.name,
+                    // v0.29.0: نوع MIME حسب الترميز الفعلي — يقود التشغيل/المشاركة/التصدير/الشارة
+                    mimeType = RecordingCodecLogic.mimeType(writerUsesOpus),
                     recordedByName = user?.name,
                     recordedByRole = user?.role
                 )
@@ -197,7 +232,7 @@ class RecordingManager(
     }
 
     /** فتح الميكروفون لوضع الفقرة: AudioRecord مصدر MIC (بلا معالجة مكالمات) */
-    private fun startMemoCapture(w: AacFileWriter): String? {
+    private fun startMemoCapture(w: PcmAudioWriter): String? {
         val minBuf = AudioRecord.getMinBufferSize(
             MicrophoneController.SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
         )

@@ -76,6 +76,9 @@ object ServiceLocator {
     // متزامناً عند بناء عناصر الوسائط (بلا تعليق) ويحدّثه جامع الإعدادات الدائم
     val trimSilenceEnabled = MutableStateFlow(true)
 
+    // v0.29.0: تفضيل «عالي الدقة Opus HD» كلقطة حية — يقرأه RecordingManager لحظة بدء كل تسجيل
+    val recordingHdPreferred = MutableStateFlow(true)
+
     private lateinit var appContext: Context
     val appScope: CoroutineScope
         get() = _appScope
@@ -562,7 +565,8 @@ object ServiceLocator {
                 appContext,
                 recordingsRepo,
                 currentUserProvider = { session.currentUser.first() },
-                isLiveProvider = { _micLive.value }
+                isLiveProvider = { _micLive.value },
+                hdPreferredProvider = { recordingHdPreferred.value }
             )
             // v0.9.0: تحميل إعدادات الاستوديو المحفوظة مسبقاً (كسب الميك + مستوى الموسيقى)
             // + استرجاع المؤثرات فور توفر أول جلسة صوتية
@@ -597,6 +601,8 @@ object ServiceLocator {
                     )
                     // v0.18.0: لقطة حية لإعداد قص الفراغ الأول
                     trimSilenceEnabled.value = s.trimSilence
+                    // v0.29.0: لقطة حية لتفضيل Opus HD
+                    recordingHdPreferred.value = s.recordingHd
                 }
             }
             initialized = true

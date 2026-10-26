@@ -70,6 +70,7 @@ import com.saidjte.schoolradio.core.ui.PlayingEqualizer
 import com.saidjte.schoolradio.core.ui.ScreenHeader
 import com.saidjte.schoolradio.core.ui.StatusBadge
 import com.saidjte.schoolradio.core.util.AppFormat
+import com.saidjte.schoolradio.core.util.RecordingCodecLogic
 import com.saidjte.schoolradio.core.util.RecordingLogic
 import com.saidjte.schoolradio.core.util.TrimLogic
 import com.saidjte.schoolradio.data.local.entity.RecordingEntity
@@ -640,6 +641,11 @@ private fun RecordingRow(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         StatusBadgeSource(isLiveSrc)
+                        // v0.29.0: شارة الترميز — Opus HD للتسجيلات الجديدة عالية الدقة
+                        if (RecordingCodecLogic.isOpusRecord(recording.mimeType)) {
+                            val st = MaterialTheme.status
+                            StatusBadge(RecordingCodecLogic.codecLabel(true), st.success)
+                        }
                         recording.recordedByName?.let { name ->
                             val role = recording.recordedByRole?.let { UserRole.from(it) }
                             Text(
