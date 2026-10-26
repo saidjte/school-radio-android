@@ -8,6 +8,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -46,11 +48,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.TimePicker
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -73,6 +78,7 @@ import com.saidjte.schoolradio.core.ui.diagonalBrush
 import com.saidjte.schoolradio.core.util.EventContentAr
 import com.saidjte.schoolradio.core.util.ScheduleLogic
 import com.saidjte.schoolradio.core.util.SegmentImageStore
+import com.saidjte.schoolradio.core.util.TimeEditLogic
 import com.saidjte.schoolradio.data.local.entity.AudioTrackEntity
 import com.saidjte.schoolradio.data.local.entity.CategoryEntity
 import com.saidjte.schoolradio.data.local.entity.ExecutionStatus
@@ -80,6 +86,7 @@ import com.saidjte.schoolradio.data.local.entity.RecordingEntity
 import com.saidjte.schoolradio.data.local.entity.RadioScheduleEntity
 import com.saidjte.schoolradio.data.local.entity.ScheduledEventEntity
 import com.saidjte.schoolradio.di.ServiceLocator
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -385,7 +392,9 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 // شارة الوقت — متدرجة للفقرة القادمة (لغة بطاقة «الفقرة التالية» في الرئيسية)
                                 if (isNextUp) {
+                                    // v0.26.0: شارة الوقت قابلة للنقر — تعديل مباشر دون البحث عن قلم الرصاص
                                     Surface(
+                                        onClick = { requireManage { editingEvent = EventEditorState.from(e) } },
                                         shape = MaterialTheme.shapes.small,
                                         shadowElevation = 3.dp,
                                         color = Color.Transparent
@@ -408,6 +417,7 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                     }
                                 } else {
                                     Surface(
+                                        onClick = { requireManage { editingEvent = EventEditorState.from(e) } },
                                         shape = MaterialTheme.shapes.small,
                                         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
                                     ) {
@@ -829,7 +839,11 @@ data class EventEditorState(
     val originalId: Long? = null,
     val scheduleId: Long,
     val title: String = "",
-    val timeText: String = "09:45",
+    // v0.26.0: وقت البدء قيمة رقمية آمنة (دقائق من منتصف الليل) — لا إدخال نصي بعد اليوم.
+    // الافتراضي: الآن مقرّباً لأقرب 5 دقائق بدل 09:45 الثابتة.
+    val startMinutes: Int = TimeEditLogic.roundUpToStep(
+        ScheduleLogic.minutesOfDay(System.currentTimeMillis()), 5
+    ),
     val weekDaysMask: Int = 0b0111110, // الاثنين..الجمعة افتراضياً
     val playlistId: Long? = null,
     val singleTrackId: Long? = null,
@@ -843,7 +857,7 @@ data class EventEditorState(
             originalId = e.id.takeIf { it > 0 },
             scheduleId = e.scheduleId,
             title = e.title,
-            timeText = ScheduleLogic.formatMinutes(e.startMinutes),
+            startMinutes = e.startMinutes,
             weekDaysMask = e.weekDaysMask,
             playlistId = e.playlistId,
             singleTrackId = e.singleTrackId,
@@ -946,7 +960,8 @@ private fun EventEditorDialog(
     val imageScope = rememberCoroutineScope()
     var scheduleId by remember { mutableStateOf(initial.scheduleId) }
     var title by remember { mutableStateOf(initial.title) }
-    var timeText by remember { mutableStateOf(initial.timeText) }
+    // v0.26.0: وقت البدء رقمي آمن — يُعدّل عبر منتقي الساعة والرقائق السريعة فقط
+    var startMinutes by remember { mutableIntStateOf(initial.startMinutes) }
     var mask by remember { mutableStateOf(initial.weekDaysMask) }
     var playlistId by remember { mutableStateOf(initial.playlistId) }
     var singleTrackId by remember { mutableStateOf(initial.singleTrackId) }
@@ -955,7 +970,16 @@ private fun EventEditorDialog(
     var imagePath by remember { mutableStateOf(initial.imagePath) }
     // v0.13.0: سكربت المذيع المرتبط بالفقرة — يفتح على شاشة العرض لحظة الإطلاق
     var scriptId by remember { mutableStateOf(initial.scriptId) }
-    var conflictError by remember { mutableStateOf<String?>(null) }
+
+    // v0.26.0: كشف التعارض حيّاً أثناء التعديل — بدل انتظار زر الحفظ
+    // (حدث آخر في نفس الجدول والوقت مع تقاطع أيام)
+    val conflictNow = events.any {
+        it.id != initial.originalId && it.scheduleId == scheduleId &&
+            it.startMinutes == startMinutes && (it.weekDaysMask and mask) != 0
+    }
+    val conflictMsg = if (conflictNow)
+        "توجد فقرة أخرى في نفس الوقت والأيام المحددة — عدّل الوقت أو الأيام"
+    else null
 
     val playlists by locator.playlists.playlists.collectAsStateWithLifecycle(initialValue = emptyList())
     val tracks by locator.library.tracks.collectAsStateWithLifecycle(initialValue = emptyList())
@@ -987,17 +1011,11 @@ private fun EventEditorDialog(
                     value = title, onValueChange = { title = it },
                     label = { Text("عنوان الفقرة") }, singleLine = true
                 )
-                OutlinedTextField(
-                    value = timeText, onValueChange = { timeText = it },
-                    label = { Text("وقت البدء (HH:mm)") },
-                    supportingText = {
-                        val parsed = ScheduleLogic.parseHhMm(timeText)
-                        Text(
-                            if (parsed == null) "صيغة غير صحيحة — مثال: 09:45"
-                            else "ستُطلق في ${ScheduleLogic.formatMinutes(parsed)}"
-                        )
-                    },
-                    singleLine = true
+                // v0.26.0: منتقي ساعة مرئي + رقائق إزاحة سريعة — لا إدخال نص حر بعد اليوم
+                TimeEditorSection(
+                    minutes = startMinutes,
+                    onChange = { startMinutes = it },
+                    conflictText = conflictMsg
                 )
                 Text("أيام التشغيل", style = MaterialTheme.typography.labelLarge)
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1102,10 +1120,6 @@ private fun EventEditorDialog(
                     }
                 }
 
-                conflictError?.let {
-                    Text(it, color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall)
-                }
                 // اختيار الجدول
                 SimpleDropdownRow(
                     label = "الجدول التابع له",
@@ -1118,42 +1132,169 @@ private fun EventEditorDialog(
         },
         confirmButton = {
             TextButton(
+                // v0.26.0: زر الحفظ يتعطل ذاتياً عند تعارض حي أو نقص البيانات —
+                // رسالة الخطأ لا تنتظر محاولة الحفظ بعد اليوم
+                enabled = title.isNotBlank() && mask != 0 && !conflictNow,
                 onClick = {
-                    val minutes = ScheduleLogic.parseHhMm(timeText)
-                    if (title.isNotBlank() && minutes != null && mask != 0) {
-                        // منع تعارض المواعيد مع حدث آخر في نفس الوقت والأيام
-                        val conflict = events.any {
-                            it.id != initial.originalId &&
-                                it.scheduleId == scheduleId &&
-                                it.startMinutes == minutes &&
-                                (it.weekDaysMask and mask) != 0
+                    if (title.isNotBlank() && mask != 0) {
+                        // استُبدلت صورة قديمة؟ نحذف ملفها من القرص (لا ملفات يتيمة)
+                        if (initial.imagePath != null && initial.imagePath != imagePath) {
+                            SegmentImageStore.delete(initial.imagePath)
                         }
-                        if (conflict) {
-                            conflictError = "توجد فقرة أخرى في نفس الوقت والأيام المحددة — عدّل الوقت أو الأيام"
-                        } else {
-                            // استُبدلت صورة قديمة؟ نحذف ملفها من القرص (لا ملفات يتيمة)
-                            if (initial.imagePath != null && initial.imagePath != imagePath) {
-                                SegmentImageStore.delete(initial.imagePath)
-                            }
-                            onSave(
-                                ScheduledEventEntity(
-                                    id = initial.originalId ?: 0,
-                                    scheduleId = scheduleId,
-                                    startMinutes = minutes,
-                                    weekDaysMask = mask,
-                                    title = title.trim(),
-                                    playlistId = playlistId,
-                                    singleTrackId = singleTrackId,
-                                    recordingId = recordingId,
-                                    noteText = noteText.trim().takeIf { it.isNotBlank() },
-                                    imagePath = imagePath,
-                                    scriptId = scriptId
-                                )
+                        onSave(
+                            ScheduledEventEntity(
+                                id = initial.originalId ?: 0,
+                                scheduleId = scheduleId,
+                                startMinutes = startMinutes,
+                                weekDaysMask = mask,
+                                title = title.trim(),
+                                playlistId = playlistId,
+                                singleTrackId = singleTrackId,
+                                recordingId = recordingId,
+                                noteText = noteText.trim().takeIf { it.isNotBlank() },
+                                imagePath = imagePath,
+                                scriptId = scriptId
                             )
-                        }
+                        )
                     }
                 }
             ) { Text("حفظ") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
+    )
+}
+
+/**
+ * v0.26.0 — محرر وقت البدء المُعاد تصميمه (بدل حقل HH:mm النص الحر):
+ *  - بطاقة وقت كبيرة قابلة للنقر تفتح منتقي الساعة المادي (قرص 24 ساعة)
+ *  - صيغة 12 ساعة عربية + وصف نسبي حي («ينطلق خلال 14 ساعة و40 دقيقة من الآن»)
+ *  - رقائق إزاحة سريعة (−15/−5/+1/+5/+15 دقيقة) تلبي الحالة الأشيع
+ *    (تأجيل الطابور ربع ساعة) دون إعادة كتابة أي رقم + زر «الآن»
+ *  - تنبيه تعارض حي إذا تقاطع الموعد مع فقرة أخرى بنفس الوقت والأيام
+ */
+@OptIn(
+    androidx.compose.foundation.layout.ExperimentalLayoutApi::class,
+    androidx.compose.material3.ExperimentalMaterial3Api::class
+)
+@Composable
+private fun TimeEditorSection(
+    minutes: Int,
+    onChange: (Int) -> Unit,
+    conflictText: String?
+) {
+    var showPicker by remember { mutableStateOf(false) }
+    val nowMinutes = remember { ScheduleLogic.minutesOfDay(System.currentTimeMillis()) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("وقت البدء", style = MaterialTheme.typography.labelLarge)
+        Surface(
+            onClick = { showPicker = true },
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(AppIcons.Alarm, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    ScheduleLogic.formatMinutes(minutes),
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        fontFeatureSettings = "tnum", fontWeight = FontWeight.Bold
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        TimeEditLogic.format12hAr(minutes),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    TimeEditLogic.relativeLabelAr(minutes, nowMinutes)?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                Icon(
+                    Icons.Filled.Edit, "فتح منتقي الساعة",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            TimeEditLogic.QUICK_OFFSETS_MIN.forEach { off ->
+                FilterChip(
+                    selected = false,
+                    onClick = { onChange(TimeEditLogic.shifted(minutes, off)) },
+                    label = {
+                        Text(offsetChipLabel(off), style = MaterialTheme.typography.labelMedium)
+                    }
+                )
+            }
+            FilterChip(
+                selected = false,
+                onClick = { onChange(nowMinutes) },
+                label = { Text("الآن", style = MaterialTheme.typography.labelMedium) }
+            )
+        }
+        conflictText?.let {
+            Text(
+                it,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+
+    if (showPicker) {
+        TimePickerHostDialog(
+            initialMinutes = minutes,
+            onPick = { onChange(it); showPicker = false },
+            onDismiss = { showPicker = false }
+        )
+    }
+}
+
+/** تسمية رقاقة الإزاحة مع علامة LRM حتى لا تنقلب «+5» في السياق العربي */
+private fun offsetChipLabel(off: Int): String {
+    val sign = if (off >= 0) "+" else "-"
+    return "\u200E$sign${abs(off)} د"
+}
+
+/** منتقي الساعة المادي (قرص 24 ساعة) داخل حوار — v0.26.0 */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun TimePickerHostDialog(
+    initialMinutes: Int,
+    onPick: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val state = rememberTimePickerState(
+        initialHour = initialMinutes / 60,
+        initialMinute = initialMinutes % 60,
+        is24Hour = true
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("اختر وقت البدء") },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                TimePicker(state = state)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onPick(state.hour * 60 + state.minute) }) { Text("تحديد") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } }
     )
