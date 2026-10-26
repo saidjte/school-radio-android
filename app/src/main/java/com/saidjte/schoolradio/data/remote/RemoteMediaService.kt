@@ -266,6 +266,63 @@ class RemoteMediaService(
         return track.uri
     }
 
+    // ==================== v0.35.0: قوائم البدء السريعة ====================
+
+    /**
+     * جسر الإحلال الحي — يوصلها ServiceLocator بـ PlaybackConnection.replaceItemUri
+     * ليستبدل عنصر القائمة بتدفق طازج أثناء الاستماع بلا انقطاع صوت.
+     */
+    var onFreshUri: ((trackId: Long, freshUri: String) -> Unit)? = null
+
+    /** خطة قائمة سريعة: URIs جاهزة للإدراج الفوري + مقاطع بعيدة مؤجلة التجديد الخلفي */
+    data class QueuePlan(
+        /** URI جاهز لكل مقطع بنفس الترتيب — جاهز للإدراج في المشغل لحظياً */
+        val uris: List<String>,
+        /** المقاطع البعيدة التي ستجدد تدفقاتها في الخلفية */
+        val pendingTracks: List<AudioTrackEntity>
+    )
+
+    /**
+     * بناء خطة قائمة سريعة: مقطع الانطلاق البعيد وحده يُحلّ شبكياً الآن
+     * (ضمان صحة أول صوت)، والبقية تشتغل بروابطها المخزنة فوراً وتتجدد لاحقاً.
+     * لائحة المقاطع المحلية كلياً تعود خلال أجزاء من الألفية بلا أي شبكة.
+     */
+    suspend fun buildQueuePlan(tracks: List<AudioTrackEntity>, startIndex: Int): QueuePlan {
+        val decision = com.saidjte.schoolradio.core.util.QueueStartLogic
+            .decide(tracks.map { it.isRemote }, startIndex)
+        val uris = tracks.map { it.uri }.toMutableList()
+        val syncIdx = decision.syncResolveIndex
+        if (syncIdx != null) {
+            try {
+                uris[syncIdx] = playableUriFor(tracks[syncIdx])
+            } catch (_: Exception) {
+                // بقي URI المخزن — المشغل يعرض رسالة واضحة إن انتهى فعلاً
+            }
+        }
+        val pending = decision.pendingIndexes.mapNotNull { tracks.getOrNull(it) }
+            .filter { RemoteLinks.parse(it.sourceUrl ?: "")?.source?.needsFreshResolve == true }
+        return QueuePlan(uris, pending)
+    }
+
+    /**
+     * تجديد خلفي متسلسل للمقاطع البعيدة المؤجلة: كل تدفق يحلّ ويتحدّث سجلّه
+     * ثم يُحلّ محل عنصره في قائمة المشغل الحية عبر [onFreshUri] —
+     * كل ذلك أثناء استماع المستخدم، بلا أي انتظار عند ضغطة التشغيل.
+     */
+    fun refreshPendingRemoteAsync(pendingTracks: List<AudioTrackEntity>) {
+        if (pendingTracks.isEmpty()) return
+        cleanupScope.launch {
+            pendingTracks.forEach { t ->
+                try {
+                    val fresh = playableUriFor(t)
+                    if (fresh != t.uri) onFreshUri?.invoke(t.id, fresh)
+                } catch (_: Exception) {
+                    // بقي التدفق المخزن — سلوك رسالة الخطأ القائم يكفي إن انتهى فعلاً
+                }
+            }
+        }
+    }
+
     /** مدة ملف محلي عبر MediaMetadataRetriever — 0 عند الفشل (تُصحَّح عند التشغيل) */
     private fun queryDurationForFile(file: File): Long {
         val retriever = MediaMetadataRetriever()

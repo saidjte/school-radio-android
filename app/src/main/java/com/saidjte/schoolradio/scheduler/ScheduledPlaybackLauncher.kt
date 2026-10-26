@@ -57,14 +57,19 @@ object ScheduledPlaybackLauncher {
         // ===== 2) تجميع قائمة المقاطع =====
         var failNote: String? = null
         val queue: List<PlaybackConnection.QueueItem> = when {
-            event.playlistId != null ->
-                locator.playlists.resolvedTracks(event.playlistId).map {
-                    // v0.23.0: مقاطع البث البعيدة تحصل على تدفق طازج (روابطها تنتهي صلاحيتها)
+            event.playlistId != null -> {
+                // v0.35.0: قائمة سريعة — حلّ فوري للأول فقط (صحة انطلاق الفقرة المجدولة)
+                // والبقية تجديد خلفي حي بعد الإطلاق مباشرة
+                val tracks = locator.playlists.resolvedTracks(event.playlistId)
+                val plan = locator.remote.buildQueuePlan(tracks, 0)
+                locator.remote.refreshPendingRemoteAsync(plan.pendingTracks)
+                tracks.mapIndexed { i, t ->
                     PlaybackConnection.QueueItem(
-                        locator.remote.playableUriFor(it), it.title, it.id,
-                        false, it.trimStartMs, it.trimEndMs, it.trimManual
+                        plan.uris[i], t.title, t.id,
+                        false, t.trimStartMs, t.trimEndMs, t.trimManual
                     )
                 }
+            }
             event.recordingId != null -> {
                 // تسجيل من أرشيف التسجيلات — نتحقق من وجود الملف على القرص أولاً
                 val rec = locator.recordingsRepo.byId(event.recordingId)

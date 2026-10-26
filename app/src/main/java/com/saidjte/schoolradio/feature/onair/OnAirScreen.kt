@@ -46,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -93,21 +94,11 @@ fun OnAirScreen(onExit: () -> Unit) {
 
     // v0.12.0: الموجات الحية — نبض الميكروفون أثناء الإعلان ونبض الموسيقى أثناء الفقرات
     val micLive by locator.micLive.collectAsStateWithLifecycle()
-    val micLevelRaw by locator.micLevel.collectAsStateWithLifecycle()
-    val mediaLevelRaw by locator.mediaLevel.collectAsStateWithLifecycle()
+    // v0.35.0: المستويات لم تعد تُجمَع في رأس شاشة العرض — مزوّدات تُقرأ وقت العينة
+    // داخل الموجات وأعمدة VU نفسها، فإعادة تركيب الشاشة عند كل انبعاث صارت صفراً
     // v0.13.0: السكربتات — لحل السكربت المرتبط بالفقرة الجارية على شاشة العرض
     val scripts by locator.scripts.scripts.collectAsStateWithLifecycle(initialValue = emptyList())
     val onAirScript = onAir?.scriptId?.let { sid -> scripts.firstOrNull { it.id == sid } }
-    val onAirMicLevel by animateFloatAsState(
-        targetValue = micLevelRaw.coerceIn(0f, 1f),
-        animationSpec = tween(80),
-        label = "onair-mic-wave"
-    )
-    val onAirMediaLevel by animateFloatAsState(
-        targetValue = mediaLevelRaw.coerceIn(0f, 1f),
-        animationSpec = tween(80),
-        label = "onair-media-wave"
-    )
     val airTeal = Color(0xFF5CDAC4)
 
     // ===== v0.24.0: مؤقت ترتيل المذيع — لحظة فتح الميكروفون تُحفظ لبدء العد =====
@@ -236,7 +227,7 @@ fun OnAirScreen(onExit: () -> Unit) {
                             Box(
                                 Modifier
                                     .size(9.dp)
-                                    .alpha(dotAlpha)
+                                    .graphicsLayer { this.alpha = dotAlpha }
                                     .background(Color(0xFFFF5A5F), CircleShape)
                             )
                             Spacer(Modifier.size(7.dp))
@@ -274,7 +265,8 @@ fun OnAirScreen(onExit: () -> Unit) {
                     }
                     Spacer(Modifier.width(10.dp))
                     LiveWaveform(
-                        level = onAirMicLevel,
+                        level = 0f,
+                        levelProvider = { locator.micLevel.value.coerceIn(0f, 1f) },
                         active = true,
                         modifier = Modifier
                             .weight(1f)
@@ -707,10 +699,12 @@ fun OnAirScreen(onExit: () -> Unit) {
                         .height(132.dp)
                 ) {
                     BigVuMeter(
-                        mediaLevel = onAirMediaLevel,
-                        micLevel = onAirMicLevel,
+                        mediaLevel = 0f,
+                        micLevel = 0f,
                         mediaActive = playback.isPlaying,
                         micActive = micLive,
+                        mediaLevelProvider = { locator.mediaLevel.value.coerceIn(0f, 1f) },
+                        micLevelProvider = { locator.micLevel.value.coerceIn(0f, 1f) },
                         modifier = Modifier
                             .width(118.dp)
                             .fillMaxHeight(),
@@ -718,7 +712,8 @@ fun OnAirScreen(onExit: () -> Unit) {
                     )
                     Spacer(Modifier.width(14.dp))
                     LiveWaveform(
-                        level = onAirMediaLevel,
+                        level = 0f,
+                        levelProvider = { locator.mediaLevel.value.coerceIn(0f, 1f) },
                         active = playback.isPlaying,
                         modifier = Modifier
                             .weight(1f)
@@ -780,7 +775,8 @@ fun OnAirScreen(onExit: () -> Unit) {
                         Box(
                             Modifier
                                 .size((240 - ring * 46).dp)
-                                .alpha(haloAlpha + ring * 0.04f)
+                                // v0.35.0: النبض يحدّث طبقة الرسم فقط — بلا إعادة تركيب الشاشة
+                                .graphicsLayer { this.alpha = haloAlpha + ring * 0.04f }
                                 .background(Color(0xFF5CDAC4).copy(alpha = 0.12f), CircleShape)
                         )
                     }

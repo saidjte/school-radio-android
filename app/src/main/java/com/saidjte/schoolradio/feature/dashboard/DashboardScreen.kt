@@ -75,6 +75,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -166,13 +167,7 @@ fun DashboardScreen(
     val isLive by locator.micLive.collectAsStateWithLifecycle()
     // v0.8.0: مرحلة البث (جارٍ البدء/مباشر/جارٍ الإيقاف) لاستجابة زر فورية وسلسة
     val micPhase by mic.phase.collectAsStateWithLifecycle()
-    val micLevelRaw by locator.micLevel.collectAsStateWithLifecycle()
     val micError by locator.micMessage.collectAsStateWithLifecycle()
-    val micLevel by animateFloatAsState(
-        targetValue = micLevelRaw.coerceIn(0f, 1f),
-        animationSpec = tween(90),
-        label = "mic-level-smooth"
-    )
     // v0.10.0: المسار المشترك مركزياً — الرئيسية وقارئ السكربت يتقاسمان نفس الاختيار
     val route by locator.broadcastRoute.collectAsStateWithLifecycle()
     // v0.10.0: نمط البث (استمرار / ضغطة) محفوظ في الإعدادات
@@ -186,17 +181,9 @@ fun DashboardScreen(
     val recActive by locator.recordings.isRecording.collectAsStateWithLifecycle()
     val recElapsed by locator.recordings.elapsedMs.collectAsStateWithLifecycle()
     val recMode by locator.recordings.mode.collectAsStateWithLifecycle()
-    // v0.12.0: مستوى الموجة الحية للتسجيل — ما يُكتب في الملف فعلاً (بث PTT أو فقرة MEMO)
-    val recLevelRaw by locator.recordings.recordLevel.collectAsStateWithLifecycle()
-
-    // v0.12.0: مصدر الموجة الموحد — أثناء التسجيل مستوى الملف، وإلا مستوى البث الحي
+    // v0.12.0: الموجة الحية تعمل أثناء البث أو التسجيل — مصدرها يُحسم داخل ورقة الرسم
+    // v0.35.0: المستويات لم تعد تُجمَع في رأس الشاشة — تُقرأ وقت العينة داخل الموجة وحلقة البث
     val waveActive = isLive || recActive
-    val waveSource = if (recActive) recLevelRaw else micLevelRaw
-    val waveLevel by animateFloatAsState(
-        targetValue = waveSource.coerceIn(0f, 1f),
-        animationSpec = tween(80),
-        label = "wave-source-smooth"
-    )
 
     val micPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -414,7 +401,7 @@ fun DashboardScreen(
             LiveBroadcastCard(
                 isLive = isLive,
                 phase = micPhase,
-                level = micLevel,
+                micLevelFlow = locator.micLevel,
                 route = route,
                 error = micError,
                 recActive = recActive,
@@ -422,7 +409,7 @@ fun DashboardScreen(
                 recMode = recMode,
                 micMode = micMode,
                 waveActive = waveActive,
-                waveLevel = waveLevel,
+                recLevelFlow = locator.recordings.recordLevel,
                 onRouteChange = { locator.setBroadcastRoute(it) },
                 onMicModeChange = { mode ->
                     scope.launch {
@@ -801,7 +788,8 @@ private fun EventRow(
 private fun LiveBroadcastCard(
     isLive: Boolean,
     phase: MicPhase,
-    level: Float,
+    /** v0.35.0: مجرى مستوى الميكروفون — يُقرأ وقت الرسم داخل الحلقة فلا يُعاد تركيب البطاقة */
+    micLevelFlow: kotlinx.coroutines.flow.StateFlow<Float>,
     route: AudioRoutingManager.Route,
     error: String?,
     recActive: Boolean,
@@ -809,7 +797,8 @@ private fun LiveBroadcastCard(
     recMode: com.saidjte.schoolradio.data.local.entity.RecordingSource?,
     micMode: com.saidjte.schoolradio.audio.MicMode,
     waveActive: Boolean,
-    waveLevel: Float,
+    /** v0.35.0: مجرى مستوى التسجيل — مصدر الموجة أثناء MEMO/PTT */
+    recLevelFlow: kotlinx.coroutines.flow.StateFlow<Float>,
     onRouteChange: (AudioRoutingManager.Route) -> Unit,
     onMicModeChange: (com.saidjte.schoolradio.audio.MicMode) -> Unit,
     onTalkStart: () -> Unit,
@@ -819,12 +808,8 @@ private fun LiveBroadcastCard(
     val st = MaterialTheme.status
     val haptics = LocalHapticFeedback.current
 
-    val pulse = rememberInfiniteTransition(label = "live-pulse")
-    val pulseAlpha by pulse.animateFloat(
-        initialValue = 0.15f, targetValue = 0.55f,
-        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
-        label = "live-alpha"
-    )
+    // v0.35.0: حُذف نبض الخمول اللانهائي — كان يُعيد رسم حلقة البث 60fps كل ثانية
+    // حتى في السكون التام على الشاشة الرئيسية. الخمول الآن حلقة ثابتة هادئة.
 
     Card(
         Modifier.fillMaxWidth(),
@@ -854,7 +839,7 @@ private fun LiveBroadcastCard(
                     StatusBadge(
                         "● مباشر", st.live,
                         modifier = Modifier.padding(start = 8.dp)
-                            .alpha(badgeAlpha)
+                            .graphicsLayer { this.alpha = badgeAlpha }
                     )
                 }
             }
@@ -883,6 +868,9 @@ private fun LiveBroadcastCard(
             Box(Modifier.size(160.dp).padding(16.dp), contentAlignment = Alignment.Center) {
                 val baseRing = MaterialTheme.colorScheme.primary
                 val startingRing = MaterialTheme.colorScheme.tertiary
+                // v0.35.0: المستوى يُقرأ داخل طور الرسم — انبعاث المستوى يحرك رسم
+                // الحلقة وحده بلا أي إعادة تركيب للبطاقة أو الشاشة
+                val ringLv = micLevelFlow.collectAsStateWithLifecycle()
                 Canvas(Modifier.fillMaxSize()) {
                     val transitioning = phase == MicPhase.STARTING || phase == MicPhase.STOPPING
                     val ringColor = when {
@@ -890,10 +878,11 @@ private fun LiveBroadcastCard(
                         phase == MicPhase.STARTING -> startingRing
                         else -> baseRing
                     }
+                    val level = ringLv.value.coerceIn(0f, 1f)
                     val alpha = when {
                         isLive -> 0.25f + level * 0.75f
                         transitioning -> 0.45f
-                        else -> pulseAlpha
+                        else -> 0.25f
                     }
                     drawCircle(
                         color = ringColor.copy(alpha = alpha),
@@ -1069,8 +1058,15 @@ private fun LiveBroadcastCard(
             // وأثناء البث بلا تسجيل تعرض صوت الميكروفون على الهواء.
             AnimatedVisibility(visible = waveActive) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    // v0.35.0: مصدر الموجة يُحسم وقت كل عينة (45ms) — أثناء التسجيل مستوى
+                    // الملف وإلا مستوى البث الحي — بلا إعادة تركيب ولا تنعيم في التركيب
+                    val recActiveRef by rememberUpdatedState(recActive)
                     LiveWaveform(
-                        level = waveLevel,
+                        level = 0f,
+                        levelProvider = {
+                            (if (recActiveRef) recLevelFlow.value else micLevelFlow.value)
+                                .coerceIn(0f, 1f)
+                        },
                         active = waveActive,
                         modifier = Modifier
                             .fillMaxWidth()

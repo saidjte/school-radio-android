@@ -434,8 +434,8 @@ object ServiceLocator {
                     ?.let {
                         listOf(
                             BreaksLogic.PlaySpec(
-                                // v0.23.0: جينل بعيد؟ يجدَّد تدفقه هنا قبل الإدراج
-                                remote.playableUriFor(it), it.title, it.id,
+                                // v0.35.0: URI المخزن فوراً — التجديد الخلفي يتكفل بالبعد
+                                it.uri, it.title, it.id,
                                 it.trimStartMs, it.trimEndMs, it.trimManual
                             )
                         )
@@ -446,17 +446,40 @@ object ServiceLocator {
                     .filter { it.categoryId == schedule.breakCategoryId && it.isAvailable }
                     .map {
                         BreaksLogic.PlaySpec(
-                            // v0.23.0: جينلات بعيدة في التصنيف تجدَّد تدفقاتها
-                            remote.playableUriFor(it), it.title, it.id,
+                            // v0.35.0: URI المخزن فوراً — التجديد الخلفي يتكفل بالبعد
+                            it.uri, it.title, it.id,
                             it.trimStartMs, it.trimEndMs, it.trimManual
                         )
                     }
             else -> emptyList()
         }
 
+        // v0.35.0: سرعة الانطلاق — حلّ شبكي فوري للمقطع البعيد الأول فقط (صحة أول صوت)،
+        // وبقية المقاطع البعيدة تُجدَّد في الخلفية وتحل أماكنها في القائمة الحية أثناء الاستماع
+        val firstRemoteSpec = segments.flatten()
+            .firstOrNull { library.trackById(it.trackId)?.isRemote == true }
+        var launchSegments = segments
+        var resolvedFirstId = -1L
+        if (firstRemoteSpec != null) {
+            val ent = library.trackById(firstRemoteSpec.trackId)
+            if (ent != null) {
+                val fresh = try { remote.playableUriFor(ent) } catch (_: Exception) { ent.uri }
+                launchSegments = segments.map { list ->
+                    list.map { if (it.trackId == firstRemoteSpec.trackId) it.copy(uri = fresh) else it }
+                }
+                resolvedFirstId = ent.id
+            }
+        }
+        val pendingTracks = (launchSegments.flatten() + pool).map { it.trackId }
+            .distinct()
+            .filter { it != resolvedFirstId }
+            .mapNotNull { library.trackById(it) }
+            .filter { it.isRemote }
+        remote.refreshPendingRemoteAsync(pendingTracks)
+
         // 3) بناء القائمة المتداخلة الموسومة (الواصلة تعرف محرك الحدود مواضع الجينل)
         val tagged = BreaksLogic.buildQueueTagged(
-            segments = segments,
+            segments = launchSegments,
             config = BreaksLogic.BreakConfig(
                 enabled = schedule.breakEnabled,
                 trackId = schedule.breakTrackId,
@@ -510,8 +533,8 @@ object ServiceLocator {
             playlists.resolvedTracks(e.playlistId)
                 .map {
                     BreaksLogic.PlaySpec(
-                        // v0.23.0: مقاطع البث البعيدة تحتاج تدفقاً طازجاً (روابطها تنتهي)
-                        remote.playableUriFor(it), it.title, it.id,
+                        // v0.35.0: URI المخزن فوراً — التجديد الخلفي يتكفل بالبعد
+                        it.uri, it.title, it.id,
                         it.trimStartMs, it.trimEndMs, it.trimManual
                     )
                 }
@@ -526,8 +549,8 @@ object ServiceLocator {
                 ?.let {
                     listOf(
                         BreaksLogic.PlaySpec(
-                            // v0.23.0: مقطع بث بعيد — يجدَّد تدفقه هنا
-                            remote.playableUriFor(it), it.title, it.id,
+                            // v0.35.0: URI المخزن فوراً — التجديد الخلفي يتكفل بالبعد
+                            it.uri, it.title, it.id,
                             it.trimStartMs, it.trimEndMs, it.trimManual
                         )
                     )
@@ -552,6 +575,8 @@ object ServiceLocator {
             session = SessionRepository(settings, db.userDao())
             routing = AudioRoutingManager(appContext)
             playback = PlaybackConnection(appContext)
+            // v0.35.0: جسر الإحلال الحي — التجديد الخلفي للروابط البعيدة يستبدل عناصر القائمة الحية
+            remote.onFreshUri = { trackId, freshUri -> playback.replaceItemUri(trackId, freshUri) }
             scheduler = SchedulerManager(appContext)
             // v0.9.0: السكربتات الإذاعية — تخزين JSON محلي في مسار التطبيق
             scripts = ScriptRepository(appContext.filesDir, appScope)

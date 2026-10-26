@@ -216,11 +216,23 @@ private fun FullPlayerDialog(onDismiss: () -> Unit) {
                         textAlign = androidx.compose.ui.text.style.TextAlign.End
                     )
                 }
+                // v0.35.0: السحب يحدّث حالة محلية والقفز عند الإفلات فقط —
+                // كان كل حركة إصبع ترسل seek للمشغل فيبطئ الحوار والاستجابة
+                var dragging by remember { mutableStateOf(false) }
+                var dragRatio by remember { mutableStateOf(0f) }
                 androidx.compose.material3.Slider(
-                    value = if (state.durationMs > 0)
+                    value = if (dragging) dragRatio
+                    else if (state.durationMs > 0)
                         state.positionMs.toFloat() / state.durationMs else 0f,
                     onValueChange = { ratio ->
-                        playback.seekTo((ratio * state.durationMs).toLong())
+                        dragging = true
+                        dragRatio = ratio
+                    },
+                    onValueChangeFinished = {
+                        if (dragging) {
+                            dragging = false
+                            playback.seekTo((dragRatio * state.durationMs).toLong())
+                        }
                     }
                 )
                 if (state.errorMessage != null) {

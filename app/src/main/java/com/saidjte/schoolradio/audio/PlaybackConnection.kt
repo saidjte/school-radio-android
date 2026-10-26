@@ -254,6 +254,32 @@ class PlaybackConnection(private val context: Context) {
     fun skipTo(index: Int) { controller?.seekTo(index, 0) }
     fun seekTo(positionMs: Long) { controller?.seekTo(positionMs) }
 
+    /**
+     * v0.35.0: إحلال URI عنصر بعيد بتدفق طازج — يستدعيه التجديد الخلفي
+     * (RemoteMediaService.refreshPendingRemoteAsync) بعد انطلاق التشغيل،
+     * فتتجدد روابط القائمة أثناء الاستماع بلا أي انقطاع صوت.
+     * العنصر الحالي لا يُمس إطلاقاً (البدء به تم بتدفق محلول لحظة الطلب)،
+     * وأي فشل في الأمر يُتجاهل بهدوء — سلوك رسالة الخطأ القائم يكفي.
+     */
+    fun replaceItemUri(trackId: Long, uri: String) {
+        val c = controller ?: return
+        val count = c.mediaItemCount
+        for (i in 0 until count) {
+            if (c.getMediaItemAt(i).mediaId == trackId.toString()) {
+                if (i == c.currentMediaItemIndex) return
+                try {
+                    c.replaceMediaItem(
+                        i,
+                        c.getMediaItemAt(i).buildUpon().setUri(uri).build()
+                    )
+                } catch (_: Exception) {
+                    // أمر غير متاح على هذه الجلسة — القائمة تكمل بالروابط المخزنة
+                }
+                return
+            }
+        }
+    }
+
     /** ضبط مستوى الصوت — تستخدمه أيضاً آلية الخفض التلقائي أثناء الإعلان */
     fun setVolume(volume: Float) {
         controller?.volume = volume.coerceIn(0f, 1f)

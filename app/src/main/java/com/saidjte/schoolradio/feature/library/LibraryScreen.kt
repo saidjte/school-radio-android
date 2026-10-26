@@ -224,16 +224,20 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
              *  v0.23.0: مقاطع البث البعيدة تجلب تدفقاً طازجاً قبل الإدراج (روابطها تنتهي) */
             fun playFromLibrary(track: AudioTrackEntity) {
                 scope.launch {
-                    val queue = visible.filter { it.isAvailable }.map { t ->
-                        val uri = locator.remote.playableUriFor(t)
+                    // v0.35.0: قائمة سريعة — حلّ فوري لمقطع الانطلاق فقط، والبقية تجديد خلفي حي
+                    val pool = visible.filter { it.isAvailable }
+                    if (pool.isEmpty()) return@launch
+                    val si = pool.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+                    val plan = locator.remote.buildQueuePlan(pool, si)
+                    val queue = pool.mapIndexed { i, t ->
                         com.saidjte.schoolradio.audio.PlaybackConnection.QueueItem(
-                            uri, t.title, t.id, false, t.trimStartMs, t.trimEndMs, t.trimManual
+                            plan.uris[i], t.title, t.id, false, t.trimStartMs, t.trimEndMs, t.trimManual
                         )
                     }
-                    val startIndex = queue.indexOfFirst { it.trackId == track.id }
+                    locator.remote.refreshPendingRemoteAsync(plan.pendingTracks)
                     locator.playMainQueue(
                         items = queue,
-                        startIndex = if (startIndex >= 0) startIndex else 0,
+                        startIndex = si,
                         queueTag = "library"
                     )
                 }

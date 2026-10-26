@@ -171,13 +171,17 @@ fun PlaylistsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                             locator.playback.play()
                                         } else {
                                             locator.playMainQueue(
-                                                resolved.map {
-                                                    // v0.23.0: مقاطع البث البعيدة تجلب تدفقاً طازجاً
-                                                    PlaybackConnection.QueueItem(
-                                                        locator.remote.playableUriFor(it),
-                                                        it.title, it.id, false,
-                                                        it.trimStartMs, it.trimEndMs, it.trimManual
-                                                    )
+                                                // v0.35.0: قائمة سريعة — حلّ فوري للأول فقط والبقية تجديد خلفي حي
+                                                run {
+                                                    val plan = locator.remote.buildQueuePlan(resolved, 0)
+                                                    locator.remote.refreshPendingRemoteAsync(plan.pendingTracks)
+                                                    resolved.mapIndexed { i, t ->
+                                                        PlaybackConnection.QueueItem(
+                                                            plan.uris[i],
+                                                            t.title, t.id, false,
+                                                            t.trimStartMs, t.trimEndMs, t.trimManual
+                                                        )
+                                                    }
                                                 },
                                                 repeatAll = p.repeat,
                                                 queueTag = "playlist:${p.id}"
@@ -344,13 +348,17 @@ private fun PlaylistItemsScreen(
                             snackbar.showSnackbar("القائمة فارغة أو كل مقاطعها غير متاحة")
                         } else {
                             locator.playMainQueue(
-                                resolved.map {
-                                    // v0.23.0: مقاطع البث البعيدة تجلب تدفقاً طازجاً
-                                    PlaybackConnection.QueueItem(
-                                        locator.remote.playableUriFor(it),
-                                        it.title, it.id, false,
-                                        it.trimStartMs, it.trimEndMs, it.trimManual
-                                    )
+                                // v0.35.0: قائمة سريعة — حلّ فوري للأول فقط والبقية تجديد خلفي حي
+                                run {
+                                    val plan = locator.remote.buildQueuePlan(resolved, 0)
+                                    locator.remote.refreshPendingRemoteAsync(plan.pendingTracks)
+                                    resolved.mapIndexed { i, t ->
+                                        PlaybackConnection.QueueItem(
+                                            plan.uris[i],
+                                            t.title, t.id, false,
+                                            t.trimStartMs, t.trimEndMs, t.trimManual
+                                        )
+                                    }
                                 },
                                 repeatAll = playlist?.repeat == true,
                                 queueTag = "playlist:$playlistId"
