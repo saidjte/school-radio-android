@@ -78,6 +78,7 @@ import com.saidjte.schoolradio.core.ui.SegmentImage
 import com.saidjte.schoolradio.core.ui.diagonalBrush
 import com.saidjte.schoolradio.core.util.EventContentAr
 import com.saidjte.schoolradio.core.util.EventDateLogic
+import com.saidjte.schoolradio.core.util.ReminderLogic
 import com.saidjte.schoolradio.core.util.ScheduleLogic
 import com.saidjte.schoolradio.core.util.SegmentImageStore
 import com.saidjte.schoolradio.core.util.TimeEditLogic
@@ -454,7 +455,10 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                             (EventDateLogic.formatDateAr(e.specificDate!!) ?: e.specificDate!!) +
                                             (EventDateLogic.relativeLabelAr(
                                                 e.specificDate!!, System.currentTimeMillis()
-                                            )?.let { " • $it" } ?: ""),
+                                            )?.let { " • $it" } ?: "") +
+                                            // v0.36.0: شارة التنبيه — «تنبيه قبل يوم» مثلاً
+                                            (ReminderLogic.badgeAr(e.reminderBeforeMinutes)
+                                                ?.let { " • $it" } ?: ""),
                                         Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSecondaryContainer
@@ -872,7 +876,9 @@ data class EventEditorState(
     val imagePath: String? = null,
     val scriptId: Long? = null,
     // v0.27.0: تاريخ الموعد الواحد (yyyy-MM-dd) — null يعني أسبوعي متكرر
-    val specificDate: String? = null
+    val specificDate: String? = null,
+    // v0.36.0: تنبيه قبل الفقرة المؤرخة — دقائق قبل البدء (null = بلا تنبيه)
+    val reminderBeforeMinutes: Int? = null
 ) {
     companion object {
         fun from(e: ScheduledEventEntity) = EventEditorState(
@@ -887,7 +893,8 @@ data class EventEditorState(
             noteText = e.noteText,
             imagePath = e.imagePath,
             scriptId = e.scriptId,
-            specificDate = e.specificDate
+            specificDate = e.specificDate,
+            reminderBeforeMinutes = e.reminderBeforeMinutes
         )
     }
 }
@@ -997,6 +1004,8 @@ private fun EventEditorDialog(
     // v0.27.0: نمط التكرار — أسبوعي متكرر أو موعد واحد بتاريخ محدد (تخرّج، احتفال…)
     var oneTime by remember { mutableStateOf(initial.specificDate != null) }
     var specificDate by remember { mutableStateOf(initial.specificDate) }
+    // v0.36.0: تنبيه قبل الفقرة المؤرخة — الافتراضي «قبل يوم» (طلب المستخدم المثالي)
+    var reminderBefore by remember { mutableStateOf(initial.reminderBeforeMinutes) }
     // v0.27.0: رسالة فشل حفظ الصورة بدل الفشل الصامت
     var imageError by remember { mutableStateOf<String?>(null) }
 
@@ -1069,6 +1078,8 @@ private fun EventEditorDialog(
                                     ScheduleLogic.dateKey(System.currentTimeMillis()), 1
                                 )
                             }
+                            // v0.36.0: فقرة موعد واحد تنبه تلقائياً «قبل يوم» ما لم يعدّلها المذيع
+                            if (reminderBefore == null) reminderBefore = ReminderLogic.DAY
                         },
                         label = { Text("موعد واحد") }
                     )
@@ -1077,6 +1088,29 @@ private fun EventEditorDialog(
                     DateEditorSection(
                         dateKey = specificDate,
                         onChange = { specificDate = it }
+                    )
+                    // ===== v0.36.0: تنبيه إشعار قبل الفقرة المؤرخة =====
+                    Text("تنبيه قبل الفقرة", style = MaterialTheme.typography.labelLarge)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        ReminderLogic.OPTIONS.forEach { opt ->
+                            FilterChip(
+                                selected = (reminderBefore ?: ReminderLogic.OFF) == opt,
+                                onClick = {
+                                    reminderBefore = opt.takeIf { it != ReminderLogic.OFF }
+                                },
+                                label = {
+                                    Text(
+                                        ReminderLogic.labelAr(opt),
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            )
+                        }
+                    }
+                    Text(
+                        "سيصلك إشعار تذكير على هذا الجهاز قبل انطلاق الفقرة المؤرخة",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else {
                     Text("أيام التشغيل", style = MaterialTheme.typography.labelLarge)
@@ -1224,7 +1258,8 @@ private fun EventEditorDialog(
                                 noteText = noteText.trim().takeIf { it.isNotBlank() },
                                 imagePath = imagePath,
                                 scriptId = scriptId,
-                                specificDate = if (oneTime) specificDate else null
+                                specificDate = if (oneTime) specificDate else null,
+                                reminderBeforeMinutes = if (oneTime) reminderBefore else null
                             )
                         )
                     }

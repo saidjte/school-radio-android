@@ -46,6 +46,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,6 +71,7 @@ import com.saidjte.schoolradio.core.ui.PlayingEqualizer
 import com.saidjte.schoolradio.core.ui.ScreenHeader
 import com.saidjte.schoolradio.core.ui.StatusBadge
 import com.saidjte.schoolradio.core.util.AppFormat
+import com.saidjte.schoolradio.core.util.RecordingCodecLogic
 import com.saidjte.schoolradio.core.util.RecordingLogic
 import com.saidjte.schoolradio.core.util.TrimLogic
 import com.saidjte.schoolradio.data.local.entity.RecordingEntity
@@ -206,6 +208,11 @@ fun RecordingsScreen(
         locator.previewToggle(rec)?.let { msg ->
             scope.launch { snackbar.showSnackbar(msg) }
         }
+    }
+
+    // v0.36.0: أخطاء التشغيل غير المتزامنة (صيغة غير مدعومة/ملف تالف) — snackbar بدل الصمت
+    LaunchedEffect(Unit) {
+        locator.recordingsPlayer.errors.collect { msg -> snackbar.showSnackbar(msg) }
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
@@ -640,6 +647,11 @@ private fun RecordingRow(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         StatusBadgeSource(isLiveSrc)
+                        // v0.36.0: شارة الترميز — Opus HD للتسجيلات الجديدة عالية الدقة
+                        if (RecordingCodecLogic.isOpusRecord(recording.mimeType)) {
+                            val st = MaterialTheme.status
+                            StatusBadge(RecordingCodecLogic.codecLabel(true), st.success)
+                        }
                         recording.recordedByName?.let { name ->
                             val role = recording.recordedByRole?.let { UserRole.from(it) }
                             Text(

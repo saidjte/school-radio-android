@@ -300,6 +300,9 @@ object ServiceLocator {
     private val _micLive = MutableStateFlow(false)
     val micLive: StateFlow<Boolean> = _micLive.asStateFlow()
 
+    // v0.36.0: تفضيل «عالي الدقة Opus HD» كلقطة حية — يقرأه RecordingManager لحظة بدء كل تسجيل
+    val recordingHdPreferred = MutableStateFlow(true)
+
     private val _micMessage = MutableStateFlow<String?>(null)
     val micMessage: StateFlow<String?> = _micMessage.asStateFlow()
 
@@ -587,7 +590,8 @@ object ServiceLocator {
                 appContext,
                 recordingsRepo,
                 currentUserProvider = { session.currentUser.first() },
-                isLiveProvider = { _micLive.value }
+                isLiveProvider = { _micLive.value },
+                hdPreferredProvider = { recordingHdPreferred.value }
             )
             // v0.9.0: تحميل إعدادات الاستوديو المحفوظة مسبقاً (كسب الميك + مستوى الموسيقى)
             // + استرجاع المؤثرات فور توفر أول جلسة صوتية
@@ -622,6 +626,8 @@ object ServiceLocator {
                     )
                     // v0.18.0: لقطة حية لإعداد قص الفراغ الأول
                     trimSilenceEnabled.value = s.trimSilence
+                    // v0.36.0: لقطة حية لتفضيل Opus HD
+                    recordingHdPreferred.value = s.recordingHd
                 }
             }
             initialized = true

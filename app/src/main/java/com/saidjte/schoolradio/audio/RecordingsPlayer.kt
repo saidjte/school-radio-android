@@ -4,12 +4,17 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
-import com.saidjte.schoolradio.core.util.TrimLogic
+import com.saidjte.schoolradio.core.util.CrashGuard
+import com.saidjte.schoolradio.core.util.PlaybackGuardLogic
 import com.saidjte.schoolradio.data.local.entity.RecordingEntity
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
@@ -64,6 +69,13 @@ class RecordingsPlayer(context: Context) {
     /** رد نداء نهاية المقطع طبيعياً — يوصله ServiceLocator بالحَكَم للاستئناف التلقائي */
     var onEnded: (() -> Unit)? = null
 
+    /**
+     * v0.36.0: أحداث الأخطاء غير المتزامنة (صيغة غير مدعومة/ملف تالف/فك ترميز)
+     * برسائل عربية جاهزة — تجمعها شاشة الأرشيف في snackbar بدل صمت مريب.
+     */
+    private val _errors = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    val errors: SharedFlow<String> = _errors.asSharedFlow()
+
     init {
         // عند انتهاء المقطع طبيعياً: حدّث الحالة وأبلغ الحَكَم (استئناف القائمة الرئيسية)
         player.addListener(object : Player.Listener {
@@ -77,6 +89,14 @@ class RecordingsPlayer(context: Context) {
             // v0.10.0: لحظة جاهزية المقطع — ثبّت المدة الفعلية (قد تختلف عن القيمة المسجلة)
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 _state.value = _state.value.copy(positionMs = 0)
+            }
+
+            // v0.36.0: فشل التشغيل غير المتزامن — توثيق + رسالة عربية بدل صمت مريب
+            override fun onPlayerError(error: PlaybackException) {
+                CrashGuard.record("recordings.playback", error)
+                handler.removeCallbacks(poller)
+                _state.value = _state.value.copy(isPlaying = false)
+                _errors.tryEmit(PlaybackGuardLogic.decodeFailureMessage())
             }
         })
     }
@@ -114,34 +134,38 @@ class RecordingsPlayer(context: Context) {
             _state.value = State() // صفّر الاختيار
             return "ملف هذا التسجيل غير موجود على الجهاز — ربما حُذف أو نُقل"
         }
-        // v0.20.0: القص اليدوي (محرر الموجة) يطبّق هنا أيضاً — يبدأ من نقطة البداية
-        // ويتوقف عند نقطة النهاية (STATE_ENDED عند حافة القص يُطلق onEnded طبيعياً).
-        // حدود أمان ضد قيم تالفة: البداية لا تتجاوز المدة مطروحاً منها أقل جزء مسموع.
-        val safeStart = if (recording.durationMs > 0)
-            recording.trimStartMs.coerceIn(
-                0L, (recording.durationMs - TrimLogic.MIN_SEGMENT_MS).coerceAtLeast(0L)
-            ) else recording.trimStartMs.coerceAtLeast(0L)
-        val safeEnd = recording.trimEndMs.coerceAtLeast(0L)
-        val clip = MediaItem.ClippingConfiguration.Builder()
-            .setStartPositionMs(safeStart)
-            .setEndPositionMs(if (safeEnd > safeStart) safeEnd else androidx.media3.common.C.TIME_UNSET)
-            .build()
-        player.setMediaItem(
-            MediaItem.Builder()
-                .setUri(android.net.Uri.fromFile(file))
-                .setClippingConfiguration(clip)
-                .build()
+        // v0.20.0 + v0.36.0: القص اليدوي (محرر الموجة) يطبّق هنا عبر الحارس —
+        // قيم تالفة في التخزين لا تصل إلى المشغل أبداً (PlaybackGuardLogic محصّن ومختبر).
+        val guard = PlaybackGuardLogic.sanitizeClip(
+            recording.trimStartMs, recording.trimEndMs, recording.durationMs
         )
-        player.prepare()
-        player.play()
+        val clip = MediaItem.ClippingConfiguration.Builder()
+            .setStartPositionMs(guard.startMs)
+            .setEndPositionMs(guard.endMs ?: androidx.media3.common.C.TIME_UNSET)
+            .build()
+        try {
+            player.setMediaItem(
+                MediaItem.Builder()
+                    .setUri(android.net.Uri.fromFile(file))
+                    .setClippingConfiguration(clip)
+                    .build()
+            )
+            player.prepare()
+            player.play()
+        } catch (t: Throwable) {
+            // v0.36.0: أي فشل بدء متزامن = رسالة عربية + توثيق، لا انهيار أبداً
+            CrashGuard.record("recordings.toggle", t)
+            _state.value = State(speed = _state.value.speed)
+            return PlaybackGuardLogic.startFailureMessage()
+        }
         // ★ الإصلاح الجوهري: ربط الحالة بالتسجيل الجديد فوراً —
         // من دون هذا يبقى recordingId صفراً/قديماً فلا يظهر المشغل ولا يتوهّج السطر النشط
         _state.value = _state.value.copy(
             recordingId = recording.id,
             positionMs = 0,
             // القيمة المسجلة — تُصححها المدة الفعلية عند الجاهزية (مع القص: مدة الجزء المختار)
-            durationMs = if (safeEnd > safeStart) safeEnd - safeStart else recording.durationMs,
-            trimStartMs = safeStart,
+            durationMs = guard.endMs?.let { it - guard.startMs } ?: recording.durationMs,
+            trimStartMs = guard.startMs,
             isPlaying = true
         )
         startPolling()

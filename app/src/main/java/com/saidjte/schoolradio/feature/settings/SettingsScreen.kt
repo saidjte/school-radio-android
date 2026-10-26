@@ -206,6 +206,32 @@ fun SettingsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
 
                 HorizontalDivider()
 
+                // v0.36.0: ترميز تسجيلات الميكروفون — Opus HD عالي الدقة
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("تسجيل الميكروفون عالي الدقة (Opus HD)")
+                        Text(
+                            "يُسجَّل صوت البث المباشر والفقرات التحضيرية بترميز Opus عند 48kHz/128kbps في ملفات ‎.ogg أنقى صوتاً — شفافية كاملة للكلام وموسيقى جينلات بلا صفير — وبالحجم نفسه تقريباً. يعمل على أندرويد 10 وما بعده، والأجهزة الأقدم تعود تلقائياً إلى AAC دون أي إعداد. أطفئه إذا احتجت ملفات m4a متوافقة مع نظام قديم",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = settings.recordingHd,
+                        onCheckedChange = {
+                            scope.launch {
+                                locator.settings.setRecordingHd(it)
+                                snackbar.showSnackbar(
+                                    if (it) "التسجيلات القادمة ستُكتب Opus HD عالية الدقة"
+                                    else "التسجيلات القادمة ستُكتب AAC متوافقة (‎.m4a)"
+                                )
+                            }
+                        }
+                    )
+                }
+
+                HorizontalDivider()
+
                 // v0.18.0: قص الفراغ الأول من المقاطع (أو تجاهله)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {

@@ -51,7 +51,9 @@ data class AppSettings(
     val prompterMirror: Boolean = false,   // وضع المرآة
     val prompterGuide: Boolean = true,     // الخط الإرشادي لموضع القراءة
     // ===== v0.18.0: قص الفراغ الأول من المقاطع (أو تجاهله) =====
-    val trimSilence: Boolean = true        // true = قفز فوق الصمت الأول، false = تشغيل الملف كما هو
+    val trimSilence: Boolean = true,       // true = قفز فوق الصمت الأول، false = تشغيل الملف كما هو
+    // ===== v0.36.0: ترميز تسجيلات الميكروفون =====
+    val recordingHd: Boolean = true        // true = Opus HD ‎.ogg (أندرويد 10+)، false = AAC ‎.m4a دائماً
 )
 
 /**
@@ -94,6 +96,8 @@ class SettingsStore(private val context: Context) {
         val PROMPTER_GUIDE = booleanPreferencesKey("prompter_guide")
         // v0.18.0: قص الفراغ الأول
         val TRIM_SILENCE = booleanPreferencesKey("trim_silence")
+        // v0.36.0: ترميز تسجيلات الميكروفون (Opus HD / AAC)
+        val RECORDING_HD = booleanPreferencesKey("recording_hd")
     }
 
     /** معرف المستخدم الحالي (لتوليفه مع جدول users في SessionRepository) */
@@ -129,7 +133,8 @@ class SettingsStore(private val context: Context) {
             prompterFont = p[Keys.PROMPTER_FONT] ?: 30f,
             prompterMirror = p[Keys.PROMPTER_MIRROR] ?: false,
             prompterGuide = p[Keys.PROMPTER_GUIDE] ?: true,
-            trimSilence = p[Keys.TRIM_SILENCE] ?: true
+            trimSilence = p[Keys.TRIM_SILENCE] ?: true,
+            recordingHd = p[Keys.RECORDING_HD] ?: true
         )
     }
 
@@ -188,4 +193,7 @@ class SettingsStore(private val context: Context) {
 
     // ===== v0.18.0: قص الفراغ الأول من المقاطع =====
     suspend fun setTrimSilence(v: Boolean) = context.dataStore.edit { it[Keys.TRIM_SILENCE] = v }
+
+    // ===== v0.36.0: ترميز تسجيلات الميكروفون (Opus HD) =====
+    suspend fun setRecordingHd(v: Boolean) = context.dataStore.edit { it[Keys.RECORDING_HD] = v }
 }
