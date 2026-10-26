@@ -723,7 +723,7 @@ fun OnAirScreen(onExit: () -> Unit) {
                     )
                 }
 
-                // ===== تحكم سريع: أزرار دائرية زجاجية + تشغيل بارز =====
+                // ===== تحكم سريع: أزرار دائرية شفافة فوق المسرح الداكن + تشغيل بارز =====
                 Row(
                     Modifier.padding(top = 20.dp),
                     horizontalArrangement = Arrangement.spacedBy(22.dp),

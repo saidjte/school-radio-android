@@ -6,8 +6,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * اختبارات v0.31.0 — منطق وضع الأداء: القرار التلقائي حسب قوة الجهاز
- * والبوابات التي تطفئ الزخارف الكريستالية والحركات الزخرفية.
+ * اختبارات v0.32.0 — منطق وضع الأداء: القرار التلقائي حسب قوة الجهاز
+ * وبوابة الزخارف الحية المتبقية (Lottie/الهالات/الانسياب).
  */
 class PerformanceModeLogicTest {
 
@@ -43,7 +43,7 @@ class PerformanceModeLogicTest {
 
     @Test
     fun autoDefaultBoundaryExactly3GB() {
-        // 3000MB بالضبط ليست أقل من العتبة — جهاز مقبول يبقى كريستالياً
+        // 3000MB بالضبط ليست أقل من العتبة — جهاز مقبول يبقى بالواجهة الكاملة
         assertFalse(PerformanceModeLogic.autoDefault(false, 3000, 30))
         // أقل بعشرين ميغا فقط — يقلب القرار
         assertTrue(PerformanceModeLogic.autoDefault(false, 2980, 30))
@@ -55,13 +55,7 @@ class PerformanceModeLogicTest {
         assertTrue(PerformanceModeLogic.autoDefault(true, 2048, 25))
     }
 
-    // ==================== بوابات الزخارف ====================
-
-    @Test
-    fun crystalEnabledIsInverseOfPerformanceMode() {
-        assertTrue(PerformanceModeLogic.crystalEnabled(performanceMode = false))
-        assertFalse(PerformanceModeLogic.crystalEnabled(performanceMode = true))
-    }
+    // ==================== بوابة الزخارف ====================
 
     @Test
     fun animationsEnabledIsInverseOfPerformanceMode() {
@@ -88,27 +82,25 @@ class PerformanceModeLogicTest {
     }
 
     @Test
-    fun descriptionMentionsCrystalWhenDisabled() {
+    fun descriptionMentionsDecorationsWhenDisabled() {
         val d = PerformanceModeLogic.description(enabled = false)
         assertTrue(d.contains("مطفأ"))
-        assertTrue(d.contains("كريستال"))
+        assertTrue(d.contains("زخارف") || d.contains("حركات"))
     }
 
     // ==================== تكامل: مسار الجهاز الضعيف إلى البوابات ====================
 
     @Test
-    fun weakDeviceEndsWithEverythingOff() {
+    fun weakDeviceEndsWithDecorationsOff() {
         val perf = PerformanceModeLogic.autoDefault(false, 2048, 27)
         assertTrue(perf)
-        assertFalse(PerformanceModeLogic.crystalEnabled(perf))
         assertFalse(PerformanceModeLogic.animationsEnabled(perf))
     }
 
     @Test
-    fun strongDeviceKeepsFullCrystal() {
+    fun strongDeviceKeepsLiveDecorations() {
         val perf = PerformanceModeLogic.autoDefault(false, 6144, 31)
         assertFalse(perf)
-        assertTrue(PerformanceModeLogic.crystalEnabled(perf))
         assertTrue(PerformanceModeLogic.animationsEnabled(perf))
     }
 }

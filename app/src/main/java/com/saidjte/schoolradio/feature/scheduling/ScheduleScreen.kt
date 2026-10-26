@@ -73,7 +73,7 @@ import com.saidjte.schoolradio.core.theme.gradients
 import com.saidjte.schoolradio.core.theme.status
 import com.saidjte.schoolradio.core.ui.AppIcons
 import com.saidjte.schoolradio.core.ui.EmptyStateCard
-import com.saidjte.schoolradio.core.ui.GlassCard
+import com.saidjte.schoolradio.core.ui.AppCard
 import com.saidjte.schoolradio.core.ui.ScreenHeader
 import com.saidjte.schoolradio.core.ui.SegmentImage
 import com.saidjte.schoolradio.core.ui.diagonalBrush
@@ -375,8 +375,8 @@ fun ScheduleScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                     trackTitle = e.singleTrackId?.let { tid -> tracks.firstOrNull { it.id == tid }?.title },
                     recordingTitle = e.recordingId?.let { rid -> recordings.firstOrNull { it.id == rid }?.title }
                 )
-                // v0.28.0: بطاقة الفقرة زجاجية كريستالية — حد زمردي للفقرة القادمة
-                GlassCard(
+                // v0.32.0: بطاقة الفقرة مصمتة — حد زمردي للفقرة القادمة
+                AppCard(
                     Modifier.fillMaxWidth().animateContentSize(),
                     shape = MaterialTheme.shapes.large,
                     borderColor = if (isNextUp)

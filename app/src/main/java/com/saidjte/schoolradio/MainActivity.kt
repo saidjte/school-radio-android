@@ -61,8 +61,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.saidjte.schoolradio.core.theme.SchoolRadioTheme
 import com.saidjte.schoolradio.core.ui.AppIcons
-import com.saidjte.schoolradio.core.ui.CrystalBackground
-import com.saidjte.schoolradio.core.ui.GlassCard
+import com.saidjte.schoolradio.core.ui.AppBackground
+import com.saidjte.schoolradio.core.ui.AppCard
 import com.saidjte.schoolradio.core.ui.LocalPerformanceMode
 import com.saidjte.schoolradio.core.ui.OrientationLogic
 import com.saidjte.schoolradio.data.settings.AppSettings
@@ -103,9 +103,8 @@ class MainActivity : ComponentActivity() {
                     // v0.31.0: وضع الأداء يقرأ من الإعدادات ويُقدَّم لكل الزخارف
                     val perf = performanceMode()
                     CompositionLocalProvider(LocalPerformanceMode provides perf) {
-                        // v0.28.0: خلفية الأورورا الكريستالية — تطفو فوقها كل الشاشات
-                        // v0.31.0: في وضع الأداء غسلة واحدة هادئة بلا هالات شعاعية
-                        CrystalBackground(crystal = !perf) {
+                        // v0.32.0: خلفية مصمتة نظيفة — وداعاً للأورورا الكريستالية
+                        AppBackground {
                             AppScaffold()
                         }
                     }
@@ -146,8 +145,8 @@ private fun AppScaffold() {
     val showNav = currentRoute != AppRoute.ON_AIR && currentRoute != AppRoute.TELEPROMPTER
 
     Scaffold(
-        // v0.28.0: شفاف ليظهر تدرج الأورورا الكريستالي خلف كل الشاشات
-        containerColor = Color.Transparent,
+        // v0.32.0: نفس لون الخلفية — الأسطح المصمتة لا تحتاج شفافية
+        containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
             if (showNav) {
@@ -163,13 +162,13 @@ private fun AppScaffold() {
                         snackbar,
                         onOpenOnAir = { nav.navigateSafely(AppRoute.ON_AIR) }
                     )
-                    // شريط تنقل عائم زجاجي بحواف دائرية وحد كريستالي ولمعة علوية (v0.28.0)
-                    GlassCard(
+                    // شريط تنقل عائم بحواف دائرية وظل خفيف (v0.32.0: سطح مصمت)
+                    AppCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 14.dp, vertical = 4.dp),
                         shape = RoundedCornerShape(26.dp),
-                        shadowElevation = 10.dp
+                        shadowElevation = 6.dp
                     ) {
                         NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp) {
                             // عدد التسجيلات — شارة حية على تبويب الأرشيف
@@ -308,11 +307,11 @@ private fun AppSideNavRail(
         shape = RoundedCornerShape(22.dp),
         color = Color.Transparent
     ) {
-        // v0.28.0: القائمة الجانبية زجاجية بنفس لغة الشريط السفلي
-        GlassCard(
+        // v0.32.0: القائمة الجانبية سطح مصمت بظل خفيف
+        AppCard(
             modifier = Modifier.fillMaxHeight(),
             shape = RoundedCornerShape(22.dp),
-            shadowElevation = 10.dp
+            shadowElevation = 6.dp
         ) {
         Column(
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),

@@ -88,7 +88,7 @@ import com.saidjte.schoolradio.core.theme.gradients
 import com.saidjte.schoolradio.core.theme.status
 import com.saidjte.schoolradio.core.ui.AppIcons
 import com.saidjte.schoolradio.core.ui.EmptyStateCard
-import com.saidjte.schoolradio.core.ui.GlassCard
+import com.saidjte.schoolradio.core.ui.AppCard
 import com.saidjte.schoolradio.core.ui.LiveWaveform
 import com.saidjte.schoolradio.core.ui.LocalPerformanceMode
 import com.saidjte.schoolradio.core.ui.OrientationLogic
@@ -704,8 +704,8 @@ private fun EventRow(
     val next = all.filter { it.startMinutes > event.startMinutes }
         .minByOrNull { it.startMinutes }
 
-    // v0.28.0: بطاقة الفقرة زجاجية — صبغة زرقاء حيّة أثناء التشغيل
-    GlassCard(
+    // v0.32.0: بطاقة الفقرة مصمتة — صبغة زرقاء حيّة أثناء التشغيل
+    AppCard(
         Modifier.fillMaxWidth().animateContentSize(),
         borderColor = if (isRunning) st.running.copy(alpha = 0.5f) else null,
         tint = if (isRunning) st.running.copy(alpha = 0.14f) else null,

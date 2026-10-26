@@ -250,7 +250,7 @@ fun SettingsScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                 locator.settings.setPerformanceMode(it)
                                 snackbar.showSnackbar(
                                     if (it) "وضع الأداء مفعّل — واجهة مبسطة أسرع على هذا الجهاز"
-                                    else "عادت الواجهة الكريستالية الكاملة"
+                                    else "عادت الزخارف والحركات الحية"
                                 )
                             }
                         }
