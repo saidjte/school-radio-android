@@ -89,7 +89,9 @@ class RemoteMediaService(
         val uploader: String?,
         val durationMs: Long,
         val streamUrl: String,
-        val mimeType: String?
+        val mimeType: String?,
+        /** v0.46.0: التدفق قائمة HLS — التنزيل يفترق لتجميع المقاطع */
+        val isHls: Boolean = false
     ) {
         val sourceLabel: String get() = parsed.source.label
     }
@@ -111,7 +113,8 @@ class RemoteMediaService(
             uploader = res.uploader,
             durationMs = res.durationMs,
             streamUrl = res.streamUrl,
-            mimeType = res.mimeType
+            mimeType = res.mimeType,
+            isHls = res.isHls
         )
     }
 
@@ -153,31 +156,50 @@ class RemoteMediaService(
      */
     private val inFlight = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<Long, Boolean>())
 
-    suspend fun downloadToLibrary(track: AudioTrackEntity, knownFreshUrl: String? = null): String =
+    suspend fun downloadToLibrary(
+        track: AudioTrackEntity,
+        knownFreshUrl: String? = null,
+        knownFreshIsHls: Boolean = false
+    ): String =
         withContext(Dispatchers.IO) {
             if (!inFlight.add(track.id)) {
                 return@withContext "«${track.title}» قيد التنزيل بالفعل — التقدم يظهر في الصف"
             }
             try {
-                downloadToLibraryUnsafe(track, knownFreshUrl)
+                downloadToLibraryUnsafe(track, knownFreshUrl, knownFreshIsHls)
             } finally {
                 inFlight.remove(track.id)
             }
         }
 
-    private suspend fun downloadToLibraryUnsafe(track: AudioTrackEntity, knownFreshUrl: String?): String =
+    private suspend fun downloadToLibraryUnsafe(
+        track: AudioTrackEntity,
+        knownFreshUrl: String?,
+        knownFreshIsHls: Boolean
+    ): String =
         withContext(Dispatchers.IO) {
             reportProgress(track.id, track.title, 0L, -1L, DownloadPhase.RUNNING)
             try {
                 // يوتوب/ساوندكلاود: التجديد إجباري — الرابط المخزن منتهٍ حتماً
-                val url = knownFreshUrl ?: freshDownloadUrlFor(track)
+                // v0.46.0: أسلوب التدفق (تقدمي أم HLS) يسير مع الرابط — التنزيل يفترقهما
+                val fresh = if (knownFreshUrl != null) {
+                    FreshStream(knownFreshUrl, knownFreshIsHls)
+                } else {
+                    freshDownloadUrlFor(track)
+                }
+                val url = fresh.url
                 if (url.isBlank() || !url.startsWith("http")) {
                     throw RemoteImportException("لا يوجد رابط صالح للتنزيل — أعد استيراد المقطع من مصدره")
                 }
-                val ext = RemoteLinks.fileExtensionFor(
-                    RemoteLinks.parse(track.sourceUrl ?: "")?.source ?: RemoteLinks.Source.DIRECT,
-                    url, null
-                )
+                val ext = if (fresh.isHls) {
+                    // قائمة HLS تُجمّع إلى ملف fMP4 صالح — الامتداد الصادق m4a لا m3u8
+                    "m4a"
+                } else {
+                    RemoteLinks.fileExtensionFor(
+                        RemoteLinks.parse(track.sourceUrl ?: "")?.source ?: RemoteLinks.Source.DIRECT,
+                        url, null
+                    )
+                }
                 val dir = File(context.filesDir, "remote_imports").apply { mkdirs() }
                 val safe = track.title.replace(Regex("[\\\\/:*?\"<>|\\n\\r\\t]"), "_")
                     .take(60).ifBlank { "remote_track" }
@@ -186,8 +208,14 @@ class RemoteMediaService(
                 while (out.exists()) {
                     out = File(dir, "$safe (${n++}).$ext")
                 }
-                StreamResolver.downloadToFile(url, out) { downloaded, total ->
-                    reportProgress(track.id, track.title, downloaded, total, DownloadPhase.RUNNING)
+                if (fresh.isHls) {
+                    StreamResolver.downloadHls(url, out) { downloaded, total ->
+                        reportProgress(track.id, track.title, downloaded, total, DownloadPhase.RUNNING)
+                    }
+                } else {
+                    StreamResolver.downloadToFile(url, out) { downloaded, total ->
+                        reportProgress(track.id, track.title, downloaded, total, DownloadPhase.RUNNING)
+                    }
                 }
 
                 val duration = queryDurationForFile(out)
@@ -226,7 +254,10 @@ class RemoteMediaService(
      *    صامت على رابط منتهٍ يرفضه googlevideo بـ403 (سبب «الزر لا يعمل» القديم).
      *  - Drive/مباشر: الرابط المخزن ثابت فيُستعمل كما هو.
      */
-    private suspend fun freshDownloadUrlFor(track: AudioTrackEntity): String {
+    /** تدفق جاهز للتنزيل مع أسلوبه — التنزيل يفترق بينهما (Range مقابل تجميع مقاطع) */
+    private data class FreshStream(val url: String, val isHls: Boolean)
+
+    private suspend fun freshDownloadUrlFor(track: AudioTrackEntity): FreshStream {
         val parsed = RemoteLinks.parse(track.sourceUrl ?: "")
         if (parsed?.source?.needsFreshResolve == true && parsed.playable) {
             try {
@@ -241,14 +272,14 @@ class RemoteMediaService(
                         )
                     )
                 }
-                return res.streamUrl
+                return FreshStream(res.streamUrl, res.isHls)
             } catch (e: Exception) {
                 throw RemoteImportException(
                     "تعذر تجديد رابط التدفق من ${parsed.source.label} — تحقق من الاتصال ثم أعد التنزيل"
                 )
             }
         }
-        return track.uri
+        return FreshStream(track.uri, isHls = false)
     }
 
     /**

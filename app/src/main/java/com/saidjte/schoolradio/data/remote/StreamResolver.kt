@@ -87,7 +87,9 @@ object StreamResolver {
         val uploader: String?,
         val durationMs: Long,
         val streamUrl: String,
-        val mimeType: String?
+        val mimeType: String?,
+        /** v0.46.0: التدفق قائمة HLS — التنزيل يتفرع لتجميع المقاطع لا محارف Range */
+        val isHls: Boolean = false
     )
 
     /**
@@ -128,7 +130,9 @@ object StreamResolver {
                         uploader = info.uploaderName?.takeIf { it.isNotBlank() },
                         durationMs = info.duration.coerceAtLeast(0) * 1000L,
                         streamUrl = streamUrl,
-                        mimeType = best.format?.mimeType
+                        mimeType = best.format?.mimeType,
+                        isHls = best.deliveryMethod ==
+                            org.schabi.newpipe.extractor.stream.DeliveryMethod.HLS
                     )
                 } catch (e: RemoteImportException) {
                     throw e
@@ -143,30 +147,37 @@ object StreamResolver {
         }
 
     /**
-     * اختيار أفضل تدفق صوتي — v0.42.0 تصحيح جذري: **تدفقات تقدمية حصراً**
-     * (PROGRESSIVE_HTTP: ملف صوتي واحد يُنزَّل ويُبثّ بمحرف Range).
+     * اختيار أفضل تدفق صوتي — v0.46.0: هرمية واقعية بعد إثبات تجريبي أن
+     * ساوندكلاود أسقطت التدفقات التقدمية عن محتواها (كل transcodings المقطع
+     * المبلغ عنه HLS حصراً: aac_160k/aac_96k/abr_sq) — قاعدة v0.42.0
+     * «تقدمية حصراً» جعلت كل ذلك يظهر برسالة خطأ كاذبة «لا يوجد تدفق».
      *
-     * القاعدة القديمة كانت تختار أعلى معدل بت وهي تكتشف أن قوائم HLS/DASH
-     * تُسجّل بصيغة M4A وبمعدلات بت أعلى من التقدمية — فيفوز ملف .m3u8/.mpd
-     * نصي بحجم كيلوبايات لا الملف الصوتي: تنزيله يعطي ملفاً تالفاً، وتشغيله
-     * يفشل أصلاً (وحدات media3-hls/dash ليست في الاعتماديات) — وربما كان
-     * هذا بطة «بطء التنزيل» الثانية: تمرير كيلوبايات يُحتسب تنزيلاً سريعاً
-     * زائفاً ثم فشل.
-     *
-     * ضمن التقدمية: M4A/AAC أولاً (توافق عالٍ مع كل الأجهزة) بأعلى معدل بت.
-     * الروابط https فقط — بعض التدفقات تُقدم بـ http فيرفضها المشغل.
+     * الهرمية:
+     *  1. تقدمية https إن وُجدت (ملف واحد يُنزَّل بمحارف Range — الأفضل دائماً؛
+     *     يوتوب تدفقاته التقدمية وافرة فلا يتأثر إطلاقاً).
+     *  2. وإلا HLS https — المشغل يدعمها الآن بوحدة media3-exoplayer-hls،
+     *     والمستخرج يعيد عنوان قائمة وسائط موقّعة جاهزة للتشغيل المباشر.
+     *     ضمنها: قائمة وسائط صريحة (mime audio/mp4) تُقدَّم على قائمة الجودات
+     *     (mime audio/mpegurl) لثبات الجودة وقابلية التنزيل، ثم أعلى معدل بت.
      */
     internal fun pickAudio(streams: List<org.schabi.newpipe.extractor.stream.AudioStream>) =
-        streams.filter { it.isUrl && it.url?.startsWith("https") == true }
-            .filter {
+        streams.filter { it.isUrl && it.url?.startsWith("https") == true }.let { https ->
+            https.filter {
                 it.deliveryMethod == org.schabi.newpipe.extractor.stream.DeliveryMethod.PROGRESSIVE_HTTP
-            }
-            .maxWithOrNull(
+            }.maxWithOrNull(
                 compareBy(
                     { it.format == org.schabi.newpipe.extractor.MediaFormat.M4A },
                     { it.averageBitrate }
                 )
+            ) ?: https.filter {
+                it.deliveryMethod == org.schabi.newpipe.extractor.stream.DeliveryMethod.HLS
+            }.maxWithOrNull(
+                compareBy(
+                    { it.format?.mimeType?.contains("mp4") == true },
+                    { it.averageBitrate }
+                )
             )
+        }
 
     // ================== Google Drive ==================
 
@@ -287,6 +298,9 @@ object StreamResolver {
 
     // ================== التنزيل المحلي ==================
 
+    /** نافذة المقاطع المتوازية عند تجميع HLS — توازن بين السرعة واستهلاك الذاكرة */
+    private const val HLS_CONCURRENCY = 6
+
     /**
      * تنزيل التدفق إلى ملف محلي — بعد التحميل يصبح المقطع ملكاً للمكتبة
      * يعمل دون إنترنت للأبد (فلسفة التطبيق offline-first).
@@ -329,6 +343,121 @@ object StreamResolver {
             }
         }
         downloadSequential(url, outFile, part, onProgress)
+    }
+
+    /**
+     * تنزيل قائمة HLS إلى ملف محلي واحد — v0.46.0.
+     *
+     * القائمة الموقّعة تُجلب نصاً وتُحلَّل عبر [com.saidjte.schoolradio.core.util.HlsPlaylistLogic]،
+     * ثم تُنزَّل مقاطعها بنوافذ متوازية وتُكتب **بالترتيب المقدس** بعد مقطع
+     * التهيئة إن وُجد — فينتج ملف fMP4 واحد صالح (m4a) بلا إعادة ترميز.
+     * ما لا يُنزَّل يُرفض برسالة صادقة مسماة (قائمة جودات/مشفّر/غير m3u8)،
+     * ورفض الخادم (403 = صلاحية منتهية) برسالة التجديد المعروفة.
+     */
+    suspend fun downloadHls(
+        url: String,
+        outFile: File,
+        onProgress: (downloaded: Long, total: Long) -> Unit = { _, _ -> }
+    ): Long = withContext(Dispatchers.IO) {
+        val body = fetchText(url)
+        val playlist = when (val r = com.saidjte.schoolradio.core.util.HlsPlaylistLogic.parse(url, body)) {
+            is com.saidjte.schoolradio.core.util.HlsPlaylistLogic.Result.Media -> r.playlist
+            com.saidjte.schoolradio.core.util.HlsPlaylistLogic.Result.Master ->
+                throw RemoteImportException(
+                    "قائمة جودات متعددة — التنزيل غير متاح لها حالياً؛ استعمل التشغيل المباشر"
+                )
+            com.saidjte.schoolradio.core.util.HlsPlaylistLogic.Result.Encrypted ->
+                throw RemoteImportException(
+                    "مقاطع هذا البث مشفرة — التنزيل غير متاح، والتشغيل المباشر يعمل"
+                )
+            com.saidjte.schoolradio.core.util.HlsPlaylistLogic.Result.Invalid ->
+                throw RemoteImportException(
+                    "قائمة البث غير صالحة — غالباً انتهت صلاحية الرابط؛ أعد الاستيراد من المصدر"
+                )
+        }
+        val part = File(outFile.parentFile, outFile.name + ".part-" + java.util.UUID.randomUUID())
+        try {
+            val total = java.util.concurrent.atomic.AtomicLong(0L)
+            part.outputStream().buffered().use { out ->
+                // مقطع التهيئة أولاً — رأس ملف fMP4 الذي تعتمد عليه كل المقاطع
+                playlist.initUrl?.let { init ->
+                    val chunk = fetchBytes(init)
+                    out.write(chunk)
+                    total.addAndGet(chunk.size.toLong())
+                    onProgress(total.get(), -1L)
+                }
+                // المقاطع بنوافذ متوازية — الكتابة دائماً بترتيب القائمة (ترتيب الصوت مقدس)
+                playlist.segments.chunked(HLS_CONCURRENCY).forEach { batch ->
+                    val fetched = coroutineScope {
+                        batch.map { seg -> async { seg to fetchBytes(seg) } }.awaitAll()
+                    }
+                    for ((seg, chunk) in fetched) {
+                        if (chunk.isEmpty()) {
+                            throw RemoteImportException(
+                                "انقطع مقطع من قائمة البث — تحقق من الاتصال وحاول مجدداً"
+                            )
+                        }
+                        out.write(chunk)
+                        total.addAndGet(chunk.size.toLong())
+                    }
+                    onProgress(total.get(), -1L)
+                }
+            }
+            if (total.get() == 0L) {
+                throw RemoteImportException("التنزيل جاء فارغاً — تحقق من الاتصال وحاول مجدداً")
+            }
+            if (!part.renameTo(outFile)) {
+                part.copyTo(outFile, overwrite = true)
+                part.delete()
+            }
+            outFile.length()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            part.delete()
+            throw e
+        } catch (e: RemoteImportException) {
+            part.delete()
+            throw e
+        } catch (e: Exception) {
+            part.delete()
+            throw RemoteImportException("انقطع الاتصال أثناء تجميع مقاطع البث — تحقق من الشبكة وحاول مجدداً")
+        }
+    }
+
+    /** جلب نص قائمة البث الموقعة — رفض خادم/صفحة HTML برسائل التنزيل الصادقة */
+    private fun fetchText(url: String): String {
+        val conn = URL(url).openConnection() as HttpURLConnection
+        try {
+            conn.connectTimeout = 12_000
+            conn.readTimeout = 20_000
+            conn.instanceFollowRedirects = true
+            conn.setRequestProperty("User-Agent", BROWSER_UA)
+            val code = conn.responseCode
+            checkDownloadResponse(code, conn)
+            if (isHtmlResponse(conn)) {
+                throw RemoteImportException(
+                    "الخادم أعاد صفحة بدل قائمة البث — غالباً انتهت صلاحية الرابط؛ أعد الاستيراد من المصدر"
+                )
+            }
+            return conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    /** جلب مقطع fMP4 كاملاً في الذاكرة (~مئات الكيلوبايتات للشريحة الواحدة) */
+    private fun fetchBytes(url: String): ByteArray {
+        val conn = URL(url).openConnection() as HttpURLConnection
+        try {
+            conn.connectTimeout = 12_000
+            conn.readTimeout = 30_000
+            conn.instanceFollowRedirects = true
+            conn.setRequestProperty("User-Agent", BROWSER_UA)
+            val code = conn.responseCode
+            checkDownloadResponse(code, conn)
+            return conn.inputStream.use { it.readBytes() }
+        } finally {
+            conn.disconnect()
+        }
     }
 
     /** نتيجة استطلاع التدفق: الحجم المعلن وهل يعلن الخادم دعم محارف Range */

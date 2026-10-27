@@ -471,7 +471,7 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                         activeDownloadTrackId = track.id
                         // v0.43.0: نفس إصلاح الصف — الإعلان لا يعلّق بدء التنزيل 4 ثوانٍ
                         launch { snackbar.showSnackbar("بدأ تنزيل «${track.title}»…") }
-                        val msg = locator.remote.downloadToLibrary(track, preview.streamUrl)
+                        val msg = locator.remote.downloadToLibrary(track, preview.streamUrl, preview.isHls)
                         snackbar.showSnackbar(msg)
                     } catch (e: Exception) {
                         snackbar.showSnackbar(
