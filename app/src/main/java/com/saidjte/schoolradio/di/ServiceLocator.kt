@@ -126,7 +126,11 @@ object ServiceLocator {
         musicVolume: Float? = null,
         cartVolume: Float? = null
     ) {
-        appScope.launch {
+        // v0.47.0: عقد media3 — المشغلات تُلمس من الخيط الرئيسي حصراً. هذا الإطلاق
+        // كان على Dispatchers.Default فيرمي MediaController/ExoPlayer
+        // «Player is accessed on the wrong thread» ويُلتقط في CrashGuard فيبدو
+        // سحب الفيدَرات ميتاً بلا أثر — نفس النمط المثبت في onDuck أدناه منذ v0.16.0.
+        appScope.launch(Dispatchers.Main) {
             val s = settings.settings.first()
             val m = s.masterVolume.coerceIn(0f, 1f)
             // أثناء إعلان حيّ: المسموع = فيدَر × ماستر × نسبة الخفض — سحب الفيدَر أثناء الإعلان يستجيب
@@ -163,7 +167,8 @@ object ServiceLocator {
         CartPlayer(appContext).also { p ->
             cartPlayerRef = p
             // v0.15.0: استرجاع فيدَر قناة الجينل × الماستر من الإعدادات المحفوظة
-            appScope.launch {
+            // v0.47.0: على Main — المشغل أُنشئ على الخيط الرئيسي فيُلمس منه حصراً
+            appScope.launch(Dispatchers.Main) {
                 val s = settings.settings.first()
                 p.setVolume(s.cartVolume * s.masterVolume)
             }
@@ -581,7 +586,9 @@ object ServiceLocator {
             )
             // v0.9.0: تحميل إعدادات الاستوديو المحفوظة مسبقاً (كسب الميك + مستوى الموسيقى)
             // + استرجاع المؤثرات فور توفر أول جلسة صوتية
-            appScope.launch {
+            // v0.47.0: على Main — applyStartupVolume قد تلمس MediaController المتصل
+            // مباشرة (c.volume) فكانت سباقاً مع جاهزية الخدمة يرمي «wrong thread»
+            appScope.launch(Dispatchers.Main) {
                 runCatching {
                     val s = settings.settings.first()
                     pendingMicGain = s.micGain
