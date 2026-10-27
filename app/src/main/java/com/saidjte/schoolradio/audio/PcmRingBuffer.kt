@@ -11,8 +11,9 @@ package com.saidjte.schoolradio.audio
  * الفصل المزدوج يحل المشكلة جذرياً:
  *  - خيط الالتقاط لا يفعل إلا القراءة من AudioRecord والكتابة في هذا المخزن.
  *  - خيط الإخراج يستهلك من المخزن ويكتب في AudioTrack.
- *  - أي اختناق لحظي في أي جهة يمتصه المخزن (سعة 200ms = عشرون دفعة 10ms)
- *    فلا يصل العطل إلى أذن المستمع.
+ *  - أي اختناق لحظي في أي جهة يمتصه المخزن (سعة 600ms منذ v0.45.0 — كانت 200ms)
+ *    فلا يصل العطل إلى أذن المستمع، والتأسيس [awaitFill] يفتح الإخراج على
+ *    رصيد مملوء لا على خزان خاوٍ.
  *
  * آمنة لخيطين بالضبط (SPSC): الكاتب منتج واحد والقارئ مستهلك واحد —
  * التزامن عبر synchronized + wait/notify، والاستهلاك الحقيقي 100 استدعاء/ثانية
@@ -117,6 +118,36 @@ class PcmRingBuffer(private val capacityShorts: Int) {
         count -= n
         (this as java.lang.Object).notifyAll()
         n
+    }
+
+    /**
+     * v0.45.0 — التأسيس (priming): انتظار امتلاء الخزان حتى [targetShorts] عينة
+     * قبل فتح الإخراج.
+     *
+     * لماذا هو جوهر معالجة التقطيع؟ في خط أنابيب حيّ يعمل طرفاه بالزمن الحقيقي
+     * يبدأ مستوى المخزن من الصفر ويبقى حبيس الصفر: المستهلك لا يستطيع أن يسبق
+     * الإنتاج أبداً، فكل توقف قصير في الالتقاط (جمع قمامة، جدولة، انفجار دفعات
+     * USB) يُفرّغ خزاناً فارغاً أصلاً فيصل الفراغ إلى الأذن تقطيعاً. رفع رصيد
+     * البداية إلى ~100ms يمنح الخط احتياطياً حقيقياً يبتلع هذه التوقفات قبل
+     * أن تسمع. (الذاكرة الوحيدة التي كانت تمتص توقفات الإنتاج كانت مخزن
+     * AudioTrack الداخلي وحده.)
+     *
+     * @return true إذا وُصل إلى الرصيد المستهدف، false عند انتهاء المهلة
+     *         (أجهزة بطيئة يُفتح الإخراج بما تيسر بدل تجميد البدء)
+     */
+    fun awaitFill(targetShorts: Int, timeoutMs: Long): Boolean = synchronized(this) {
+        if (targetShorts <= 0) return true
+        val deadline = System.currentTimeMillis() + timeoutMs
+        var remaining = timeoutMs
+        while (count < targetShorts && remaining > 0) {
+            try {
+                (this as java.lang.Object).wait(remaining)
+            } catch (_: InterruptedException) {
+                break
+            }
+            remaining = deadline - System.currentTimeMillis()
+        }
+        count >= targetShorts
     }
 
     /** تفريغ المخزن (عند إعادة الضبط/الإغلاق) */

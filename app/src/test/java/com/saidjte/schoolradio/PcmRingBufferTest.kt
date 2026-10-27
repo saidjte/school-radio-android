@@ -106,6 +106,69 @@ class PcmRingBufferTest {
         assertEquals(20, rb.freeSpace)
     }
 
+    // ===== v0.45.0: التأسيس awaitFill — خاتمة التقطيع (الإخراج يُفتح على رصيد لا على خزان خاوٍ) =====
+
+    @Test
+    fun `التأسيس يعود فوراً عندما يكون الرصيد متوفراً`() {
+        val rb = PcmRingBuffer(100)
+        rb.write(ShortArray(60), 0, 60)
+        val t0 = System.nanoTime()
+        assertTrue(rb.awaitFill(50, 10_000))
+        assertTrue((System.nanoTime() - t0) < 50_000_000L) // أقل من 50ms — بلا انتظار
+    }
+
+    @Test
+    fun `التأسيس يفشل صادقاً عند انتهاء المهلة دون الرصيد`() {
+        val rb = PcmRingBuffer(100)
+        rb.write(ShortArray(10), 0, 10) // أقل من المطلوب
+        val t0 = System.nanoTime()
+        assertEquals(false, rb.awaitFill(50, 60))
+        // انتظر المدة المطلوبة فعلاً ثم انصرف (لا نجاح خادع)
+        assertTrue((System.nanoTime() - t0) >= 50_000_000L)
+        // والمخزن لم يُمس
+        assertEquals(10, rb.available)
+    }
+
+    @Test
+    fun `التأسيس المنتظر يفيق عند وصول البيانات`() {
+        val rb = PcmRingBuffer(100)
+        val latch = CountDownLatch(1)
+        val got = AtomicLong(-1)
+        Thread {
+            got.set(if (rb.awaitFill(10, 2000)) 1L else 0L)
+            latch.countDown()
+        }.start()
+        Thread.sleep(80) // الخيط الآن معلّق في wait
+        rb.write(ShortArray(12), 0, 12)
+        assertTrue(latch.await(2, TimeUnit.SECONDS))
+        assertEquals(1L, got.get())
+    }
+
+    @Test
+    fun `التأسيس ينجح متى بلغ الرصيد الهدف ولو بعد انتظار`() {
+        // إنتاج أبطأ من الهدف: دفعة كل 30ms حتى 40 عينة — الهدف 30
+        val rb = PcmRingBuffer(100)
+        val writer = Thread {
+            repeat(4) {
+                rb.write(ShortArray(10) { ((it + 1)).toShort() }, 0, 10)
+                Thread.sleep(30)
+            }
+        }
+        writer.start()
+        assertTrue(rb.awaitFill(30, 2000))
+        writer.join(2000)
+        assertEquals(40, rb.available)
+    }
+
+    @Test
+    fun `التأسيس برصيد صفر أو سالب ينجح فوراً بلا انتظار`() {
+        val rb = PcmRingBuffer(10)
+        val t0 = System.nanoTime()
+        assertTrue(rb.awaitFill(0, 10_000))
+        assertTrue(rb.awaitFill(-5, 10_000))
+        assertTrue((System.nanoTime() - t0) < 20_000_000L)
+    }
+
     @Test
     fun `إنتاج ومستهلك متزامنان يتبادلان بلا فقد`() {
         // v0.16.0: السعة = إجمالي الإنتاج ⇒ استحالة القص رياضياً (المقص موضوع
