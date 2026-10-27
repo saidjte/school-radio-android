@@ -52,8 +52,11 @@ object RemoteSearch {
                 val (service, contentFilter) = when (source) {
                     RemoteLinks.Source.YOUTUBE ->
                         ServiceList.YouTube to listOf(YoutubeSearchQueryHandlerFactory.VIDEOS)
-                    else ->
+                    else -> {
+                        // v0.44.0: بحث ساوندكلاود يحتاج client_id صالحاً — الجذر الموثق في [SoundcloudAccess]
+                        SoundcloudAccess.ensureValidClientId()
                         ServiceList.SoundCloud to listOf(SoundcloudSearchQueryHandlerFactory.TRACKS)
+                    }
                 }
                 val handler = service.searchQHFactory.fromQuery(q, contentFilter, "")
                 val info = SearchInfo.getInfo(service, handler)

@@ -111,6 +111,11 @@ object StreamResolver {
                         RemoteLinks.Source.YOUTUBE -> ServiceList.YouTube
                         else -> ServiceList.SoundCloud
                     }
+                    // v0.44.0: مسار ساوندكلاود يحتاج client_id صالحاً —
+                    // الجذر الموثق في [SoundcloudAccess] (يخدم البحث وحلّ الروابط معاً)
+                    if (parsed.source == RemoteLinks.Source.SOUNDCLOUD) {
+                        SoundcloudAccess.ensureValidClientId()
+                    }
                     val info = StreamInfo.getInfo(service, parsed.url)
                     val best = pickAudio(info.audioStreams)
                         ?: throw RemoteImportException(

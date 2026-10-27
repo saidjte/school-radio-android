@@ -261,6 +261,11 @@ class RecordingManager(
             w.finish()
             return "تعذر تهيئة الميكروفون على هذا الجهاز"
         }
+        // v0.44.0: نفس عقد البث المباشر — المايك الخارجي عبر USB-C يُلتقط منه
+        // صراحة إن وُجد، فالافتراضي يبقى على المدمج وحده رغم وجود الخارجي
+        usbInputDevice(
+            context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+        )?.let { record.setPreferredDevice(it) }
 
         memoRecord = record
         memoRunning = true

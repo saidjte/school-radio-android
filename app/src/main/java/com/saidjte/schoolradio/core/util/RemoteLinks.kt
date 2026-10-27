@@ -81,7 +81,17 @@ object RemoteLinks {
     // ================== SoundCloud ==================
 
     private fun parseSoundCloud(url: String): Parsed? {
+        val host = hostOf(url)
         val segments = pathSegments(url)
+        // v0.44.0: الرابط المختصر من زر المشاركة (on.soundcloud.com/<رمز>) هو صيغة
+        // المشاركة القياسية في تطبيق ساوندكلاود — المستخرج يحلّ تحويله بنفسه
+        // (SoundcloudStreamLinkHandlerFactory يقبل هذا النمط صراحة)، فالرفض هنا
+        // كان يمنع تشغيل روابط المشاركة رغم أنها مقاطع صالحة
+        if (host == "on.soundcloud.com") {
+            return if (segments.isEmpty())
+                Parsed(Source.SOUNDCLOUD, null, url, "رابط ساوندكلاود المختصر ناقص — أعد نسخه من زر المشاركة")
+            else Parsed(Source.SOUNDCLOUD, null, url)
+        }
         // رابط القناة أو الصفحات العامة ليس مقطعاً
         if (segments.size < 2) {
             return Parsed(Source.SOUNDCLOUD, null, url, "ألصق رابط مقطع مفرد (artist/title) لا رابط حساب أو صفحة")

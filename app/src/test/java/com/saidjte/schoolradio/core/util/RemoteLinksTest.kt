@@ -81,6 +81,33 @@ class RemoteLinksTest {
         assertFalse(p!!.playable)
     }
 
+    // v0.44.0: روابط المشاركة المختصرة — صيغة زر «مشاركة» القياسية في تطبيق ساوندكلاود
+    @Test fun `soundcloud short share link is playable`() {
+        val p = RemoteLinks.parse("https://on.soundcloud.com/qY9nKp")
+        assertEquals(RemoteLinks.Source.SOUNDCLOUD, p!!.source)
+        assertTrue(p.playable)
+        assertNull(p.blockedReason)
+    }
+
+    @Test fun `soundcloud short share link with query params is playable`() {
+        val p = RemoteLinks.parse("https://on.soundcloud.com/Ab3xYz?si=share-token")
+        assertEquals(RemoteLinks.Source.SOUNDCLOUD, p!!.source)
+        assertTrue(p.playable)
+    }
+
+    @Test fun `soundcloud short share link without code is blocked honestly`() {
+        val p = RemoteLinks.parse("https://on.soundcloud.com")
+        assertNotNull(p)
+        assertFalse(p!!.playable)
+    }
+
+    @Test fun `soundcloud mobile m link parses as track`() {
+        val p = RemoteLinks.parse("https://m.soundcloud.com/artist-name/track-name")
+        assertEquals(RemoteLinks.Source.SOUNDCLOUD, p!!.source)
+        assertEquals("artist-name/track-name", p.mediaId)
+        assertTrue(p.playable)
+    }
+
     // ================== Google Drive ==================
 
     @Test fun `drive file d link`() {

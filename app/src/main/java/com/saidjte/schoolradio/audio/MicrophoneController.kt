@@ -178,9 +178,18 @@ class MicrophoneController(
             val trackBufferSize = maxOf(captureBufferSize, (SAMPLE_RATE * 2 * 0.12f).toInt())
             ring = PcmRingBuffer(SAMPLE_RATE / 5) // 200ms = عشرون دفعة 10ms
 
+            // v0.44.0: المايك الخارجي عبر USB-C — أندرويد يوجّه الالتقاط افتراضياً
+            // إلى المدمج وحده فلا صوت من الخارجي إطلاقاً (البلاغ). عند وجود مدخل
+            // USB نلتقط منه: مصدر MIC الخام (أصدق التزاماً بالاختيار الصريح عبر
+            // الأجهزة) + تفضيل الجهاز setPreferredDevice. بلا USB: السلوك القائم
+            // (VOICE_COMMUNICATION بمعالجة الصدى ضد الصفير) لا يُمس.
+            val usbMic = usbInputDevice(
+                context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+            )
             val rec = try {
                 AudioRecord(
-                    MediaRecorder.AudioSource.VOICE_COMMUNICATION, // AEC ضد الصفير
+                    if (usbMic != null) MediaRecorder.AudioSource.MIC
+                    else MediaRecorder.AudioSource.VOICE_COMMUNICATION, // AEC ضد الصفير
                     SAMPLE_RATE, CHANNEL_IN, ENCODING, captureBufferSize
                 )
             } catch (e: Exception) {
@@ -194,6 +203,7 @@ class MicrophoneController(
                 failStart("تعذر تهيئة الميكروفون على هذا الجهاز")
                 return
             }
+            usbMic?.let { rec.setPreferredDevice(it) }
             audioRecord = rec
 
             // v0.11.0: ربط سلسلة معالجة المذيع بجلسة التسجيل قبل بدء الالتقاط —
