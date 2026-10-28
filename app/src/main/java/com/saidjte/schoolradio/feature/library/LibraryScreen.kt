@@ -243,6 +243,26 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                 }
             }
 
+            /** v0.48.0: تشغيل فردي — المقطع وحده قائمةً بعنصر واحد فيتوقف المشغل
+             *  تلقائياً عند نهايته: قائمة الانتظار بعنصر واحد لا تملك «تالياً»
+             *  تنتقل إليه أصلاً — بلا أعلام ولا أوضاع مشغل جديدة.
+             *  حلّ التدفق فوري لمقطع الانطلاق عبر نفس مسار buildQueuePlan الحقيقي. */
+            fun playSingleFromLibrary(track: AudioTrackEntity) {
+                scope.launch {
+                    if (!track.isAvailable) return@launch
+                    val plan = locator.remote.buildQueuePlan(listOf(track), 0)
+                    locator.playMainQueue(
+                        listOf(
+                            com.saidjte.schoolradio.audio.PlaybackConnection.QueueItem(
+                                plan.uris.first(), track.title, track.id, false,
+                                track.trimStartMs, track.trimEndMs, track.trimManual
+                            )
+                        ),
+                        queueTag = "library"
+                    )
+                }
+            }
+
             if (visible.isEmpty()) {
                 EmptyStateCard(
                     icon = AppIcons.MusicNote,
@@ -281,6 +301,8 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                                 !playback.currentIsRecording && playback.durationMs > 0)
                                 playback.positionMs.toFloat() / playback.durationMs else 0f,
                             onPlay = { playFromLibrary(track) },
+                            // v0.48.0: تشغيل فردي — يتوقف بعد المقطع بلا انتقال للتالي
+                            onPlaySingle = { playSingleFromLibrary(track) },
                             onEdit = { editing = track },
                             onDelete = {
                                 scope.launch {
@@ -500,6 +522,7 @@ private fun TrackRow(
     isPlaying: Boolean,
     progress: Float,
     onPlay: () -> Unit,
+    onPlaySingle: () -> Unit = {},
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onRelink: () -> Unit,
@@ -607,6 +630,16 @@ private fun TrackRow(
                         expanded = menuOpen,
                         onDismissRequest = { menuOpen = false }
                     ) {
+                        // v0.48.0: تشغيل فردي — المقطع وحده ويتوقف المشغل عند نهايته
+                        // بلا انتقال تلقائي للتالي (قائمة بعنصر واحد لا تالي لها)
+                        DropdownMenuItem(
+                            text = { Text("تشغيل فردي (بلا انتقال للتالي)") },
+                            leadingIcon = {
+                                Icon(AppIcons.MusicNote, null, Modifier.size(20.dp))
+                            },
+                            enabled = track.isAvailable,
+                            onClick = { menuOpen = false; onPlaySingle() }
+                        )
                         // v0.23.0: تنزيل مقطع البث إلى ملف محلي — العمل دون إنترنت للأبد
                         // v0.25.0: أثناء التنزيل يتحول البند لمؤشر نسبة معطّل (لا تنزيل مزدوج)
                         if (track.isRemote) {

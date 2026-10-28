@@ -66,4 +66,13 @@ class QueueStartLogicTest {
         assertEquals(0, plan.syncResolveIndex)
         assertEquals(emptyList<Int>(), plan.pendingIndexes)
     }
+
+    @Test
+    fun `مقطع وحيد محلي - تشغيل فردي بلا أي حل شبكي`() {
+        // v0.48.0: عقد «تشغيل فردي» للمقاطع المحلية — قائمة بعنصر واحد
+        // تعني انطلاقاً فورياً من URI المخزن وبلا تجديد خلفي إطلاقاً
+        val plan = QueueStartLogic.decide(listOf(false), 0)
+        assertNull(plan.syncResolveIndex)
+        assertEquals(emptyList<Int>(), plan.pendingIndexes)
+    }
 }
