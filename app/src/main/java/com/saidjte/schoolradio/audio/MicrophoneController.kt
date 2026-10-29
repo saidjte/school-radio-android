@@ -305,8 +305,16 @@ class MicrophoneController(
         }
     }
 
-    /** فشل البدء: إعادة الحالة إلى الخمول ونشر رسالة الخطأ */
+    /**
+     * فشل البدء: إعادة الحالة إلى الخمول ونشر رسالة الخطأ.
+     * v0.52.0 — تحرير الملكية الصوتية كاملة عند أي فشل بدء: الخفض المطلوب في
+     * startNow قبل track.play() كان يبقى معلقاً على الموسيقى إذا رمى فتح الأجهزة
+     * استثناءً (حافة الفشل تحرر العتاد والوضع ولا تحرر الخفض) — فتبقى الموسيقى
+     * على مستوى الخفض للأبد بلا بث حي يبرره («المشغل لا يعمل» — بلاغ v0.51.0).
+     * الملكية تُحرَّر حيث طُلب: فشل بدء = لا بث = بيئة ما قبل الضغطة حرفياً.
+     */
     private fun failStart(message: String) {
+        onDuck(false)
         _phase.value = MicPhase.IDLE
         notifyState(false, message)
         notifyResult(message)
@@ -466,6 +474,9 @@ class MicrophoneController(
             // (كان يكفي استثناء واحد غير معالج ليغلق التطبيق عند ضغطة الإنهاء)
             try { releaseAll() } catch (_: Throwable) {}
             try { routing.restoreNormal() } catch (_: Throwable) {}
+            // v0.52.0: نفس قاعدة تحرير الملكية — الإيقاف الشاذ يُحرر الخفض أيضاً
+            // (نفس تسريب failStart: بلا هذا السطر تبقى الموسيقى على مستوى الخفض)
+            onDuck(false)
             _phase.value = MicPhase.IDLE
             notifyState(false, reason ?: "خطأ أثناء الإيقاف: ${t.message ?: ""}")
         }

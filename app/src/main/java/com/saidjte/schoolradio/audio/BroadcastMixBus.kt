@@ -2,6 +2,7 @@ package com.saidjte.schoolradio.audio
 
 import android.os.Process
 import com.saidjte.schoolradio.core.util.BroadcastTapLogic
+import com.saidjte.schoolradio.core.util.CrashGuard
 import java.util.Arrays
 import java.util.concurrent.locks.LockSupport
 
@@ -83,30 +84,38 @@ class BroadcastMixBus {
 
     /** حلقة الخلط — تستيقظ على الصوت الفعلي وتتابع زمن الاستهلاك لا زمن الجدار */
     private fun mixLoop(onPcm: (ShortArray, Int) -> Unit) {
-        Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
-        val cap = MicrophoneController.SAMPLE_RATE / 10 // 4800 = سقف دفعة 100ms
-        val mixBuf = ShortArray(cap)
-        val tmp = ShortArray(cap)
-        var nextDue = System.nanoTime()
-        while (running) {
-            Arrays.fill(mixBuf, 0.toShort())
-            var maxN = 0
-            for (tap in taps) {
-                val got = tap.pull(tmp, cap)
-                if (got > maxN) maxN = got
-                if (got > 0) BroadcastTapLogic.sumInto(mixBuf, tmp, got)
+        // v0.52.0: درع الخيط الصوتي — القاعدة المقدسة v0.15.0: لا خيط صوتي يموت
+        // باستثناء غير معالج (المعالج الافتراضي للخيوط يغلق العملية كلها وسط
+        // البث والتسجيل — المشغل والمايك والأرشيف يُقتلون ضغطة واحدة، ثم
+        // تعود الأعطال مع كل محاولة). الخيط يخرج بهدوء وآلية الإيقاف تكمل عملها.
+        try {
+            Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
+            val cap = MicrophoneController.SAMPLE_RATE / 10 // 4800 = سقف دفعة 100ms
+            val mixBuf = ShortArray(cap)
+            val tmp = ShortArray(cap)
+            var nextDue = System.nanoTime()
+            while (running) {
+                Arrays.fill(mixBuf, 0.toShort())
+                var maxN = 0
+                for (tap in taps) {
+                    val got = tap.pull(tmp, cap)
+                    if (got > maxN) maxN = got
+                    if (got > 0) BroadcastTapLogic.sumInto(mixBuf, tmp, got)
+                }
+                if (maxN == 0) {
+                    // صمت كامل — إعادة معايرة موعد الاستحقاق عند أول صوت قادم
+                    nextDue = System.nanoTime()
+                    LockSupport.parkNanos(6_000_000L) // 6ms استفتاء خفيف لا يرق للهاتف
+                    continue
+                }
+                onPcm(mixBuf, maxN)
+                // الاستحقاق التالي = ما استُهلك من زمن صوتي حقيقي — بلا انحراف تراكمي
+                nextDue += maxN * 1_000_000_000L / BroadcastTap.SAMPLE_RATE
+                val wait = nextDue - System.nanoTime()
+                if (wait > 0) LockSupport.parkNanos(wait) else nextDue = System.nanoTime()
             }
-            if (maxN == 0) {
-                // صمت كامل — إعادة معايرة موعد الاستحقاق عند أول صوت قادم
-                nextDue = System.nanoTime()
-                LockSupport.parkNanos(6_000_000L) // 6ms استفتاء خفيف لا يرق للهاتف
-                continue
-            }
-            onPcm(mixBuf, maxN)
-            // الاستحقاق التالي = ما استُهلك من زمن صوتي حقيقي — بلا انحراف تراكمي
-            nextDue += maxN * 1_000_000_000L / BroadcastTap.SAMPLE_RATE
-            val wait = nextDue - System.nanoTime()
-            if (wait > 0) LockSupport.parkNanos(wait) else nextDue = System.nanoTime()
+        } catch (t: Throwable) {
+            CrashGuard.record("BroadcastMixBus", t)
         }
     }
 }
