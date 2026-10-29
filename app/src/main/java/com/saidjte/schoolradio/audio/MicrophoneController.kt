@@ -113,13 +113,6 @@ class MicrophoneController(
     /** هل البث يعمل فعلاً (إخراج صوت جارٍ)؟ — نفس الدلالة السابقة للتوافق */
     val isLive: Boolean get() = _phase.value == MicPhase.LIVE
 
-    /**
-     * v0.49.0: usage مسار الإخراج الحي الحالي (USAGE_MEDIA أو USAGE_VOICE_COMMUNICATION)
-     * — الحقيقة المصدرية لقرار دمج المايك في تسجيل البث الكامل؛ null خارج البث.
-     */
-    @Volatile var activeUsage: Int? = null
-        private set
-
     @Volatile private var running = false
     @Volatile private var stopRequested = false
     private var captureThread: Thread? = null
@@ -190,9 +183,6 @@ class MicrophoneController(
 
             val usage = routing.applyRoute(route)
             lastRoute = route
-            // v0.49.0: الحقيقة المصدرية لقرار دمج المايك في تسجيل البث الكامل —
-            // يقرؤها RecordingManager عند بدء التسجيل بدل إعادة حساب المسار
-            activeUsage = usage
 
             val minRecordBuffer = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_IN, ENCODING)
             if (minRecordBuffer <= 0) {
@@ -501,7 +491,5 @@ class MicrophoneController(
             release()
         }
         audioTrack = null
-        // v0.49.0: لا usage حي بلا مسار حي — البث التالي يقرر من جديد
-        activeUsage = null
     }
 }

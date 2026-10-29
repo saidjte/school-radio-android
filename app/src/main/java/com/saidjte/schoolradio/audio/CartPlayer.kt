@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,10 +32,15 @@ import kotlin.math.max
  *
  * التحديث الدوري: 250ms فقط أثناء وجود رقاقة نشطة — لا حلقات خلفية عند الخمول.
  *
+ * v0.51.0: تاب تسجيل البث الكامل — المشغل يُبنى بمصنع يغرس [BroadcastTapProcessor]
+ * فينسخ PCM الرقاقة إلى تاب الجينل في [BroadcastMixBus]، وكل مستوى يُضبط على
+ * player.volume (فيدَر/تلاشيات/استرجاع) يُزامَن بـgain التاب نفسه في نفس
+ * النقطة — فما يُسجَّل هو ما يسمعه الجمهور حرفياً لا تقدير قريب.
+ *
  * ★ الخيطية: كل الدوال العامة يجب استدعاؤها من الخيط الرئيسي (متطلب ExoPlayer) —
  *   الواجهة Compose تستدعيها من Compose مباشرة فهذا محقق بطبيعة الاستخدام.
  */
-class CartPlayer(context: Context) {
+class CartPlayer(context: Context, private val tap: BroadcastTap? = null) {
 
     data class State(
         /** مفتاح الرقاقة النشطة "صفحة:موضع" — null = لا شيء يعمل */
@@ -50,7 +56,12 @@ class CartPlayer(context: Context) {
         val volume: Float = 0.85f
     )
 
-    private val player: ExoPlayer = ExoPlayer.Builder(context.applicationContext).build()
+    private val player: ExoPlayer = ExoPlayer.Builder(
+        context.applicationContext,
+        // v0.51.0: مع التاب — نفس المصنع الافتراضي حرفياً + معالج نسخ PCM واحد
+        if (tap != null) renderersFactoryWithTap(context.applicationContext, tap)
+        else DefaultRenderersFactory(context.applicationContext)
+    ).build()
     private val handler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -124,7 +135,7 @@ class CartPlayer(context: Context) {
 
         fadeJob?.cancel()
         player.repeatMode = if (loop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
-        player.volume = _state.value.volume // نبدأ من الفيدَر الحالي
+        applyPlayerVolume(_state.value.volume) // نبدأ من الفيدَر الحالي
         // القص: البداية (آلي عند تفعيل الإعداد، أو يدوي دائماً) + النهاية (يدوي فقط)
         val applyStart = trimStartMs > 0 &&
             (manualTrim || com.saidjte.schoolradio.di.ServiceLocator.trimSilenceEnabled.value)
@@ -148,7 +159,7 @@ class CartPlayer(context: Context) {
             positionMs = 0, durationMs = 0, loop = loop,
             volume = volume
         )
-        player.volume = volume
+        applyPlayerVolume(volume)
         // دخول ناعم قصير (60ms) — بلا فرقعة عند إطلاق الرقاقة
         animateVolume(from = 0f, to = volume, durationMs = 60)
         handler.removeCallbacks(poller)
@@ -178,7 +189,7 @@ class CartPlayer(context: Context) {
         val nv = v.coerceIn(0f, 1f)
         _state.value = _state.value.copy(volume = nv)
         // أثناء تلاشٍ جارٍ لا نتدخل — التلاشي نفسه سيصل إلى المستوى الجديد
-        if (fadeJob?.isActive != true) player.volume = nv
+        if (fadeJob?.isActive != true) applyPlayerVolume(nv)
     }
 
     /** تحرير الموارد — دورة حياة العملية (singleton في ServiceLocator) */
@@ -202,7 +213,7 @@ class CartPlayer(context: Context) {
     private fun animateVolume(from: Float, to: Float, durationMs: Long) {
         fadeJob?.cancel()
         if (durationMs <= 0) {
-            player.volume = to
+            applyPlayerVolume(to)
             return
         }
         val steps = 6
@@ -210,10 +221,19 @@ class CartPlayer(context: Context) {
         fadeJob = scope.launch {
             var i = 1
             while (i <= steps) {
-                player.volume = from + (to - from) * (i.toFloat() / steps)
+                applyPlayerVolume(from + (to - from) * (i.toFloat() / steps))
                 if (i < steps) delay(stepMs)
                 i++
             }
         }
+    }
+
+    /**
+     * v0.51.0: كل مستوى يخرج به المشغل يُزامَن بـgain تاب التسجيل في نفس النقطة —
+     * نقطة صدق واحدة: ما يسمعه الجمهور وما يدخل الأرشيف مستويان واحد لا نسختين.
+     */
+    private fun applyPlayerVolume(v: Float) {
+        player.volume = v
+        tap?.let { it.gain = v }
     }
 }

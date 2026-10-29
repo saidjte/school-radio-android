@@ -50,7 +50,14 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         ServiceLocator.init(this)
-        val player = ExoPlayer.Builder(this)
+        // v0.51.0: مشغل المكتبة يُبنى بمصنع يغرس تاب تسجيل البث الكامل —
+        // نسخ PCM المفكوك إلى mixBus.mediaTap (جذر قلب معمارية v0.49.0:
+        // المنصة لا تعيد صوت التطبيق نفسه من AudioPlaybackCapture فالتطبيق
+        // يأخذ نسخته من آخر نقطة يملكها قبل مكبرات الجهاز)
+        val player = ExoPlayer.Builder(
+            this,
+            renderersFactoryWithTap(this, ServiceLocator.mixBus.mediaTap)
+        )
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)

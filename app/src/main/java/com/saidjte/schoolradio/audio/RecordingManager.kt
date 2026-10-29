@@ -34,6 +34,15 @@ import java.io.File
  *     AudioRecord خاصاً به (مصدر MIC الخام بجودة أنقى، بلا AEC/AGC للمكالمات)
  *     لتحضير الفقرات مسبقاً قبل يوم الإذاعة.
  *
+ *  3) وضع البث الكامل (MIX — v0.49.0، معماريته قُلبت في v0.51.0): ما يسمعه
+ *     الجمهور = مجموع أربعة تابات يملكها التطبيق نفسه (مشغل المكتبة، حائط
+ *     الجينغل، نغمة الإعلان، خط المايك) تُجمع في [BroadcastMixBus] وتصل
+ *     دفعاتها عبر onMixedPcm إلى الكاتب. الجذر: توثيق أندرويد يخصص
+ *     AudioPlaybackCapture لصوت التطبيقات *الأخرى* حصراً — صوت التطبيق نفسه
+ *     لا يعود منه أبداً فكان الملف يخرج بلا موسيقى (بلاغ v0.50.0)، والتطبيق
+ *     لا يحتاج أن يطلب صوته من أحد: صوته يمر بأيديه. بلا MediaProjection
+ *     ولا حوار نظام ولا خدمة أمامية إضافية — ويعمل على كل إصدارات أندرويد.
+ *
  * الحفظ النهائي: finish() في الكاتب (AacFileWriter أو OpusFileWriter — v0.29.0)
  * ثم إدراج سجل في Room مع لقطة (اسم + دور) المستخدم الحالي عند لحظة التسجيل.
  */
@@ -45,9 +54,7 @@ class RecordingManager(
     /** مزوّد حالة البث الحي — لمنع بدء تسجيل بث بلا بث فعلي */
     private val isLiveProvider: () -> Boolean = { false },
     /** v0.29.0: تفضيل «عالي الدقة Opus HD» من الإعدادات — لقطة حية يحدّثها جامع الإعدادات */
-    private val hdPreferredProvider: () -> Boolean = { true },
-    /** v0.49.0: usage مسار المايك الفعلي — يحسم هل المايك داخل التقاط الإخراج أم يُدمج تاباً */
-    private val micUsageProvider: () -> Int? = { null }
+    private val hdPreferredProvider: () -> Boolean = { true }
 ) {
     // v0.15.0: أي استثناء في كوروتين الحفظ (فشل قرص مثلاً) يُسجّل في CrashGuard
     // بدل أن يتصاعد إلى القاتل الافتراضي ويغلق التطبيق أثناء إنهاء البث
@@ -87,8 +94,8 @@ class RecordingManager(
     private var memoThread: Thread? = null
     @Volatile private var memoRunning = false
 
-    // v0.49.0: مصدر تقاط صوت التطبيق — موجود فقط أثناء تسجيل البث الكامل (MIX)
-    private var captureSource: ProjectionCaptureSource? = null
+    // v0.51.0: ناقل مزج التابات — موجود فقط أثناء تسجيل البث الكامل (MIX)
+    private var mixBus: BroadcastMixBus? = null
 
     /** مجلد الأرشيف: مسار التطبيق الخاص — بلا صلاحيات تخزين ويُحذف مع التطبيق */
     private fun recordingsDir(): File {
@@ -114,26 +121,22 @@ class RecordingManager(
     }
 
     /**
-     * v0.49.0: بدء تسجيل البث الكامل — المايك **وكل ما يشغله التطبيق**
-     * (المكتبة، الكارتس، حتى نغمة الإعلان) بعد الفيدرات والخفض — ما يسمعه
-     * الجمهور فعلاً. يتطلب مصدر تقاط جاهزاً (موافقة مستخدم عبر MediaProjection).
-     * قرار دمج المايك حتمي: خارج تقاط الإخراج (VOICE_COMMUNICATION في مكبر
-     * الجهاز) يُدمج تاب PCM الموجود؛ داخله (USAGE_MEDIA في سماعة/بلوتوث)
-     * يُترك للالتقاط وحده — وإلا تضاعف صوته.
+     * v0.51.0: بدء تسجيل البث الكامل — المايك **وكل ما يشغله التطبيق**
+     * (المكتبة، الكارتس، نغمة الإعلان) بمستوياتها الفعلية على الهواء،
+     * عبر ناقل التابات [BroadcastMixBus] — بلا أي التقاط نظامي (جذر
+     * بلاغَي v0.50.0: المنصة تستثني صوت التطبيق نفسه من AudioPlaybackCapture).
      */
-    fun startMixRecording(src: ProjectionCaptureSource): String? {
+    fun startMixRecording(bus: BroadcastMixBus): String? {
         if (_isRecording.value) return "التسجيل جارٍ بالفعل"
         if (!isLiveProvider()) return "ابدأ البث المباشر أولاً ثم سجّله"
-        src.micTapEnabled =
-            micUsageProvider() == android.media.AudioAttributes.USAGE_VOICE_COMMUNICATION
-        val captureError = src.start { pcm, n -> onMixedPcm(pcm, n) }
-        if (captureError != null) return "تعذر بدء تسجيل البث الكامل: $captureError"
-        captureSource = src
+        val mixError = bus.start { pcm, n -> onMixedPcm(pcm, n) }
+        if (mixError != null) return "تعذر بدء تسجيل البث الكامل: $mixError"
+        mixBus = bus
         val beginError = begin(RecordingSource.MIX)
         if (beginError != null) {
-            // الكاتب فشل — لا مصدر تقاط يتيم يبقى يشغّل ميكروفون النظام
-            runCatching { src.stop() }
-            captureSource = null
+            // الكاتب فشل — لا ناقل يتيم يبقى يستهلك التابات
+            runCatching { bus.stop() }
+            mixBus = null
             return beginError
         }
         return null
@@ -196,9 +199,9 @@ class RecordingManager(
     fun feedLivePcm(pcm: ShortArray, n: Int) {
         val w = writer ?: return
         if (!_isRecording.value) return
-        // v0.49.0: في وضع البث الكامل المايك يدخل عبر خزان الدمج لا الكاتب مباشرة
+        // v0.51.0: في وضع البث الكامل المايك يدخل عبر تاب الناقل لا الكاتب مباشرة
         if (source == RecordingSource.MIX) {
-            captureSource?.pushMicPcm(pcm, n)
+            mixBus?.pushMicPcm(pcm, n)
             return
         }
         if (source != RecordingSource.PTT) return
@@ -236,10 +239,10 @@ class RecordingManager(
         com.saidjte.schoolradio.core.util.CrashGuard.runOnIo {
             runCatching { stopMemoCapture() }
                 .onFailure { CrashGuard.record("stopMemoCapture", it) }
-            // v0.49.0: خيط الالتقاط ينحل ويحرر ميكروفون النظام الافتراضي — بلا تسريب
-            runCatching { captureSource?.stop() }
-                .onFailure { CrashGuard.record("captureSource.stop", it) }
-            captureSource = null
+            // v0.51.0: خيط الخلط ينحل وتُعطَّل التابات — بلا تسريب ولا استهلاك لاحق
+            runCatching { mixBus?.stop() }
+                .onFailure { CrashGuard.record("mixBus.stop", it) }
+            mixBus = null
             finishRecording()
         }
     }

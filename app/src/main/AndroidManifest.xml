@@ -12,9 +12,8 @@
     <!-- تشغيل الوسائط في الخلفية (خدمة أمامية من نوع mediaPlayback) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
-    <!-- v0.49.0: تسجيل البث الكامل — التقاط إخراج الوسائط (خدمة أمامية من نوع
-         mediaProjection، أندرويد 10+ وبموافقة مستخدم صريحة لكل جلسة) -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <!-- v0.51.0: تسجيل البث الكامل بلا أي التقاط نظامي — صلاحية
+         FOREGROUND_SERVICE_MEDIA_PROJECTION الخاصة بمعمارية v0.49.0 أُلغيت معها -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- ===== الإشعارات ===== -->
@@ -82,13 +81,6 @@
             android:name=".scheduler.AutomationService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
-
-        <!-- v0.49.0: خدمة تسجيل البث الكامل — تحافظ على التقاط إخراج الوسائط
-             حياً أثناء التسجيل (أندرويد 10+، موافقة صريحة لكل جلسة) -->
-        <service
-            android:name=".audio.LiveCaptureService"
-            android:exported="false"
-            android:foregroundServiceType="mediaProjection" />
 
         <!-- v0.14.0: مزوّد الملفات — مشاركة التسجيلات عبر تطبيقات أخرى
              (واتساب/تيليغرام/البريد…) بمنح قراءة مؤقتة وآمنة لملف واحد فقط -->

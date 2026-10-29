@@ -164,7 +164,7 @@ object ServiceLocator {
      *   تصل إليه من Compose مباشرة فهذا محقق.
      */
     val cartPlayer: CartPlayer by lazy {
-        CartPlayer(appContext).also { p ->
+        CartPlayer(appContext, tap = mixBus.cartTap).also { p ->
             cartPlayerRef = p
             // v0.15.0: استرجاع فيدَر قناة الجينل × الماستر من الإعدادات المحفوظة
             // v0.47.0: على Main — المشغل أُنشئ على الخيط الرئيسي فيُلمس منه حصراً
@@ -279,9 +279,19 @@ object ServiceLocator {
 
     // ===== v0.49.0: إعلان البث + تسجيل البث الكامل =====
 
-    /** نغمة «إعلان بدء البث» — عبر مخرج الوسائط فيلتقطها تسجيل البث الكامل أيضاً */
+    /**
+     * v0.51.0: ناقل مزج التابات — جذر معماري واحد لكل أصوات البث الكامل:
+     * المشغل والكارتس والنغمة والمايك يملك كل منهم تاباً هنا، والتسجيل يجمعها
+     * بمستوياتها الفعلية (المنصة لا تعيد صوت التطبيق نفسه من AudioPlaybackCapture
+     * فالتطبيق لا يطلب صوته من أحد — صوته يمر بأيديه).
+     */
+    val mixBus: com.saidjte.schoolradio.audio.BroadcastMixBus by lazy {
+        com.saidjte.schoolradio.audio.BroadcastMixBus()
+    }
+
+    /** نغمة «إعلان بدء البث» — عبر مخرج الوسائط وتبُعث نسختها إلى تاب النغمة */
     val announcer: com.saidjte.schoolradio.audio.BroadcastAnnouncer by lazy {
-        com.saidjte.schoolradio.audio.BroadcastAnnouncer()
+        com.saidjte.schoolradio.audio.BroadcastAnnouncer(toneTap = mixBus.toneTap)
     }
 
     // ===== v0.50.0: جلسة البث الحي — الإعلان جلسة كاملة لا نغمة فحسب =====
@@ -358,38 +368,15 @@ object ServiceLocator {
         }
     }
 
-    /** رسائل تسجيل البث الكامل (رفض الإذن / سقوط إلى مايك-فقط / فشل الالتقاط) */
-    private val _captureMessage = MutableStateFlow<String?>(null)
-    val captureMessage: StateFlow<String?> = _captureMessage.asStateFlow()
-    fun setCaptureMessage(msg: String?) { _captureMessage.value = msg }
-
     /**
-     * مقدّم حوار إذن MediaProjection — يسجّله MainActivity لأن النشاط وحده
-     * يستطيع فتح حوار النظام واستقبال نتيجته. null = لا واجهة جاهزة.
-     */
-    @Volatile var projectionConsentLauncher: ((android.content.Intent) -> Unit)? = null
-
-    /**
-     * v0.49.0: بدء تسجيل البث الكامل (المايك + كل ما يشغله التطبيق بعد الفيدرات
-     * والخفض — ما يسمعه الجمهور فعلاً). أندرويد 10+ يفرض إذن مستخدم لحظياً
-     * (MediaProjection) — قبلها لا توفر المنصة أي التقاء شرعي لإخراج التطبيق
-     * فيبقى مسار PTT (صوت المايك فقط) كما كان، مع إفصاح صريح.
+     * v0.51.0: بدء تسجيل البث الكامل (المايك + كل ما يشغله التطبيق بمستوياتها
+     * الفعلية على الهواء) عبر ناقل التابات مباشرة — بلا MediaProjection ولا
+     * حوار نظام (جذر بلاغَي v0.50.0: المنصة تستثني صوت التطبيق نفسه من
+     * AudioPlaybackCapture، والتطبيق لا يحتاج إذن أحد ليأخذ نسخته من صوته).
      */
     fun startBroadcastRecording(onError: (String) -> Unit) {
-        if (android.os.Build.VERSION.SDK_INT < 29) {
-            val err = recordings.startLiveRecording()
-            if (err != null) onError(err)
-            else _captureMessage.value = "سُجّل صوت الميكروفون فقط — التسجيل الكامل يتطلب أندرويد 10 فأعلى"
-            return
-        }
-        val launcher = projectionConsentLauncher
-        if (launcher == null) {
-            onError("تعذر فتح حوار إذن التسجيل — أعد فتح الشاشة وحاول مجدداً")
-            return
-        }
-        val mgr = appContext.getSystemService(Context.MEDIA_PROJECTION_SERVICE)
-            as android.media.projection.MediaProjectionManager
-        launcher(mgr.createScreenCaptureIntent())
+        val err = recordings.startMixRecording(mixBus)
+        if (err != null) onError(err)
     }
 
     /**
@@ -697,9 +684,7 @@ object ServiceLocator {
                 recordingsRepo,
                 currentUserProvider = { session.currentUser.first() },
                 isLiveProvider = { _micLive.value },
-                hdPreferredProvider = { recordingHdPreferred.value },
-                // v0.49.0: usage المايك الحي الفعلي — يحسم دمج التاب في تسجيل البث الكامل
-                micUsageProvider = { mic.activeUsage }
+                hdPreferredProvider = { recordingHdPreferred.value }
             )
             // v0.9.0: تحميل إعدادات الاستوديو المحفوظة مسبقاً (كسب الميك + مستوى الموسيقى)
             // + استرجاع المؤثرات فور توفر أول جلسة صوتية

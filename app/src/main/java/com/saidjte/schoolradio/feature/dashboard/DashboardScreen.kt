@@ -222,8 +222,8 @@ fun DashboardScreen(
     }
 
     /**
-     * v0.49.0: بدء تسجيل البث الكامل أثناء البث — المايك + كل ما يشغله التطبيق.
-     * يطلب إذن الالتقاط (حوار نظام) عند أندرويد 10+؛ قبله يسقط لمايك-فقط بإفصاح.
+     * v0.51.0: بدء تسجيل البث الكامل أثناء البث — المايك + كل ما يشغله التطبيق
+     * بمستوياتها المسموعة، عبر تابات التطبيق مباشرة بلا حوار نظام.
      */
     fun startBroadcastRecording() {
         if (!mic.hasPermission()) {
@@ -232,16 +232,6 @@ fun DashboardScreen(
         }
         locator.startBroadcastRecording { err ->
             scope.launch { snackbar.showSnackbar(err) }
-        }
-    }
-
-    // v0.49.0: رسائل تسجيل البث الكامل تصل هنا أياً كانت الشاشة المُشعِلة
-    LaunchedEffect(Unit) {
-        locator.captureMessage.collect { msg ->
-            if (msg != null) {
-                snackbar.showSnackbar(msg)
-                locator.setCaptureMessage(null)
-            }
         }
     }
 
@@ -1158,10 +1148,10 @@ private fun LiveBroadcastCard(
                 Column {
                     Text(
                         when {
-                            recActive && recMode?.name == "MIX" -> "تُسجَّل الفقرة والميكروفون معاً الآن"
+                            recActive && recMode?.name == "MIX" -> "تُسجَّل الجلسة كاملة — المايك وكل ما يُشغَّل"
                             recActive && recMode?.name == "PTT" -> "تُسجَّل الفقرة الآن"
                             recActive -> "تسجيل فقرة تحضيرية…"
-                            isLive -> "سجّل البث الحي الآن"
+                            isLive -> "سجّل البث الكامل الآن — مايك + كل ما يُشغَّل"
                             else -> "تسجيل فقرة تحضيرية"
                         },
                         style = MaterialTheme.typography.titleSmall

@@ -15,15 +15,16 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * قرارا معماريان:
  *  1. USAGE_MEDIA عمداً — الصوت يتبع مسار الوسائط فيسمعه الجمهور من مكبرات
- *     الاستوديو، **ويلتقطه تسجيل البث الكامل** (AudioPlaybackCapture يلتقط
- *     مسار MEDIA) فتبدأ أرشيف البث بالإعلان نفسه — توثيق تلقائي لبداية الحصة.
+ *     الاستوديو. v0.51.0: النغمة تُبثّ من PCM مولّد حسابياً فيُدفَع نفسه
+ *     إلى تاب النغمة في [BroadcastMixBus] فتبدأ أرشيف البث بالإعلان نفسه
+ *     (v0.49.0 كان يتركها للتقاط النظام — والمنصة لا تعيد صوت التطبيق نفسه).
  *  2. ضغطة أثناء الإعلان تُتجاهل (لا تراكم نغمات فوق بعضها) — الاستوديو
  *     يحتاج قراراً صوتياً واحداً صافياً لا طبقات.
  *  v0.50.0: رد نهاية النغمة — الإعلان الكامل (شارة «مباشر» + نشيد افتتاح)
  *  ينتظر انقضاء النغمة فعلاً لا تقدير زمني، والرد يُستدعى مرة واحدة من
  *  خيط النغمة وللمستدعي إدارة خيوطه (قاعدة الرئيسي للمشغل — v0.47.0).
  */
-class BroadcastAnnouncer {
+class BroadcastAnnouncer(private val toneTap: BroadcastTap? = null) {
 
     private val _playing = MutableStateFlow(false)
     val playing: StateFlow<Boolean> = _playing.asStateFlow()
@@ -77,6 +78,8 @@ class BroadcastAnnouncer {
                     val n = minOf(chunk.size, pcm.size - pos)
                     System.arraycopy(pcm, pos, chunk, 0, n)
                     track.write(chunk, 0, n)
+                    // v0.51.0: نفس الدفعة إلى تاب النغمة — الأرشيف يبدأ بالإعلان نفسه
+                    if (toneTap?.enabled == true) toneTap.push(chunk, n)
                     pos += n
                 }
                 // انتظار آخر دفعة تخرج فعلاً إلى مكبر الاستوديو — الرأس يبلغ طول المقطع

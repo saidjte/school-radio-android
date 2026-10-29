@@ -367,9 +367,16 @@ class PlaybackConnection(private val context: Context) {
         }
     }
 
-    /** ضبط مستوى الصوت — تستخدمه أيضاً آلية الخفض التلقائي أثناء الإعلان */
+    /**
+     * ضبط مستوى الصوت — تستخدمه أيضاً آلية الخفض التلقائي أثناء الإعلان.
+     * v0.51.0: النقطة الوحيدة التي يخرج بها مشغل المكتبة بمستوى (فيدَر الميكسر،
+     * الخفض التلقائي، مستوى البدء) — هنا يُزامَن gain تاب التسجيل الكامل
+     * فتُسجَّل الموسيقى بمستواها المسموع حرفياً لا بمستواها الخام.
+     */
     fun setVolume(volume: Float) {
-        controller?.volume = volume.coerceIn(0f, 1f)
+        val v = volume.coerceIn(0f, 1f)
+        controller?.volume = v
+        com.saidjte.schoolradio.di.ServiceLocator.mixBus.mediaTap.gain = v
     }
 
     fun setRepeatAll(enabled: Boolean) {
