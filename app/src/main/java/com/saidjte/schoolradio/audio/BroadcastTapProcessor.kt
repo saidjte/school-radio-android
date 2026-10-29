@@ -64,7 +64,10 @@ class BroadcastTapProcessor(private val tap: BroadcastTap) : BaseAudioProcessor(
             } catch (t: Throwable) {
                 // التاب خادم الأرشيف لا سيّد التشغيل — أي مفاجأة تُوثّق ولا تلمس
                 // الصوت المسموع إطلاقًا (قاعدة v0.15.0: لا خيط صوتي يموت باستثناء)
-                CrashGuard.record("BroadcastTapProcessor", t)
+                // v0.53.0: والتوثيق من خيط CrashGuard لا من خيط التشغيل — القاعدة
+                // تكتمل: خيط صوتي لا يموت باستثناء **ولا يكتب على القرص** (append
+                // فيه mkdirs وفتح ملف وقفل مشترك — كله عنق زجاجة على خيط الصوت)
+                CrashGuard.recordAsync("BroadcastTapProcessor", t)
             }
         }
         // تمرير شفاف: نفس البايتات إلى المخرج كما هي

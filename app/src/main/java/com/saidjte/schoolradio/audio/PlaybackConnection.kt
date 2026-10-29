@@ -139,7 +139,14 @@ class PlaybackConnection(private val context: Context) {
         override fun onShuffleModeEnabledChanged(enabled: Boolean) = pushState()
 
         override fun onPlayerError(error: PlaybackException) {
-            // رسائل عربية واضحة حسب رمز الخطأ
+            // v0.53.0: درس v0.15.0 يُطبق على آخر بقعة عمياء — الخطأ الذي يُعرض
+            // على الأستاذ يُكتب جذره في crash_log.txt (السبد الكامل عبر
+            // error.cause: لأخطاء المحرك غير المتوقعة cause هو RuntimeException
+            // الأصلي من حلقة التشغيل — البقعة التي كان التشخيص عندها تخميناً)
+            com.saidjte.schoolradio.core.util.CrashGuard.record(
+                "player.onPlayerError[${error.errorCodeName}]",
+                error.cause ?: error
+            )
             val msg = when (error.errorCode) {
                 PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
                 PlaybackException.ERROR_CODE_IO_NO_PERMISSION,
@@ -150,11 +157,19 @@ class PlaybackConnection(private val context: Context) {
                     "صيغة الملف غير مدعومة أو تالف"
                 PlaybackException.ERROR_CODE_DECODER_INIT_FAILED ->
                     "فشل تهيئة وحدة فك الترميز على هذا الجهاز"
-                else -> "خطأ في التشغيل: ${error.errorCodeName}"
+                else ->
+                    com.saidjte.schoolradio.core.util.PlaybackErrorPolicy.environmentMessage(
+                        error.errorCodeName
+                    )
             }
             _state.value = _state.value.copy(errorMessage = msg)
-            // نتجاوز المقطع المعطوب تلقائياً ليكمل الباقي
-            if ((controller?.mediaItemCount ?: 0) > 1) controller?.seekToNextMediaItem()
+            // v0.53.0: القفزة قرار محتوى لا قرار بيئة — لأخطاء الملف/الرابط
+            // (IO/PARSING) العنصر التالي مستقل فتُكمل القائمة كما كانت؛ أما
+            // أخطاء محرك الصوت (RUNTIME_CHECK وغير المتوقع) فستتكرر مع أي
+            // عنصر يليه: القفز لا يشفيها بل يسفك القائمة كاملة (لقطة 7/7)
+            // ويعيد الحوار مع كل تحضير — الصدق: القائمة تتوقف والسبب مكتوب.
+            val skip = com.saidjte.schoolradio.core.util.PlaybackErrorPolicy.skipToNext(error.errorCode)
+            if (skip && (controller?.mediaItemCount ?: 0) > 1) controller?.seekToNextMediaItem()
         }
     }
 

@@ -70,6 +70,23 @@ object CrashGuard {
         runCatching { append(context, throwable) }
     }
 
+    /**
+     * v0.53.0: توثيق من خيوط الصوت حصراً — القاعدة المقدسة تكتمل: خيط صوتي
+     * لا يموت باستثناء (v0.15.0) **ولا يكتب على القرص**. append يتضمن mkdirs
+     * وفتح ملف ومزامنة قفل مشترك مع كل مسارات الأعطال — أي منها على خيط
+     * التشغيل (كل دفعة PCM) هو عنق زجاجة حقيقي على الصوت الحي. التسجيل هنا
+     * يُنشر على منفذ CrashGuard الخلفي فلا مساس بالخيط الصوتي.
+     */
+    fun recordAsync(context: String, throwable: Throwable) {
+        ioExecutor.execute {
+            try {
+                append(context, throwable)
+            } catch (_: Throwable) {
+                // نفس عهد append: المسجّل لا يرمي أبداً
+            }
+        }
+    }
+
     @Synchronized
     private fun append(context: String, throwable: Throwable) {
         val dir = logDir ?: return
