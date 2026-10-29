@@ -180,6 +180,12 @@ fun DashboardScreen(
     val micMode = remember(settingsState.micMode) {
         com.saidjte.schoolradio.audio.MicMode.from(settingsState.micMode)
     }
+    // v0.50.0: جلسة البث الحي — شارة «مباشر» في الرئيسية + اسم نشيد الافتتاح
+    val onAir by locator.broadcastOnAir.collectAsStateWithLifecycle()
+    val libraryTracks by locator.library.tracks.collectAsStateWithLifecycle(initialValue = emptyList())
+    val anthemTitle = remember(settingsState.openingAnthemId, libraryTracks) {
+        settingsState.openingAnthemId?.let { id -> libraryTracks.firstOrNull { it.id == id }?.title }
+    }
 
     // حالة التسجيل — مؤقّت + وضع + نشاط
     val recActive by locator.recordings.isRecording.collectAsStateWithLifecycle()
@@ -235,6 +241,16 @@ fun DashboardScreen(
             if (msg != null) {
                 snackbar.showSnackbar(msg)
                 locator.setCaptureMessage(null)
+            }
+        }
+    }
+
+    // v0.50.0: رسائل جلسة البث (نشيد الافتتاح مفقود/غير متوفر)
+    LaunchedEffect(Unit) {
+        locator.broadcastMessage.collect { msg ->
+            if (msg != null) {
+                snackbar.showSnackbar(msg)
+                locator.setBroadcastMessage(null)
             }
         }
     }
@@ -463,8 +479,13 @@ fun DashboardScreen(
                         startRecordingOrMemo()
                     }
                 },
-                // v0.49.0: نغمة إعلان بدء البث عبر مكبرات الاستوديو
-                onAnnounce = { locator.announcer.announceStart() }
+                // v0.50.0: الإعلان جلسة كاملة — نغمة + شارة + نشيد افتتاح آلي
+                onAnnounce = {
+                    if (locator.broadcastOnAir.value) locator.endBroadcastSession()
+                    else locator.announceBroadcastStart()
+                },
+                onAir = onAir,
+                anthemTitle = anthemTitle
             )
         }
 
@@ -837,8 +858,12 @@ private fun LiveBroadcastCard(
     onTalkStart: () -> Unit,
     onTalkEnd: () -> Unit,
     onRecordToggle: () -> Unit,
-    /** v0.49.0: نغمة إعلان بدء البث عبر مكبرات الاستوديو */
-    onAnnounce: () -> Unit
+    /** v0.50.0: الإعلان جلسة كاملة — نغمة + شارة + نشيد افتتاح، والزر نفسه ينهي */
+    onAnnounce: () -> Unit,
+    /** v0.50.0: جلسة البث على الهواء (من الإعلان حتى الإنهاء) */
+    onAir: Boolean,
+    /** v0.50.0: اسم نشيد الافتتاح المختار من المكتبة (null = لا نشيد) */
+    anthemTitle: String?
 ) {
     val st = MaterialTheme.status
     val haptics = LocalHapticFeedback.current
@@ -876,6 +901,41 @@ private fun LiveBroadcastCard(
                         modifier = Modifier.padding(start = 8.dp)
                             .graphicsLayer { this.alpha = badgeAlpha }
                     )
+                }
+            }
+
+            // ===== v0.50.0: شارة جلسة البث — تظهر في الرئيسية من لحظة الإعلان =====
+            // مستقلة عن المايك: الإعلان نفسه بداية بث أمام الجمهور فتُعرض الشارة
+            // فوراً وتبقى حتى «إنهاء جلسة البث» — مع اسم النشيد الافتتاحي المختار
+            AnimatedVisibility(
+                visible = onAir,
+                enter = fadeIn(tween(200)) + expandVertically(tween(200)),
+                exit = fadeOut(tween(200)) + shrinkVertically(tween(200))
+            ) {
+                val airPulse = rememberInfiniteTransition(label = "air-pulse")
+                val airAlpha by airPulse.animateFloat(
+                    initialValue = 1f, targetValue = 0.45f,
+                    animationSpec = infiniteRepeatable(tween(650), RepeatMode.Reverse),
+                    label = "air-alpha"
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+                ) {
+                    StatusBadge(
+                        "● البث المباشر جارٍ", st.live,
+                        modifier = Modifier.graphicsLayer { this.alpha = airAlpha }
+                    )
+                    if (anthemTitle != null) {
+                        Text(
+                            " — الافتتاح: $anthemTitle",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
 
@@ -1016,9 +1076,9 @@ private fun LiveBroadcastCard(
                 }
             }
 
-            // ===== v0.49.0: زر إعلان بدء البث — نغمة افتتاحية تسمعها مكبرات الاستوديو =====
-            // مستقلة عن حالة المايك: يُعلن قبل أو أثناء البث، وإذا التسجيل الكامل
-            // نشط فهو داخل الملف لأنه صوت وسائط عادي يلتقطه التقاط الإخراج
+            // ===== v0.50.0: زر الإعلان يتحول إلى إنهاء الجلسة ما دام البث جارياً =====
+            // الإعلان: نغمة افتتاحية تسمعها مكبرات الاستوديو + شارة «مباشر» في
+            // الرئيسية + النشيد المختار آلياً بعدها — الإنهاء يخفي الشارة
             Row(
                 modifier = Modifier.padding(top = 4.dp),
                 horizontalArrangement = Arrangement.Center
@@ -1026,7 +1086,8 @@ private fun LiveBroadcastCard(
                 Surface(
                     onClick = onAnnounce,
                     shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.tertiaryContainer
+                    color = if (onAir) MaterialTheme.colorScheme.errorContainer
+                            else MaterialTheme.colorScheme.tertiaryContainer
                 ) {
                     Row(
                         Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
@@ -1034,14 +1095,16 @@ private fun LiveBroadcastCard(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Icon(
-                            AppIcons.Campaign, null,
-                            tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                            if (onAir) AppIcons.Stop else AppIcons.Campaign, null,
+                            tint = if (onAir) MaterialTheme.colorScheme.onErrorContainer
+                                   else MaterialTheme.colorScheme.onTertiaryContainer,
                             modifier = Modifier.size(18.dp)
                         )
                         Text(
-                            "إعلان بدء البث",
+                            if (onAir) "إنهاء جلسة البث" else "إعلان بدء البث",
                             style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                            color = if (onAir) MaterialTheme.colorScheme.onErrorContainer
+                                    else MaterialTheme.colorScheme.onTertiaryContainer
                         )
                     }
                 }

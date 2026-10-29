@@ -284,6 +284,80 @@ object ServiceLocator {
         com.saidjte.schoolradio.audio.BroadcastAnnouncer()
     }
 
+    // ===== v0.50.0: جلسة البث الحي — الإعلان جلسة كاملة لا نغمة فحسب =====
+
+    /**
+     * البث على الهواء — من لحظة ضغطة «إعلان بدء البث» حتى «إنهاء جلسة البث».
+     * الصفحة الرئيسية تعرض شارة «مباشر» نابضة ما دام صائباً (مستقلة عن المايك:
+     * الجلسة تبدأ قبل فتح الهواء وقد تستمر بعده)، والزر نفسه يتحول إلى «إنهاء».
+     * حالة جلسة حية بالذاكرة — جلسة بث لا تعيش بعد موت العملية وهذا هو حكمها.
+     */
+    private val _broadcastOnAir = MutableStateFlow(false)
+    val broadcastOnAir: StateFlow<Boolean> = _broadcastOnAir.asStateFlow()
+
+    /** رسائل جلسة البث (نشيد الافتتاح مفقود/غير متوفر…) — نمط micMessage نفسه */
+    private val _broadcastMessage = MutableStateFlow<String?>(null)
+    val broadcastMessage: StateFlow<String?> = _broadcastMessage.asStateFlow()
+    fun setBroadcastMessage(msg: String?) { _broadcastMessage.value = msg }
+
+    /**
+     * v0.50.0: إعلان بدء البث — ضغطة واحدة تنفّذ شعورة الافتتاح كاملة:
+     *  1. شارة «مباشر» في الصفحة الرئيسية فوراً (الإعلان بدأ فعلاً)
+     *  2. النغمة الافتتاحية عبر مكبرات الاستوديو (وإلى تسجيل البث الكامل)
+     *  3. بعد انقضاء النغمة فعلاً: نشيد الافتتاح المختار من المكتبة آلياً
+     *     إن وُجد (قرار OpeningAnthemLogic الحتمي)
+     */
+    fun announceBroadcastStart() {
+        if (_broadcastOnAir.value) return
+        _broadcastOnAir.value = true
+        announcer.announceStart {
+            // رد النغمة يصل من خيط الصوت — قاعدة v0.47.0 المقدسة: المشغل من
+            // الخيط الرئيسي حصراً (نمط onDuck المثبت منذ v0.16.0)
+            appScope.launch(Dispatchers.Main) { startOpeningAnthem() }
+        }
+    }
+
+    /**
+     * v0.50.0: إنهاء جلسة البث — الشارة تختفي فوراً، وإن كان النشيد
+     * الافتتاحي ما زال قيد التشغيل فهو بنت جلسة الافتتاح فيُوقف مؤقتاً
+     * معها (تمييز بالوسم — أي قائمة أخرى يعملها المذيع لاحقاً لا تُمس).
+     */
+    fun endBroadcastSession() {
+        _broadcastOnAir.value = false
+        if (playback.state.value.queueTag == "anthem") {
+            appScope.launch(Dispatchers.Main) { playback.pause() }
+        }
+    }
+
+    /** ما بعد النغمة: النشيد المحدد قائمةً بعنصر واحد — يتوقف عند نهايته تلقائياً */
+    private suspend fun startOpeningAnthem() {
+        val configured = settings.settings.first().openingAnthemId ?: return
+        val track = library.trackById(configured)
+        when (val d = com.saidjte.schoolradio.core.util.OpeningAnthemLogic.decide(
+            configuredId = configured,
+            trackExists = track != null,
+            isAvailable = track?.isAvailable == true
+        )) {
+            is com.saidjte.schoolradio.core.util.OpeningAnthemLogic.Decision.Play -> {
+                val t = track!!
+                // نفس مسار المكتبة الحقيقي — حلّ فوري للمحلي وتجديد خلفي للبث البعيد
+                val plan = remote.buildQueuePlan(listOf(t), 0)
+                playMainQueue(
+                    listOf(
+                        PlaybackConnection.QueueItem(
+                            plan.uris.first(), t.title, t.id, false,
+                            t.trimStartMs, t.trimEndMs, t.trimManual
+                        )
+                    ),
+                    queueTag = "anthem"
+                )
+                remote.refreshPendingRemoteAsync(plan.pendingTracks)
+            }
+            is com.saidjte.schoolradio.core.util.OpeningAnthemLogic.Decision.Hold ->
+                d.reason?.let { _broadcastMessage.value = it }
+        }
+    }
+
     /** رسائل تسجيل البث الكامل (رفض الإذن / سقوط إلى مايك-فقط / فشل الالتقاط) */
     private val _captureMessage = MutableStateFlow<String?>(null)
     val captureMessage: StateFlow<String?> = _captureMessage.asStateFlow()

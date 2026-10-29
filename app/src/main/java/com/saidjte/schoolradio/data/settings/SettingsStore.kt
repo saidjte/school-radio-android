@@ -53,7 +53,9 @@ data class AppSettings(
     // ===== v0.18.0: قص الفراغ الأول من المقاطع (أو تجاهله) =====
     val trimSilence: Boolean = true,       // true = قفز فوق الصمت الأول، false = تشغيل الملف كما هو
     // ===== v0.36.0: ترميز تسجيلات الميكروفون =====
-    val recordingHd: Boolean = true        // true = Opus HD ‎.ogg (أندرويد 10+)، false = AAC ‎.m4a دائماً
+    val recordingHd: Boolean = true,       // true = Opus HD ‎.ogg (أندرويد 10+)، false = AAC ‎.m4a دائماً
+    // ===== v0.50.0: نشيد الافتتاح (من المكتبة) — يُشغَّل آلياً بعد نغمة إعلان بدء البث =====
+    val openingAnthemId: Long? = null
 )
 
 /**
@@ -98,7 +100,12 @@ class SettingsStore(private val context: Context) {
         val TRIM_SILENCE = booleanPreferencesKey("trim_silence")
         // v0.36.0: ترميز تسجيلات الميكروفون (Opus HD / AAC)
         val RECORDING_HD = booleanPreferencesKey("recording_hd")
+        // v0.50.0: معرف نشيد الافتتاح المختار من المكتبة
+        val OPENING_ANTHEM_ID = longPreferencesKey("opening_anthem_id")
     }
+
+    /** v0.50.0: معرف نشيد الافتتاح — تدفق مستقل تقرأه شاشة المكتبة مباشرة */
+    val openingAnthemId: Flow<Long?> = context.dataStore.data.map { it[Keys.OPENING_ANTHEM_ID] }
 
     /** معرف المستخدم الحالي (لتوليفه مع جدول users في SessionRepository) */
     val currentUserId: Flow<Long?> = context.dataStore.data.map { it[Keys.CURRENT_USER] }
@@ -134,7 +141,8 @@ class SettingsStore(private val context: Context) {
             prompterMirror = p[Keys.PROMPTER_MIRROR] ?: false,
             prompterGuide = p[Keys.PROMPTER_GUIDE] ?: true,
             trimSilence = p[Keys.TRIM_SILENCE] ?: true,
-            recordingHd = p[Keys.RECORDING_HD] ?: true
+            recordingHd = p[Keys.RECORDING_HD] ?: true,
+            openingAnthemId = p[Keys.OPENING_ANTHEM_ID]
         )
     }
 
@@ -196,4 +204,9 @@ class SettingsStore(private val context: Context) {
 
     // ===== v0.36.0: ترميز تسجيلات الميكروفون (Opus HD) =====
     suspend fun setRecordingHd(v: Boolean) = context.dataStore.edit { it[Keys.RECORDING_HD] = v }
+
+    /** v0.50.0: تعيين/إلغاء نشيد الافتتاح (اختيار المكتبة يمرّ هنا) */
+    suspend fun setOpeningAnthemId(v: Long?) = context.dataStore.edit {
+        if (v == null) it.remove(Keys.OPENING_ANTHEM_ID) else it[Keys.OPENING_ANTHEM_ID] = v
+    }
 }

@@ -117,6 +117,8 @@ fun StudioScreen(
     var route by remember { mutableStateOf(AudioRoutingManager.Route.SPEAKER) }
     // v0.16.0: عدّاد تطبيق المشاهد — يُبادل وحدة المزج برفع الكتم الجلسي عند كل مشهد
     var sceneTick by remember { mutableIntStateOf(0) }
+    // v0.50.0: جلسة البث الحي — زر الإعلان نفسه يتحول إلى إنهاء ما دامت جارية
+    val onAir by locator.broadcastOnAir.collectAsStateWithLifecycle()
 
     val micPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -172,8 +174,12 @@ fun StudioScreen(
                 route = route,
                 onRouteChange = { route = it },
                 onStartStop = ::startStopMic,
-                // v0.49.0: نغمة إعلان بدء البث عبر مكبرات الاستوديو
-                onAnnounce = { locator.announcer.announceStart() }
+                // v0.50.0: الإعلان جلسة كاملة — نغمة + شارة في الرئيسية + نشيد آلي
+                onAnnounce = {
+                    if (locator.broadcastOnAir.value) locator.endBroadcastSession()
+                    else locator.announceBroadcastStart()
+                },
+                onAir = onAir
             )
         }
 
@@ -292,8 +298,10 @@ private fun BroadcastCard(
     route: AudioRoutingManager.Route,
     onRouteChange: (AudioRoutingManager.Route) -> Unit,
     onStartStop: () -> Unit,
-    /** v0.49.0: نغمة إعلان بدء البث عبر مكبرات الاستوديو */
-    onAnnounce: () -> Unit
+    /** v0.50.0: الإعلان جلسة كاملة — والزر نفسه ينهي الجلسة */
+    onAnnounce: () -> Unit,
+    /** v0.50.0: جلسة البث على الهواء */
+    onAir: Boolean
 ) {
     val st = MaterialTheme.status
     Card(
@@ -355,11 +363,13 @@ private fun BroadcastCard(
             }
 
             val busy = phase == MicPhase.STARTING || phase == MicPhase.STOPPING
-            // v0.49.0: إعلان بدء البث — متاح قبل وأثناء البث على حدّ سواء
+            // v0.50.0: إعلان بدء البث يتحول إلى إنهاء الجلسة ما دامت جارية —
+            // نفس الحالة المركزية فالاستوديو والرئيسية يرزنان دائماً زرّاً واحداً
             Surface(
                 onClick = onAnnounce,
                 shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.tertiaryContainer,
+                color = if (onAir) MaterialTheme.colorScheme.errorContainer
+                        else MaterialTheme.colorScheme.tertiaryContainer,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -368,15 +378,17 @@ private fun BroadcastCard(
                     horizontalArrangement = Arrangement.Center
                 ) {
                     Icon(
-                        AppIcons.Campaign, null,
-                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                        if (onAir) AppIcons.Stop else AppIcons.Campaign, null,
+                        tint = if (onAir) MaterialTheme.colorScheme.onErrorContainer
+                               else MaterialTheme.colorScheme.onTertiaryContainer,
                         modifier = Modifier.size(18.dp)
                     )
                     Text(
-                        "إعلان بدء البث",
+                        if (onAir) "إنهاء جلسة البث" else "إعلان بدء البث",
                         Modifier.padding(start = 6.dp),
                         style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                        color = if (onAir) MaterialTheme.colorScheme.onErrorContainer
+                                else MaterialTheme.colorScheme.onTertiaryContainer
                     )
                 }
             }

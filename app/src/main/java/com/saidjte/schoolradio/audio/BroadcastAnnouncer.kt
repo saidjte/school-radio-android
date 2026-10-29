@@ -19,6 +19,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  *     مسار MEDIA) فتبدأ أرشيف البث بالإعلان نفسه — توثيق تلقائي لبداية الحصة.
  *  2. ضغطة أثناء الإعلان تُتجاهل (لا تراكم نغمات فوق بعضها) — الاستوديو
  *     يحتاج قراراً صوتياً واحداً صافياً لا طبقات.
+ *  v0.50.0: رد نهاية النغمة — الإعلان الكامل (شارة «مباشر» + نشيد افتتاح)
+ *  ينتظر انقضاء النغمة فعلاً لا تقدير زمني، والرد يُستدعى مرة واحدة من
+ *  خيط النغمة وللمستدعي إدارة خيوطه (قاعدة الرئيسي للمشغل — v0.47.0).
  */
 class BroadcastAnnouncer {
 
@@ -28,11 +31,11 @@ class BroadcastAnnouncer {
     private val busy = AtomicBoolean(false)
 
     /** نغمة بدء البث الصاعدة — يُستدعى من الواجهة (الخيط الرئيسي) */
-    fun announceStart() {
-        play(BroadcastToneLogic.generate(ascending = true))
+    fun announceStart(afterTone: (() -> Unit)? = null) {
+        play(BroadcastToneLogic.generate(ascending = true), afterTone)
     }
 
-    private fun play(pcm: ShortArray) {
+    private fun play(pcm: ShortArray, afterTone: (() -> Unit)?) {
         if (!busy.compareAndSet(false, true)) return
         _playing.value = true
 
@@ -88,6 +91,9 @@ class BroadcastAnnouncer {
                 runCatching { track?.release() }
                 _playing.value = false
                 busy.set(false)
+                // v0.50.0: النغمة انقضت فعلاً (رأس التشغيل بلغ النهاية) — نقطة
+                // انطلاق ما بعد الإعلان (نشيد الافتتاح). استدعاء واحد مهما حدث.
+                afterTone?.invoke()
             }
         }, "broadcast-announcer").apply { priority = Thread.NORM_PRIORITY + 1; start() }
     }

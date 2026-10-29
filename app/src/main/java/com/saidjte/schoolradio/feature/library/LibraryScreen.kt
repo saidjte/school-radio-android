@@ -69,6 +69,7 @@ import com.saidjte.schoolradio.core.util.ScheduleLogic
 import com.saidjte.schoolradio.core.util.TrimLogic
 import com.saidjte.schoolradio.data.local.entity.AudioTrackEntity
 import com.saidjte.schoolradio.di.ServiceLocator
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -103,6 +104,8 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
     // v0.25.0: تنزيلات الإنترنت الحية — التقدم يظهر في الحوار وفي صفوف المكتبة
     val downloads by locator.remote.downloads.collectAsStateWithLifecycle()
     var activeDownloadTrackId by remember { mutableStateOf<Long?>(null) }
+    // v0.50.0: نشيد الافتتاح — يميّز صفه ويحكم بند القائمة (تعيين/إلغاء)
+    val openingAnthemId by locator.settings.openingAnthemId.collectAsStateWithLifecycle(initialValue = null)
 
     // استيراد ملفات متعددة من المستندات (بلا صلاحيات تخزين شامل)
     val importLauncher = rememberLauncherForActivityResult(
@@ -263,6 +266,21 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                 }
             }
 
+            /** v0.50.0: تعيين/إلغاء نشيد الافتتاح — يُشغَّل آلياً بعد نغمة الإعلان */
+            fun toggleOpeningAnthem(track: AudioTrackEntity) {
+                scope.launch {
+                    if (locator.settings.openingAnthemId.first() == track.id) {
+                        locator.settings.setOpeningAnthemId(null)
+                        snackbar.showSnackbar("أُلغي «${track.title}» من نشيد الافتتاح")
+                    } else {
+                        locator.settings.setOpeningAnthemId(track.id)
+                        snackbar.showSnackbar(
+                            "«${track.title}» نشيد الافتتاح الآن — يُشغَّل آلياً بعد نغمة الإعلان"
+                        )
+                    }
+                }
+            }
+
             if (visible.isEmpty()) {
                 EmptyStateCard(
                     icon = AppIcons.MusicNote,
@@ -303,6 +321,9 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                             onPlay = { playFromLibrary(track) },
                             // v0.48.0: تشغيل فردي — يتوقف بعد المقطع بلا انتقال للتالي
                             onPlaySingle = { playSingleFromLibrary(track) },
+                            // v0.50.0: نشيد الافتتاح — تعيين/إلغاء من قائمة المقطع نفسها
+                            isOpeningAnthem = openingAnthemId == track.id,
+                            onToggleAnthem = { toggleOpeningAnthem(track) },
                             onEdit = { editing = track },
                             onDelete = {
                                 scope.launch {
@@ -523,6 +544,10 @@ private fun TrackRow(
     progress: Float,
     onPlay: () -> Unit,
     onPlaySingle: () -> Unit = {},
+    /** v0.50.0: هذا المقطع هو نشيد الافتتاح المختار */
+    isOpeningAnthem: Boolean = false,
+    /** v0.50.0: تعيين/إلغاء نشيد الافتتاح */
+    onToggleAnthem: () -> Unit = {},
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onRelink: () -> Unit,
@@ -596,6 +621,21 @@ private fun TrackRow(
                             }
                             Text("  •  ", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
+                        // v0.50.0: شارة «افتتاح» — النشيد المختار يُميّز على صفه نفسه
+                        if (isOpeningAnthem) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.18f),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    "افتتاح",
+                                    Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.tertiary
+                                )
+                            }
+                            Text("  •  ", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         if (categoryName != null) {
                             Text(
                                 categoryName,
@@ -639,6 +679,20 @@ private fun TrackRow(
                             },
                             enabled = track.isAvailable,
                             onClick = { menuOpen = false; onPlaySingle() }
+                        )
+                        // v0.50.0: نشيد الافتتاح — ما دام معيناً فالبند إلغاء له
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    if (isOpeningAnthem) "إلغاء نشيد الافتتاح"
+                                    else "تعيين كنشيد الافتتاح (يُشغَّل بعد الإعلان)"
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(AppIcons.Campaign, null, Modifier.size(20.dp))
+                            },
+                            enabled = track.isAvailable,
+                            onClick = { menuOpen = false; onToggleAnthem() }
                         )
                         // v0.23.0: تنزيل مقطع البث إلى ملف محلي — العمل دون إنترنت للأبد
                         // v0.25.0: أثناء التنزيل يتحول البند لمؤشر نسبة معطّل (لا تنزيل مزدوج)
