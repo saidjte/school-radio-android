@@ -277,6 +277,47 @@ object ServiceLocator {
     private val _micMessage = MutableStateFlow<String?>(null)
     val micMessage: StateFlow<String?> = _micMessage.asStateFlow()
 
+    // ===== v0.49.0: إعلان البث + تسجيل البث الكامل =====
+
+    /** نغمة «إعلان بدء البث» — عبر مخرج الوسائط فيلتقطها تسجيل البث الكامل أيضاً */
+    val announcer: com.saidjte.schoolradio.audio.BroadcastAnnouncer by lazy {
+        com.saidjte.schoolradio.audio.BroadcastAnnouncer()
+    }
+
+    /** رسائل تسجيل البث الكامل (رفض الإذن / سقوط إلى مايك-فقط / فشل الالتقاط) */
+    private val _captureMessage = MutableStateFlow<String?>(null)
+    val captureMessage: StateFlow<String?> = _captureMessage.asStateFlow()
+    fun setCaptureMessage(msg: String?) { _captureMessage.value = msg }
+
+    /**
+     * مقدّم حوار إذن MediaProjection — يسجّله MainActivity لأن النشاط وحده
+     * يستطيع فتح حوار النظام واستقبال نتيجته. null = لا واجهة جاهزة.
+     */
+    @Volatile var projectionConsentLauncher: ((android.content.Intent) -> Unit)? = null
+
+    /**
+     * v0.49.0: بدء تسجيل البث الكامل (المايك + كل ما يشغله التطبيق بعد الفيدرات
+     * والخفض — ما يسمعه الجمهور فعلاً). أندرويد 10+ يفرض إذن مستخدم لحظياً
+     * (MediaProjection) — قبلها لا توفر المنصة أي التقاء شرعي لإخراج التطبيق
+     * فيبقى مسار PTT (صوت المايك فقط) كما كان، مع إفصاح صريح.
+     */
+    fun startBroadcastRecording(onError: (String) -> Unit) {
+        if (android.os.Build.VERSION.SDK_INT < 29) {
+            val err = recordings.startLiveRecording()
+            if (err != null) onError(err)
+            else _captureMessage.value = "سُجّل صوت الميكروفون فقط — التسجيل الكامل يتطلب أندرويد 10 فأعلى"
+            return
+        }
+        val launcher = projectionConsentLauncher
+        if (launcher == null) {
+            onError("تعذر فتح حوار إذن التسجيل — أعد فتح الشاشة وحاول مجدداً")
+            return
+        }
+        val mgr = appContext.getSystemService(Context.MEDIA_PROJECTION_SERVICE)
+            as android.media.projection.MediaProjectionManager
+        launcher(mgr.createScreenCaptureIntent())
+    }
+
     /**
      * v0.11.0: آخر لقطة لإعدادات معالجة المذيع — يُحدّثها جامع مستمر من DataStore
      * ويقرأها البث عند البدء فتُطبق تغييرات الاستوديو على البث التالي مباشرة.
@@ -582,7 +623,9 @@ object ServiceLocator {
                 recordingsRepo,
                 currentUserProvider = { session.currentUser.first() },
                 isLiveProvider = { _micLive.value },
-                hdPreferredProvider = { recordingHdPreferred.value }
+                hdPreferredProvider = { recordingHdPreferred.value },
+                // v0.49.0: usage المايك الحي الفعلي — يحسم دمج التاب في تسجيل البث الكامل
+                micUsageProvider = { mic.activeUsage }
             )
             // v0.9.0: تحميل إعدادات الاستوديو المحفوظة مسبقاً (كسب الميك + مستوى الموسيقى)
             // + استرجاع المؤثرات فور توفر أول جلسة صوتية

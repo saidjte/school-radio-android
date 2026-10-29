@@ -1030,4 +1030,56 @@ object AppIcons {
             }
         }
     }
+
+    /**
+     * مُعلِن (مايكروفون إذاعي) — v0.49.0 لزر «إعلان بدء البث».
+     * مسار Material Icons الرسمي "campaign" (Apache 2.0).
+     */
+    val Campaign: ImageVector by lazy {
+        builder("Campaign") {
+            path(
+                fill = SolidColor(Color.Black),
+                pathFillType = PathFillType.NonZero
+            ) {
+                moveTo(18f, 11f)
+                verticalLineToRelative(2f)
+                horizontalLineToRelative(4f)
+                verticalLineToRelative(-2f)
+                horizontalLineTo(18f)
+                close()
+                moveTo(16f, 17.61f)
+                curveToRelative(0.96f, 0.71f, 2.21f, 1.65f, 3.2f, 2.39f)
+                curveToRelative(0.4f, -0.53f, 0.8f, -1.07f, 1.2f, -1.6f)
+                curveToRelative(-0.99f, -0.74f, -2.24f, -1.68f, -3.2f, -2.4f)
+                curveTo(16.64f, 16.57f, 16.32f, 17.09f, 16f, 17.61f)
+                close()
+                moveTo(20.4f, 5.6f)
+                curveTo(20f, 5.07f, 19.6f, 4.53f, 19.2f, 4f)
+                curveToRelative(-0.99f, 0.74f, -2.24f, 1.68f, -3.2f, 2.4f)
+                curveToRelative(0.32f, 0.53f, 0.64f, 1.05f, 0.96f, 1.58f)
+                curveTo(17.92f, 7.26f, 19.43f, 6.34f, 20.4f, 5.6f)
+                close()
+                moveTo(8f, 9f)
+                horizontalLineTo(2f)
+                verticalLineToRelative(6f)
+                horizontalLineToRelative(3f)
+                lineToRelative(4f, 4f)
+                verticalLineTo(9f)
+                close()
+                moveTo(14.5f, 12f)
+                curveToRelative(0f, -1.77f, -1.02f, -3.29f, -2.5f, -4.03f)
+                verticalLineToRelative(8.05f)
+                curveTo(13.48f, 15.29f, 14.5f, 13.77f, 14.5f, 12f)
+                close()
+                moveTo(12f, 3.92f)
+                verticalLineToRelative(2.06f)
+                curveToRelative(2.89f, 0.86f, 5f, 3.54f, 5f, 6.72f)
+                reflectiveCurveToRelative(-2.11f, 5.86f, -5f, 6.72f)
+                verticalLineToRelative(2.06f)
+                curveToRelative(4.01f, -0.91f, 7f, -4.49f, 7f, -8.78f)
+                reflectiveCurveTo(16.01f, 4.83f, 12f, 3.92f)
+                close()
+            }
+        }
+    }
 }

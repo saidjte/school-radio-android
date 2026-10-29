@@ -40,6 +40,7 @@ object RecordingLogic {
         val prefix = when (source) {
             RecordingSource.PTT -> "بث"
             RecordingSource.MEMO -> "فقرة"
+            RecordingSource.MIX -> "بث كامل"
         }
         return "$prefix $stamp"
     }
@@ -53,6 +54,7 @@ object RecordingLogic {
         val prefix = when (source) {
             RecordingSource.PTT -> "broadcast"
             RecordingSource.MEMO -> "segment"
+            RecordingSource.MIX -> "mix"
         }
         return "$prefix-$stamp.$ext"
     }

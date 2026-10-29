@@ -47,10 +47,12 @@ data class UserEntity(
     fun roleEnum(): UserRole = UserRole.from(role)
 }
 
-/** مصدر التسجيل: بث حي مسجَّل أثناء PTT أو فقرة تحضيرية مسجَّلة منفردة */
+/** مصدر التسجيل: بث حي مسجَّل أثناء PTT أو فقرة تحضيرية مسجلة منفردة،
+ *  وv0.49.0: بث كامل = مزيج المايك وكل ما يشغله التطبيق (تقاط الإخراج) */
 enum class RecordingSource(val labelAr: String) {
     PTT("بث مباشر"),
-    MEMO("فقرة تحضيرية")
+    MEMO("فقرة تحضيرية"),
+    MIX("بث كامل")
 }
 
 /**

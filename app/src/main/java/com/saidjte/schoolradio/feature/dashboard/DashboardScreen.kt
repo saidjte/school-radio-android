@@ -54,6 +54,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -211,6 +212,30 @@ fun DashboardScreen(
             val err = if (isLive) locator.recordings.startLiveRecording()
             else locator.recordings.startMemoRecording()
             err?.let { snackbar.showSnackbar(it) }
+        }
+    }
+
+    /**
+     * v0.49.0: بدء تسجيل البث الكامل أثناء البث — المايك + كل ما يشغله التطبيق.
+     * يطلب إذن الالتقاط (حوار نظام) عند أندرويد 10+؛ قبله يسقط لمايك-فقط بإفصاح.
+     */
+    fun startBroadcastRecording() {
+        if (!mic.hasPermission()) {
+            micPermission.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        locator.startBroadcastRecording { err ->
+            scope.launch { snackbar.showSnackbar(err) }
+        }
+    }
+
+    // v0.49.0: رسائل تسجيل البث الكامل تصل هنا أياً كانت الشاشة المُشعِلة
+    LaunchedEffect(Unit) {
+        locator.captureMessage.collect { msg ->
+            if (msg != null) {
+                snackbar.showSnackbar(msg)
+                locator.setCaptureMessage(null)
+            }
         }
     }
 
@@ -431,10 +456,15 @@ fun DashboardScreen(
                     if (recActive) {
                         locator.recordings.stopRecording()
                         scope.launch { snackbar.showSnackbar("حُفظ التسجيل في أرشيف التسجيلات") }
+                    } else if (isLive) {
+                        // v0.49.0: أثناء البث = التسجيل الكامل (مايك + كل ما يُشغّل)
+                        startBroadcastRecording()
                     } else {
                         startRecordingOrMemo()
                     }
-                }
+                },
+                // v0.49.0: نغمة إعلان بدء البث عبر مكبرات الاستوديو
+                onAnnounce = { locator.announcer.announceStart() }
             )
         }
 
@@ -806,7 +836,9 @@ private fun LiveBroadcastCard(
     onMicModeChange: (com.saidjte.schoolradio.audio.MicMode) -> Unit,
     onTalkStart: () -> Unit,
     onTalkEnd: () -> Unit,
-    onRecordToggle: () -> Unit
+    onRecordToggle: () -> Unit,
+    /** v0.49.0: نغمة إعلان بدء البث عبر مكبرات الاستوديو */
+    onAnnounce: () -> Unit
 ) {
     val st = MaterialTheme.status
     val haptics = LocalHapticFeedback.current
@@ -984,6 +1016,37 @@ private fun LiveBroadcastCard(
                 }
             }
 
+            // ===== v0.49.0: زر إعلان بدء البث — نغمة افتتاحية تسمعها مكبرات الاستوديو =====
+            // مستقلة عن حالة المايك: يُعلن قبل أو أثناء البث، وإذا التسجيل الكامل
+            // نشط فهو داخل الملف لأنه صوت وسائط عادي يلتقطه التقاط الإخراج
+            Row(
+                modifier = Modifier.padding(top = 4.dp),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Surface(
+                    onClick = onAnnounce,
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.tertiaryContainer
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            AppIcons.Campaign, null,
+                            tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            "إعلان بدء البث",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                    }
+                }
+            }
+
             // ===== زر التسجيل =====
             // أثناء البث: يسجّل البث الحي | بدون بث: يسجّل فقرة تحضيرية مستقلة
             Row(
@@ -1032,6 +1095,7 @@ private fun LiveBroadcastCard(
                 Column {
                     Text(
                         when {
+                            recActive && recMode?.name == "MIX" -> "تُسجَّل الفقرة والميكروفون معاً الآن"
                             recActive && recMode?.name == "PTT" -> "تُسجَّل الفقرة الآن"
                             recActive -> "تسجيل فقرة تحضيرية…"
                             isLive -> "سجّل البث الحي الآن"

@@ -171,7 +171,9 @@ fun StudioScreen(
                 phase = micPhase,
                 route = route,
                 onRouteChange = { route = it },
-                onStartStop = ::startStopMic
+                onStartStop = ::startStopMic,
+                // v0.49.0: نغمة إعلان بدء البث عبر مكبرات الاستوديو
+                onAnnounce = { locator.announcer.announceStart() }
             )
         }
 
@@ -289,7 +291,9 @@ private fun BroadcastCard(
     phase: MicPhase,
     route: AudioRoutingManager.Route,
     onRouteChange: (AudioRoutingManager.Route) -> Unit,
-    onStartStop: () -> Unit
+    onStartStop: () -> Unit,
+    /** v0.49.0: نغمة إعلان بدء البث عبر مكبرات الاستوديو */
+    onAnnounce: () -> Unit
 ) {
     val st = MaterialTheme.status
     Card(
@@ -351,6 +355,31 @@ private fun BroadcastCard(
             }
 
             val busy = phase == MicPhase.STARTING || phase == MicPhase.STOPPING
+            // v0.49.0: إعلان بدء البث — متاح قبل وأثناء البث على حدّ سواء
+            Surface(
+                onClick = onAnnounce,
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.tertiaryContainer,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    Modifier.padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        AppIcons.Campaign, null,
+                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        "إعلان بدء البث",
+                        Modifier.padding(start = 6.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                }
+            }
             if (phase == MicPhase.LIVE || phase == MicPhase.STARTING) {
                 // زر إنهاء — بلون خطأ دلالي
                 androidx.compose.material3.Surface(

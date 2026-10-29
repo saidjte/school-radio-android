@@ -45,7 +45,9 @@ class RecordingManager(
     /** مزوّد حالة البث الحي — لمنع بدء تسجيل بث بلا بث فعلي */
     private val isLiveProvider: () -> Boolean = { false },
     /** v0.29.0: تفضيل «عالي الدقة Opus HD» من الإعدادات — لقطة حية يحدّثها جامع الإعدادات */
-    private val hdPreferredProvider: () -> Boolean = { true }
+    private val hdPreferredProvider: () -> Boolean = { true },
+    /** v0.49.0: usage مسار المايك الفعلي — يحسم هل المايك داخل التقاط الإخراج أم يُدمج تاباً */
+    private val micUsageProvider: () -> Int? = { null }
 ) {
     // v0.15.0: أي استثناء في كوروتين الحفظ (فشل قرص مثلاً) يُسجّل في CrashGuard
     // بدل أن يتصاعد إلى القاتل الافتراضي ويغلق التطبيق أثناء إنهاء البث
@@ -85,6 +87,9 @@ class RecordingManager(
     private var memoThread: Thread? = null
     @Volatile private var memoRunning = false
 
+    // v0.49.0: مصدر تقاط صوت التطبيق — موجود فقط أثناء تسجيل البث الكامل (MIX)
+    private var captureSource: ProjectionCaptureSource? = null
+
     /** مجلد الأرشيف: مسار التطبيق الخاص — بلا صلاحيات تخزين ويُحذف مع التطبيق */
     private fun recordingsDir(): File {
         val base = context.getExternalFilesDir(android.os.Environment.DIRECTORY_MUSIC)
@@ -106,6 +111,32 @@ class RecordingManager(
     fun startMemoRecording(): String? {
         if (_isRecording.value) return "التسجيل جارٍ بالفعل"
         return begin(RecordingSource.MEMO)
+    }
+
+    /**
+     * v0.49.0: بدء تسجيل البث الكامل — المايك **وكل ما يشغله التطبيق**
+     * (المكتبة، الكارتس، حتى نغمة الإعلان) بعد الفيدرات والخفض — ما يسمعه
+     * الجمهور فعلاً. يتطلب مصدر تقاط جاهزاً (موافقة مستخدم عبر MediaProjection).
+     * قرار دمج المايك حتمي: خارج تقاط الإخراج (VOICE_COMMUNICATION في مكبر
+     * الجهاز) يُدمج تاب PCM الموجود؛ داخله (USAGE_MEDIA في سماعة/بلوتوث)
+     * يُترك للالتقاط وحده — وإلا تضاعف صوته.
+     */
+    fun startMixRecording(src: ProjectionCaptureSource): String? {
+        if (_isRecording.value) return "التسجيل جارٍ بالفعل"
+        if (!isLiveProvider()) return "ابدأ البث المباشر أولاً ثم سجّله"
+        src.micTapEnabled =
+            micUsageProvider() == android.media.AudioAttributes.USAGE_VOICE_COMMUNICATION
+        val captureError = src.start { pcm, n -> onMixedPcm(pcm, n) }
+        if (captureError != null) return "تعذر بدء تسجيل البث الكامل: $captureError"
+        captureSource = src
+        val beginError = begin(RecordingSource.MIX)
+        if (beginError != null) {
+            // الكاتب فشل — لا مصدر تقاط يتيم يبقى يشغّل ميكروفون النظام
+            runCatching { src.stop() }
+            captureSource = null
+            return beginError
+        }
+        return null
     }
 
     /** المسار المشترك للوضعين: اختيار الترميز ثم تهيئة الكاتب ثم التجهيز حسب الوضع */
@@ -164,16 +195,33 @@ class RecordingManager(
      */
     fun feedLivePcm(pcm: ShortArray, n: Int) {
         val w = writer ?: return
-        if (!_isRecording.value || source != RecordingSource.PTT) return
+        if (!_isRecording.value) return
+        // v0.49.0: في وضع البث الكامل المايك يدخل عبر خزان الدمج لا الكاتب مباشرة
+        if (source == RecordingSource.MIX) {
+            captureSource?.pushMicPcm(pcm, n)
+            return
+        }
+        if (source != RecordingSource.PTT) return
         w.feed(pcm, n)
         _elapsedMs.value = w.totalSamples * 1000L / MicrophoneController.SAMPLE_RATE
         // v0.12.0: نفس الدفعة تكفي لحساب مستوى الموجة الحية (كلفة 480 عملية/10ms)
         _recordLevel.value = WaveformLogic.normalize(rmsOf(pcm, n))
     }
 
+    /** v0.49.0: دفعات المزيج المدموج من خيط الالتقاط — مستوى الموجة من الملف نفسه */
+    private fun onMixedPcm(pcm: ShortArray, n: Int) {
+        val w = writer ?: return
+        if (!_isRecording.value || source != RecordingSource.MIX) return
+        w.feed(pcm, n)
+        _elapsedMs.value = w.totalSamples * 1000L / MicrophoneController.SAMPLE_RATE
+        _recordLevel.value = WaveformLogic.normalize(rmsOf(pcm, n))
+    }
+
     /** يُنادى تلقائياً عند توقف البث الحي — ينقذ الملف قبل فتح الميكروفون */
     fun onLiveBroadcastStopped() {
-        if (_isRecording.value && source == RecordingSource.PTT) {
+        if (_isRecording.value &&
+            (source == RecordingSource.PTT || source == RecordingSource.MIX)
+        ) {
             stopRecording()
         }
     }
@@ -188,6 +236,10 @@ class RecordingManager(
         com.saidjte.schoolradio.core.util.CrashGuard.runOnIo {
             runCatching { stopMemoCapture() }
                 .onFailure { CrashGuard.record("stopMemoCapture", it) }
+            // v0.49.0: خيط الالتقاط ينحل ويحرر ميكروفون النظام الافتراضي — بلا تسريب
+            runCatching { captureSource?.stop() }
+                .onFailure { CrashGuard.record("captureSource.stop", it) }
+            captureSource = null
             finishRecording()
         }
     }

@@ -225,8 +225,9 @@ fun RecordingsScreen(
         .filter { rec ->
             when (filter) {
                 RecFilter.ALL -> true
-                RecFilter.LIVE -> rec.sourceEnum().name == "PTT"
-                RecFilter.MEMO -> rec.sourceEnum().name != "PTT"
+                // v0.49.0: التحضيرية سلة MEMO حصراً — بث كامل (MIX) مع بث مباشر (PTT) في سلة البث
+                RecFilter.LIVE -> rec.sourceEnum().name != "MEMO"
+                RecFilter.MEMO -> rec.sourceEnum().name == "MEMO"
             }
         }
         .filter { rec ->
@@ -647,7 +648,8 @@ private fun RecordingRow(
     // v0.41.0: السطر النشط براية isRecording من حالة المشغل الرئيسي
     val isCurrent = playing.isActive
     val isPlayingNow = isCurrent && playing.isPlaying
-    val isLiveSrc = recording.sourceEnum().name == "PTT"
+    // v0.49.0: براية «بث» تشمل البث الكامل (MIX) — كلاهما مُسجّل على الهواء
+    val isLiveSrc = recording.sourceEnum().name != "MEMO"
     // v0.6.0: أرقام مغربية عبر المنسّق المركزي
     val dateText = AppFormat.dateShort(recording.createdAt)
     var menuOpen by remember { mutableStateOf(false) }

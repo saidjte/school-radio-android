@@ -82,11 +82,28 @@ class MainActivity : ComponentActivity() {
     private val notifPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
+    /**
+     * v0.49.0: نتيجة حوار إذن MediaProjection — تسجيل البث الكامل.
+     * الموافقة تفتح الخدمة الأمامية (mediaProjection) حاملة نتيجة النظام؛
+     * الرفض يُفصح برسالة صريحة بدل الصمت.
+     */
+    private val projectionResult =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+            val data = res.data
+            if (res.resultCode == RESULT_OK && data != null) {
+                com.saidjte.schoolradio.audio.LiveCaptureService.start(this, res.resultCode, data)
+            } else {
+                ServiceLocator.setCaptureMessage("لم يُمنح إذن تسجيل البث الكامل")
+            }
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         ServiceLocator.init(this)
         ServiceLocator.playback.connect()
+        // v0.49.0: النشاط وحده يستطيع فتح حوار إذن الالتقاط — يقدّم نفسه كمقدّم
+        ServiceLocator.projectionConsentLauncher = { intent -> projectionResult.launch(intent) }
 
         // صلاحية الإشعارات (أندرويد 13+) — لإشعار المشغل الخلفي
         if (Build.VERSION.SDK_INT >= 33) {
