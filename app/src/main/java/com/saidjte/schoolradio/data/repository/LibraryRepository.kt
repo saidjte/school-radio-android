@@ -3,8 +3,10 @@ package com.saidjte.schoolradio.data.repository
 import android.content.Context
 import android.net.Uri
 import android.media.MediaMetadataRetriever
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import com.saidjte.schoolradio.audio.SilenceAnalyzer
+import com.saidjte.schoolradio.core.util.RestoreRelinkLogic
 import com.saidjte.schoolradio.data.bundled.BundledJingles
 import com.saidjte.schoolradio.data.local.AppDatabase
 import com.saidjte.schoolradio.data.local.entity.AudioTrackEntity
@@ -241,6 +243,75 @@ class LibraryRepository(
         trackDao.update(track.copy(uri = newUri.toString(), isAvailable = true))
         // v0.18.0: ملف جديد = فراغ أول جديد — أعِد فتح التحليل ليغطيه الفحص الخلفي
         trackDao.resetSilenceAnalysis(track.id)
+    }
+
+    // ================== v0.55.0: استعادة المسارات دفعة واحدة ==================
+
+    /**
+     * استعادة مسارات المقاطع غير المتاحة بعد الاستعادة — دفعة واحدة بمظلة
+     * مجلد واحد يختاره الأستاذ مرة واحدة (نصف آلي: لمسة واحدة بدل منتقي لكل مقطع).
+     *
+     * لكل مقطع غير متاح:
+     *  - جينل مدمج (`bundled:`): يُستنسخ من assets تلقائياً — بلا أي انتقاء.
+     *  - مستند SAF بمعرّف محفوظ: يُبنى uri جديد تحت مظلة الشجرة الممنوحة
+     *    (buildDocumentUriUsingTree) ويُقرأ فعلياً قبل التبنّي — فملفات لم
+     *    تتحرك من مجلدها تعود للحياة بمحتواها ومدتها وقصّ فراغها (نفس الملف
+     *    حرفياً — القص يبقى صالحاً ولا يُعاد تحليله).
+     *
+     * @return عدد المقاطع التي استُعيد مسارها فعلياً
+     */
+    suspend fun relinkUnderTree(treeUri: Uri): Int = withContext(Dispatchers.IO) {
+        val cr = context.contentResolver
+        try {
+            cr.takePersistableUriPermission(
+                treeUri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (_: SecurityException) { /* المظلة مؤقتة — تعمل داخل الجلسة */ }
+        val treeDocId = try { DocumentsContract.getTreeDocumentId(treeUri) }
+        catch (_: Exception) { return@withContext 0 }
+
+        var fixed = 0
+        for (t in trackDao.unavailable()) {
+            val docId = t.documentId ?: continue
+            if (docId.startsWith(BundledJingles.DOC_PREFIX)) {
+                if (repairBundledJingle(t, docId)) fixed++
+                continue
+            }
+            val trackUri = runCatching { Uri.parse(t.uri) }.getOrNull() ?: continue
+            if (trackUri.authority != treeUri.authority) continue
+            if (!RestoreRelinkLogic.isUnderTree(treeDocId, docId)) continue
+            val newUri = try { DocumentsContract.buildDocumentUriUsingTree(treeUri, docId) }
+            catch (_: Exception) { continue }
+            val ok = try { cr.openInputStream(newUri)?.use { true } ?: false }
+            catch (_: Exception) { false }
+            if (ok) {
+                trackDao.update(t.copy(uri = newUri.toString(), isAvailable = true))
+                fixed++
+            }
+        }
+        fixed
+    }
+
+    /**
+     * إصلاح جينل مدمج استُعيدت بياناته بلا ملفه (جهاز جديد أو مسح بيانات):
+     * نسخ الأصل من assets إلى filesDir ثم توجيه uri — لا يحتاج أي صلاحية.
+     * @return true إن صار الملف متاحاً بعد الإصلاح
+     */
+    private suspend fun repairBundledJingle(track: AudioTrackEntity, docId: String): Boolean = withContext(Dispatchers.IO) {
+        val rel = docId.removePrefix(BundledJingles.DOC_PREFIX)
+        val fileName = rel.substringAfterLast('/')
+        if (fileName.isBlank()) return@withContext false
+        val outFile = java.io.File(java.io.File(context.filesDir, "jingles").apply { mkdirs() }, fileName)
+        if (!outFile.exists() || outFile.length() == 0L) {
+            try {
+                context.assets.open("jingles/$fileName").use { input ->
+                    outFile.outputStream().use { input.copyTo(it) }
+                }
+            } catch (_: Exception) {
+                return@withContext false // أصل مفقود؟ يبقى غير متاح بصدق
+            }
+        }
+        trackDao.update(track.copy(uri = Uri.fromFile(outFile).toString(), isAvailable = true))
+        true
     }
 
     suspend fun trackById(id: Long): AudioTrackEntity? = trackDao.byId(id)

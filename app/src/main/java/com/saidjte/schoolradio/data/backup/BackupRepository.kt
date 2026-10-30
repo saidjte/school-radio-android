@@ -52,6 +52,9 @@ class BackupRepository(
             db.audioTrackDao().observeAll().first().forEach { t ->
                 tracks.put(JSONObject()
                     .put("id", t.id).put("title", t.title).put("uri", t.uri)
+                    // v0.55.0: معرّف المستند ينساب مع النسخة — هو مفتاح إعادة
+                    // الربط شبه الآلية (بناء uri جديد تحت مظلة شجرة واحدة)
+                    .put("documentId", t.documentId ?: JSONObject.NULL)
                     .put("categoryId", t.categoryId ?: JSONObject.NULL)
                     .put("durationMs", t.durationMs).put("sizeBytes", t.sizeBytes)
                     .put("isAvailable", t.isAvailable))
@@ -198,10 +201,15 @@ class BackupRepository(
                     val tUri = Uri.parse(o.getString("uri"))
                     val available = isReadable(tUri)
                     if (!available) unavailableCount++
+                    // v0.55.0: معرّف المستند يستعاد مع النسخة — وبديله احتياطاً
+                    // للنسخ القديمة (v1–v3): آخر مقطع من uri كما كان الاستيراد يفعله
+                    val documentId = o.optString("documentId").takeIf { it.isNotBlank() }
+                        ?: tUri.lastPathSegment
                     val newId = db.audioTrackDao().insert(
                         com.saidjte.schoolradio.data.local.entity.AudioTrackEntity(
                             title = o.getString("title"),
                             uri = o.getString("uri"),
+                            documentId = documentId,
                             categoryId = if (o.isNull("categoryId")) null
                             else catIdMap[o.getLong("categoryId")],
                             durationMs = o.getLong("durationMs"),
@@ -373,7 +381,12 @@ class BackupRepository(
             val msg = buildString {
                 append("استُعيدت ${trackIdMap.size} مقطعاً")
                 if (unavailableCount > 0) {
-                    append("، منها $unavailableCount غير متاح حالياً (أعد ربطه من المكتبة)")
+                    // v0.55.0: التوجيه للزر الجديد — إعادة ربط دفعة واحدة بمظلة
+                    // مجلد واحد بدل منتقي لكل مقطع
+                    append(
+                        "، منها $unavailableCount ينتظر استعادة مساره — " +
+                            "اضغط «استعادة المسارات» في المكتبة واختر مجلد الملفات فتُستعاد دفعة واحدة"
+                    )
                 }
                 if (missingRecordingFiles > 0) {
                     append(". تنبيه: $missingRecordingFiles تسجيلاً بلا ملفاتها على هذا الجهاز")

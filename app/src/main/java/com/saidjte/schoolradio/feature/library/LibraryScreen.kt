@@ -133,6 +133,27 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
         relinking = null
     }
 
+    // v0.55.0: استعادة المسارات دفعة واحدة — مظلة مجلد واحد بدل منتقي لكل مقطع
+    // (بعد استعادة نسخة احتياطية على جهاز آخر أو بعد إعادة تنصيب)
+    val treeRelinkLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { tree: Uri? ->
+        if (tree != null) {
+            scope.launch {
+                val fixed = locator.library.relinkUnderTree(tree)
+                val pending = locator.library.tracks.first().count { !it.isAvailable }
+                snackbar.showSnackbar(
+                    when {
+                        fixed > 0 && pending > 0 ->
+                            "استُعيدت مسارات $fixed مقطعاً، وبقي $pending يعاد ربطه فردياً"
+                        fixed > 0 -> "استُعيدت مسارات $fixed مقطعاً — المكتبة كاملة الآن"
+                        else -> "لم تُستعد أي مسارات — تأكد من اختيار المجلد الذي يحوي ملفات المقاطع"
+                    }
+                )
+            }
+        }
+    }
+
     Scaffold(
         floatingActionButton = {
             FloatingActionButton(onClick = {
@@ -298,6 +319,26 @@ fun LibraryScreen(snackbar: androidx.compose.material3.SnackbarHostState) {
                     Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    // v0.55.0: مقاطع مستعادة تنتظر مساراتها — بنر الإصلاح دفعة واحدة
+                    // (الجينلات المدمجة تُصلح آلياً بلا انتقاء، ومستندات SAF بمظلة مجلد واحد)
+                    val relinkable = tracks.count { !it.isAvailable && it.documentId != null }
+                    if (relinkable > 0) {
+                        item(key = "restore-paths-banner") {
+                            Column {
+                                Text(
+                                    "مقاطع بلا مسارات بعد استعادة النسخة — لمسة واحدة تستعيدها كلها",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                com.saidjte.schoolradio.core.ui.GradientButton(
+                                    label = "استعادة المسارات ($relinkable)",
+                                    icon = com.saidjte.schoolradio.core.ui.AppIcons.LibraryMusic,
+                                    onClick = { treeRelinkLauncher.launch(null) }
+                                )
+                            }
+                        }
+                    }
                     item {
                         // v0.8.0: تشغيل كل القائمة المرئية — زر متدرج واضح أعلى القائمة
                         com.saidjte.schoolradio.core.ui.GradientButton(
