@@ -2,6 +2,65 @@
 
 ---
 
+## v0.54.0 — خاتمة «مشكل في المشغل»: الجذر الواحد وراء كل أعطال 0.51–0.53 — put الذات في BroadcastTapProcessor (versionCode 55)
+
+### المطلوب (سجل crash_log الحقيقي الذي يلتقطه v0.53.0)
+`player.onPlayerError[ERROR_CODE_FAILED_RUNTIME_CHECK]` —
+`java.lang.IllegalArgumentException: The source buffer is this buffer` في
+`BroadcastTapProcessor.queueInput(BroadcastTapProcessor.kt:75)` — أول مرة
+يصل فيها تشخيص العطل إلى السطر الذي انفجر فيه فعلاً (درس v0.53.0 يثمر فوراً).
+
+### التشخيص — حتى مصدر media3 1.5.1 حرفياً (البرهان قبل العلاج)
+- **أرقام الأسطر تطابق المصدر المنزّل**: getOutput:229 = نداء
+  `processData(EMPTY_BUFFER)` داخل getOutput، وprocessData:337 =
+  `audioProcessor.queueInput(input)`، وDefaultAudioSink.processBuffers:1176 =
+  `while ((bufferToWrite = audioProcessingPipeline.getOutput()).hasRemaining())`
+  — أي أن التفريغ يبدأ بـgetOutput **قبل** تغذية أي مدخل حقيقي.
+- **الميكانيزم**: processData بلا مدخل يمرر `EMPTY_BUFFER` للمعالج الأول
+  (التاب)، وqueueInput كان يستدعي `replaceOutputBuffer(0)` دائماً — شرطها
+  `buffer.capacity() < size` أي `0 < 0` = زائف — فيعيد حقل buffer الطازج وهو
+  **EMPTY_BUFFER المشترك**: النسخة الثابتة الواحدة (`AudioProcessor.EMPTY_BUFFER`)
+  التي تستوردها `AudioProcessingPipeline` و`BaseAudioProcessor` معاً
+  (import static في الملفين) — فيصبح `out === inputBuffer` وينفجر
+  `put` بـ«The source buffer is this buffer» — ثم ERROR_CODE_FAILED_RUNTIME_CHECK
+  يقتل المشغل من **الإطار الصوتي الأول**.
+- **لماذا يفسّر كل البلاغات دفعة واحدة**: كل مشغلات media3 بُنيت عبر
+  renderersFactoryWithTap منذ v0.51.0 — فالمكتبة والنشيد والقوائم ميتة من أول
+  ثانية («مشغل الموسيقى لا يعمل» و«مشكل في المشغل»)، والبث المباشر يموت مع
+  مساره الصوتي فيبدو «زر البدء لم يعد يلتقط المايكروفون» و«البث المباشر
+  المايكروفون لا يعمل»، وخزان المزيج يفقد خط المشغل فيبقى المايك وحده في
+  الأرشيف («تسجيل البث يسجل فقط المايكروفون») — و«العديد من الأعطال» أعراض
+  هذا الانفجار الواحد. إصلاحات v0.52.0 (تسريب الخفض) كانت عيوباً حقيقية
+  مستقلة لكنها لم تكن قاتل المشغل.
+- **البرهان النهائي**: معالجات media3 الرسمية الثلاثة كلها تحرس الفراغ قبل
+  replaceOutputBuffer — TeeAudioProcessor (النموذج المطابق لتابنا حرفياً):
+  «if (remaining == 0) return» ثم put — وSonic: «if (!hasRemaining()) return»
+  — وSilenceSkipping: حلقتها لا تدور على مدخل فارغ. تابنا كان الوحيد بلا حرس.
+
+### الإصلاح — عقد المعالجات الرسمية نفسه، لا طبقة دفاعية
+سطر واحد جذري في queueInput: لا مدخلات = لا مخرجات = لا replaceOutputBuffer
+على الفراغ — حرفياً عقد TeeAudioProcessor/Sonic — فأول دورة تفريغ على pipeline
+حديثة تمر سليمة، وأول بيانات حقيقية تخصص bufferها الخاص، وكل التفريغات
+الفارغة اللاحقة عديمة الأثر. لا مساس بأي شيء آخر: التمرير الشفاف، الطيّ
+مونو، القلّم، gain، onFlush — كلها كما كانت حرفياً.
+
+### الجودة
+- +6 اختبارات (BroadcastTapProcessorTest — أول اختبار مباشر للمعالج نفسه):
+  أول تفريغ فارغ على معالج طازج لا ينفجر (**إعادة إنتاج الانهيار حرفياً** —
+  كان يرمي IllegalArgumentException قبل الإصلاح)، replaceOutputBuffer لا يعيد
+  EMPTY_BUFFER المشترك، تفريغ لاحق بعد بيانات آمن، تمرير شفاف حرفي مع طيّ
+  ستيريو→مونو (150/350) في التاب، تاب معطل لا يدفع عينة، تفريغ يصفّر الخزان.
+- 471 اختباراً خضراء (كانت 465).
+
+### النشر
+- بناء محلي كامل ناجح (SchoolRadio_v0.54.0.apk debug) ثم CI run
+  41027052957 success ثم deliver_release.sh: versionCode 55 / versionName
+  0.54.0، بصمة `083219aa51f36d15…4c64f4` مطابقة على النسخة المنزلة من CDN،
+  رابط مباشر HTTP 200 (14,974,707 بايت)، نسخة احتياطية في download/.
+
+---
+
+
 ## v0.53.0 — خاتمة «مشكل في المشغل — ERROR_CODE_FAILED_RUNTIME_CHECK»: مسار خطأ المشغل آخر بقعة عمياء + القفزة التي تسفك القائمة (versionCode 54)
 
 ### المطلوب (بلاغ بلقطات 19:32–19:33 على جهاز الأستاذ)
