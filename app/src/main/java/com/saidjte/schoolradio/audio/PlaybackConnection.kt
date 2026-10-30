@@ -97,11 +97,7 @@ class PlaybackConnection(private val context: Context) {
 
     /** ضبط مستوى صوت البداية المحفوظ — يعمل ولو لم تكن خدمة الوسائط جاهزة بعد */
     fun applyStartupVolume(v: Float) {
-        // v0.52.0: مستوى البدء يمرّ من نقطة الصدق الوحيدة — gain التاب يُزامَن
-        // مثل كل مستويات المشغل (كان يتجاوز setVolume فيفقد النشيد/البداية
-        // تزامن مستوى الأرشيف مع المسموع — إكمال ناقص لمعمارية v0.51.0)
         val vol = v.coerceIn(0f, 1f)
-        com.saidjte.schoolradio.di.ServiceLocator.mixBus.mediaTap.gain = vol
         val c = controller
         if (c != null) c.volume = vol else pendingVolume = vol
     }
@@ -390,14 +386,10 @@ class PlaybackConnection(private val context: Context) {
 
     /**
      * ضبط مستوى الصوت — تستخدمه أيضاً آلية الخفض التلقائي أثناء الإعلان.
-     * v0.51.0: النقطة الوحيدة التي يخرج بها مشغل المكتبة بمستوى (فيدَر الميكسر،
-     * الخفض التلقائي، مستوى البدء) — هنا يُزامَن gain تاب التسجيل الكامل
-     * فتُسجَّل الموسيقى بمستواها المسموع حرفياً لا بمستواها الخام.
      */
     fun setVolume(volume: Float) {
         val v = volume.coerceIn(0f, 1f)
         controller?.volume = v
-        com.saidjte.schoolradio.di.ServiceLocator.mixBus.mediaTap.gain = v
     }
 
     fun setRepeatAll(enabled: Boolean) {

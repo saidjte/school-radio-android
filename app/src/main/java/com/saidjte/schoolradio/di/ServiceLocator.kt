@@ -164,7 +164,7 @@ object ServiceLocator {
      *   تصل إليه من Compose مباشرة فهذا محقق.
      */
     val cartPlayer: CartPlayer by lazy {
-        CartPlayer(appContext, tap = mixBus.cartTap).also { p ->
+        CartPlayer(appContext).also { p ->
             cartPlayerRef = p
             // v0.15.0: استرجاع فيدَر قناة الجينل × الماستر من الإعدادات المحفوظة
             // v0.47.0: على Main — المشغل أُنشئ على الخيط الرئيسي فيُلمس منه حصراً
@@ -279,19 +279,9 @@ object ServiceLocator {
 
     // ===== v0.49.0: إعلان البث + تسجيل البث الكامل =====
 
-    /**
-     * v0.51.0: ناقل مزج التابات — جذر معماري واحد لكل أصوات البث الكامل:
-     * المشغل والكارتس والنغمة والمايك يملك كل منهم تاباً هنا، والتسجيل يجمعها
-     * بمستوياتها الفعلية (المنصة لا تعيد صوت التطبيق نفسه من AudioPlaybackCapture
-     * فالتطبيق لا يطلب صوته من أحد — صوته يمر بأيديه).
-     */
-    val mixBus: com.saidjte.schoolradio.audio.BroadcastMixBus by lazy {
-        com.saidjte.schoolradio.audio.BroadcastMixBus()
-    }
-
-    /** نغمة «إعلان بدء البث» — عبر مخرج الوسائط وتبُعث نسختها إلى تاب النغمة */
+    /** نغمة «إعلان بدء البث» — عبر مخرج الوسائط مباشرة */
     val announcer: com.saidjte.schoolradio.audio.BroadcastAnnouncer by lazy {
-        com.saidjte.schoolradio.audio.BroadcastAnnouncer(toneTap = mixBus.toneTap)
+        com.saidjte.schoolradio.audio.BroadcastAnnouncer()
     }
 
     // ===== v0.50.0: جلسة البث الحي — الإعلان جلسة كاملة لا نغمة فحسب =====
@@ -369,17 +359,6 @@ object ServiceLocator {
     }
 
     /**
-     * v0.51.0: بدء تسجيل البث الكامل (المايك + كل ما يشغله التطبيق بمستوياتها
-     * الفعلية على الهواء) عبر ناقل التابات مباشرة — بلا MediaProjection ولا
-     * حوار نظام (جذر بلاغَي v0.50.0: المنصة تستثني صوت التطبيق نفسه من
-     * AudioPlaybackCapture، والتطبيق لا يحتاج إذن أحد ليأخذ نسخته من صوته).
-     */
-    fun startBroadcastRecording(onError: (String) -> Unit) {
-        val err = recordings.startMixRecording(mixBus)
-        if (err != null) onError(err)
-    }
-
-    /**
      * v0.11.0: آخر لقطة لإعدادات معالجة المذيع — يُحدّثها جامع مستمر من DataStore
      * ويقرأها البث عند البدء فتُطبق تغييرات الاستوديو على البث التالي مباشرة.
      */
@@ -403,19 +382,11 @@ object ServiceLocator {
                 }
             },
             onLevel = { level -> _micLevel.value = level },
-            // ★ نقطة الربط v0.3.0: كل دفعة PCM من حلقة البث تُغذّي التسجيل (خط أنابيب واحد)
-            onPcm = { pcm, n -> recordings.feedLivePcm(pcm, n) },
             onStateChanged = { isLive, message ->
                 _micLive.value = isLive
                 _micMessage.value = message
                 if (!isLive) {
                     _micLevel.value = 0f
-                    // انتهى البث والتسجيل يعمل؟ أوقف واحفظ فوراً (لا ملفات تالفة)
-                    // v0.15.0: على خيط خلفي — كان يستدعى من الخيط الرئيسي وينتظر
-                    // خيط التسجيل حتى 400ms، وأي استثناء فيه كان يغلق التطبيق
-                    com.saidjte.schoolradio.core.util.CrashGuard.runOnIo {
-                        recordings.onLiveBroadcastStopped()
-                    }
                 }
             },
             // v0.11.0: سلسلة تنظيف صوت المذيع (AGC/حجز الضجيج/إلغاء الصدى)

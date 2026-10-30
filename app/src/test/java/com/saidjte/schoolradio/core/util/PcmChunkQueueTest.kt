@@ -37,7 +37,7 @@ class PcmChunkQueueTest {
         val q = PcmChunkQueue()
         val src = shortArrayOf(10, 20, 30)
         q.push(src, 3)
-        // الخيط المصدرو يعيد استخدام المخزن (نمط memoThread/feedLivePcm الفعلي)
+        // الخيط المصدرو يعيد استخدام المخزن (نمط memoThread الفعلي)
         src[0] = 99
         src[1] = 99
         val out = q.pop()!!

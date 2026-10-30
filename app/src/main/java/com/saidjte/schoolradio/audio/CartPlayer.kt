@@ -32,15 +32,14 @@ import kotlin.math.max
  *
  * التحديث الدوري: 250ms فقط أثناء وجود رقاقة نشطة — لا حلقات خلفية عند الخمول.
  *
- * v0.51.0: تاب تسجيل البث الكامل — المشغل يُبنى بمصنع يغرس [BroadcastTapProcessor]
- * فينسخ PCM الرقاقة إلى تاب الجينل في [BroadcastMixBus]، وكل مستوى يُضبط على
- * player.volume (فيدَر/تلاشيات/استرجاع) يُزامَن بـgain التاب نفسه في نفس
- * النقطة — فما يُسجَّل هو ما يسمعه الجمهور حرفياً لا تقدير قريب.
+ * v0.57.0: المشغل media3 أصلي بلا أي معالج مغروس — معمارية تاب تسجيل البث
+ * الكامل أُزيلت كلياً بقرار الأستاذ (الأولوية لسلاسة البث المباشر والتشغيل)،
+ * فخيط الصوت عاد ملكاً للمنصة وحدها.
  *
  * ★ الخيطية: كل الدوال العامة يجب استدعاؤها من الخيط الرئيسي (متطلب ExoPlayer) —
  *   الواجهة Compose تستدعيها من Compose مباشرة فهذا محقق بطبيعة الاستخدام.
  */
-class CartPlayer(context: Context, private val tap: BroadcastTap? = null) {
+class CartPlayer(context: Context) {
 
     data class State(
         /** مفتاح الرقاقة النشطة "صفحة:موضع" — null = لا شيء يعمل */
@@ -58,9 +57,7 @@ class CartPlayer(context: Context, private val tap: BroadcastTap? = null) {
 
     private val player: ExoPlayer = ExoPlayer.Builder(
         context.applicationContext,
-        // v0.51.0: مع التاب — نفس المصنع الافتراضي حرفياً + معالج نسخ PCM واحد
-        if (tap != null) renderersFactoryWithTap(context.applicationContext, tap)
-        else DefaultRenderersFactory(context.applicationContext)
+        DefaultRenderersFactory(context.applicationContext)
     ).build()
     private val handler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -228,12 +225,7 @@ class CartPlayer(context: Context, private val tap: BroadcastTap? = null) {
         }
     }
 
-    /**
-     * v0.51.0: كل مستوى يخرج به المشغل يُزامَن بـgain تاب التسجيل في نفس النقطة —
-     * نقطة صدق واحدة: ما يسمعه الجمهور وما يدخل الأرشيف مستويان واحد لا نسختين.
-     */
     private fun applyPlayerVolume(v: Float) {
         player.volume = v
-        tap?.let { it.gain = v }
     }
 }

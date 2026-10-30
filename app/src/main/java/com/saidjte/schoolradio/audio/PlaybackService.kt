@@ -50,14 +50,12 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         ServiceLocator.init(this)
-        // v0.51.0: مشغل المكتبة يُبنى بمصنع يغرس تاب تسجيل البث الكامل —
-        // نسخ PCM المفكوك إلى mixBus.mediaTap (جذر قلب معمارية v0.49.0:
-        // المنصة لا تعيد صوت التطبيق نفسه من AudioPlaybackCapture فالتطبيق
-        // يأخذ نسخته من آخر نقطة يملكها قبل مكبرات الجهاز)
-        val player = ExoPlayer.Builder(
-            this,
-            renderersFactoryWithTap(this, ServiceLocator.mixBus.mediaTap)
-        )
+        // v0.57.0: المشغلات كلها media3 أصلي بلا أي معالج مغروس — معماريا
+        // تسجيل البث الكامل (تاب PCM داخل خيط الصوت) أُزيلت كلياً بقرار
+        // الأستاذ: «الأولوية البث المباشر وتشغيل الموسيقى — لا داعي لتسجيل
+        // البث المباشر». خيط تشغيل الصوت عاد ملكاً للمنصة وحدها: صفر كود
+        // مخصص يمر على كل دفعة PCM، وجذر كل أعطال 0.51–0.56 محذوف بالبناء.
+        val player = ExoPlayer.Builder(this)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)

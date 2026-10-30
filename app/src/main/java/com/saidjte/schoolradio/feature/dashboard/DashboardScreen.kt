@@ -187,10 +187,9 @@ fun DashboardScreen(
         settingsState.openingAnthemId?.let { id -> libraryTracks.firstOrNull { it.id == id }?.title }
     }
 
-    // حالة التسجيل — مؤقّت + وضع + نشاط
+    // حالة التسجيل — مؤقّت + نشاط
     val recActive by locator.recordings.isRecording.collectAsStateWithLifecycle()
     val recElapsed by locator.recordings.elapsedMs.collectAsStateWithLifecycle()
-    val recMode by locator.recordings.mode.collectAsStateWithLifecycle()
     // v0.12.0: الموجة الحية تعمل أثناء البث أو التسجيل — مصدرها يُحسم داخل ورقة الرسم
     // v0.35.0: المستويات لم تعد تُجمَع في رأس الشاشة — تُقرأ وقت العينة داخل الموجة وحلقة البث
     val waveActive = isLive || recActive
@@ -208,30 +207,18 @@ fun DashboardScreen(
         }
     }
 
-    /** بدء التسجيل (بث حي إن كان البث نشطاً وإلا فقرة تحضيرية) بصلاحية الميكروفون */
-    fun startRecordingOrMemo() {
+    /**
+     * v0.57.0: التسجيل فقرة تحضيرية فقط — بلا تسجيل بث (قرار الأستاذ:
+     * «لا داعي لتسجيل البث المباشر») — بصلاحية الميكروفون.
+     */
+    fun startPrepRecording() {
         if (!mic.hasPermission()) {
             micPermission.launch(Manifest.permission.RECORD_AUDIO)
             return
         }
         scope.launch {
-            val err = if (isLive) locator.recordings.startLiveRecording()
-            else locator.recordings.startMemoRecording()
+            val err = locator.recordings.startMemoRecording()
             err?.let { snackbar.showSnackbar(it) }
-        }
-    }
-
-    /**
-     * v0.51.0: بدء تسجيل البث الكامل أثناء البث — المايك + كل ما يشغله التطبيق
-     * بمستوياتها المسموعة، عبر تابات التطبيق مباشرة بلا حوار نظام.
-     */
-    fun startBroadcastRecording() {
-        if (!mic.hasPermission()) {
-            micPermission.launch(Manifest.permission.RECORD_AUDIO)
-            return
-        }
-        locator.startBroadcastRecording { err ->
-            scope.launch { snackbar.showSnackbar(err) }
         }
     }
 
@@ -440,7 +427,6 @@ fun DashboardScreen(
                 error = micError,
                 recActive = recActive,
                 recElapsed = recElapsed,
-                recMode = recMode,
                 micMode = micMode,
                 waveActive = waveActive,
                 recLevelFlow = locator.recordings.recordLevel,
@@ -463,10 +449,11 @@ fun DashboardScreen(
                         locator.recordings.stopRecording()
                         scope.launch { snackbar.showSnackbar("حُفظ التسجيل في أرشيف التسجيلات") }
                     } else if (isLive) {
-                        // v0.49.0: أثناء البث = التسجيل الكامل (مايك + كل ما يُشغّل)
-                        startBroadcastRecording()
+                        // v0.57.0: تسجيل البث المباشر أُزيل — قاعدة المسجّل الواحد:
+                        // ميكروفون البث مفتوح ولا ينافسه مسجّل ثانٍ
+                        scope.launch { snackbar.showSnackbar("أوقف البث أولاً ثم سجّل فقرة تحضيرية") }
                     } else {
-                        startRecordingOrMemo()
+                        startPrepRecording()
                     }
                 },
                 // v0.50.0: الإعلان جلسة كاملة — نغمة + شارة + نشيد افتتاح آلي
@@ -838,7 +825,6 @@ private fun LiveBroadcastCard(
     error: String?,
     recActive: Boolean,
     recElapsed: Long,
-    recMode: com.saidjte.schoolradio.data.local.entity.RecordingSource?,
     micMode: com.saidjte.schoolradio.audio.MicMode,
     waveActive: Boolean,
     /** v0.35.0: مجرى مستوى التسجيل — مصدر الموجة أثناء MEMO/PTT */
@@ -1148,10 +1134,8 @@ private fun LiveBroadcastCard(
                 Column {
                     Text(
                         when {
-                            recActive && recMode?.name == "MIX" -> "تُسجَّل الجلسة كاملة — المايك وكل ما يُشغَّل"
-                            recActive && recMode?.name == "PTT" -> "تُسجَّل الفقرة الآن"
                             recActive -> "تسجيل فقرة تحضيرية…"
-                            isLive -> "سجّل البث الكامل الآن — مايك + كل ما يُشغَّل"
+                            isLive -> "أوقف البث أولاً — التسجيل للفقرات التحضيرية فقط"
                             else -> "تسجيل فقرة تحضيرية"
                         },
                         style = MaterialTheme.typography.titleSmall

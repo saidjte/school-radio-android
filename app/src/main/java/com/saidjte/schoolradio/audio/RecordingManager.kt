@@ -19,29 +19,21 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.File
 
 /**
- * مدير التسجيلات — يدخل التسجيل إلى الأرشيف في وضعين:
+ * مدير التسجيلات (v0.57.0) — وضع واحد: **الفقرة التحضيرية (MEMO)**.
  *
- *  1) وضع البث (PTT): يسجّل البث الحي الجاري. دفعات PCM تأتي من حلقة
- *     MicrophoneController عبر feedLivePcm() — نفس خط الأنابيب، صفر تنازع.
- *     إذا انتهى البث بينما التسجيل يعمل يُوقف ويُحفظ تلقائياً (لا ملفات تالفة).
+ * تسجيل تحضيري مستقل بلا إخراج للمكبرات — يفتح AudioRecord خاصاً به (مصدر
+ * MIC الخام بجودة أنقى، بلا AEC/AGC للمكالمات) لتحضير الفقرات مسبقاً قبل
+ * يوم الإذاعة. لا يعمل أثناء البث المباشر: قاعدة **مسجّل واحد أبداً** —
+ * الميكروفون ملك لحالة واحدة في كل لحظة، فلا تنافس على عتاد الالتقاط ولا
+ * افتتاح مسجّل ثانٍ فوق بث حي (استقرار البث المباشر هو الأولوية — قرار
+ * الأستاذ v0.57.0: «لا داعي لتسجيل البث المباشر»).
  *
- *  2) وضع الفقرة (MEMO): تسجيل تحضيري مستقل بلا إخراج للمكبرات — يفتح
- *     AudioRecord خاصاً به (مصدر MIC الخام بجودة أنقى، بلا AEC/AGC للمكالمات)
- *     لتحضير الفقرات مسبقاً قبل يوم الإذاعة.
- *
- *  3) وضع البث الكامل (MIX — v0.49.0، معماريته قُلبت في v0.51.0): ما يسمعه
- *     الجمهور = مجموع أربعة تابات يملكها التطبيق نفسه (مشغل المكتبة، حائط
- *     الجينغل، نغمة الإعلان، خط المايك) تُجمع في [BroadcastMixBus] وتصل
- *     دفعاتها عبر onMixedPcm إلى الكاتب. الجذر: توثيق أندرويد يخصص
- *     AudioPlaybackCapture لصوت التطبيقات *الأخرى* حصراً — صوت التطبيق نفسه
- *     لا يعود منه أبداً فكان الملف يخرج بلا موسيقى (بلاغ v0.50.0)، والتطبيق
- *     لا يحتاج أن يطلب صوته من أحد: صوته يمر بأيديه. بلا MediaProjection
- *     ولا حوار نظام ولا خدمة أمامية إضافية — ويعمل على كل إصدارات أندرويد.
+ * سجلات الأرشيف القديمة بمصادري PTT/MIX (قبل v0.57.0) تبقى صالحة وتُعرض
+ * بعناوينها الأصلية عبر [RecordingSource] — الإزالة شملت مسار *البدء* حصراً.
  *
  * الحفظ النهائي: finish() في الكاتب (AacFileWriter أو OpusFileWriter — v0.29.0)
  * ثم إدراج سجل في Room مع لقطة (اسم + دور) المستخدم الحالي عند لحظة التسجيل.
@@ -51,7 +43,7 @@ class RecordingManager(
     private val repository: RecordingRepository,
     /** مزوّد المستخدم الحالي — يُقرأ عند الحفظ فقط (لا حالة مكررة) */
     private val currentUserProvider: suspend () -> UserEntity?,
-    /** مزوّد حالة البث الحي — لمنع بدء تسجيل بث بلا بث فعلي */
+    /** حالة البث الحي — قاعدة المسجّل الواحد: لا فقرة تحضيرية أثناء البث */
     private val isLiveProvider: () -> Boolean = { false },
     /** v0.29.0: تفضيل «عالي الدقة Opus HD» من الإعدادات — لقطة حية يحدّثها جامع الإعدادات */
     private val hdPreferredProvider: () -> Boolean = { true }
@@ -70,21 +62,19 @@ class RecordingManager(
     private val _mode = MutableStateFlow<RecordingSource?>(null)
     val mode: StateFlow<RecordingSource?> = _mode.asStateFlow()
 
-    /** مؤقّت التسجيل الحي — يُحدَّث من خيط الصوت (StateFlow يكتم التكرار) */
+    /** مؤقّت التسجيل — يُحدَّث من خيط الصوت (StateFlow يكتم التكرار) */
     private val _elapsedMs = MutableStateFlow(0L)
     val elapsedMs: StateFlow<Long> = _elapsedMs.asStateFlow()
 
     /**
-     * v0.12.0 — مستوى الموجة الحية: RMS لدفعات PCM **المرسلة فعلاً إلى الكاتب**
-     * (بعد التلاشي والكسب وسلسلة تنظيف المذيع) — فالموجة تعرض ما يُسجل بالضبط،
-     * لا ما يدخل الميكروفون فقط. يُغذّى من المسارين: حلقة البث (PTT) وخيط الفقرة (MEMO).
+     * مستوى الموجة الحية: RMS لدفعات PCM **المرسلة فعلاً إلى الكاتب** —
+     * فالموجة تعرض ما يُسجل بالضبط، لا ما يدخل الميكروفون فقط.
      */
     private val _recordLevel = MutableStateFlow(0f)
     val recordLevel: StateFlow<Float> = _recordLevel.asStateFlow()
 
     // ===== الحالة الداخلية =====
     private var writer: PcmAudioWriter? = null
-    private var source: RecordingSource = RecordingSource.PTT
 
     /** v0.29.0: هل التسجيل الجاري بترميز Opus HD؟ — يقرر نوع MIME في سجل الأرشيف */
     private var writerUsesOpus = false
@@ -94,9 +84,6 @@ class RecordingManager(
     private var memoThread: Thread? = null
     @Volatile private var memoRunning = false
 
-    // v0.51.0: ناقل مزج التابات — موجود فقط أثناء تسجيل البث الكامل (MIX)
-    private var mixBus: BroadcastMixBus? = null
-
     /** مجلد الأرشيف: مسار التطبيق الخاص — بلا صلاحيات تخزين ويُحذف مع التطبيق */
     private fun recordingsDir(): File {
         val base = context.getExternalFilesDir(android.os.Environment.DIRECTORY_MUSIC)
@@ -105,44 +92,19 @@ class RecordingManager(
     }
 
     /**
-     * بدء تسجيل البث الحي الجاري (الميكروفون مفتوح بالفعل في MicrophoneController).
+     * بدء تسجيل فقرة تحضيرية مستقلة — قاعدة المسجّل الواحد: أثناء البث
+     * المباشر يرفض بأمانة (ميكروفون البث مفتوح ولا ينافسه مسجّل ثانٍ).
      * @return null عند النجاح أو رسالة خطأ عربية جاهزة للعرض
      */
-    fun startLiveRecording(): String? {
-        if (_isRecording.value) return "التسجيل جارٍ بالفعل"
-        if (!isLiveProvider()) return "ابدأ البث المباشر أولاً ثم سجّله"
-        return begin(RecordingSource.PTT)
-    }
-
-    /** بدء تسجيل فقرة تحضيرية مستقلة (المشغل والبث متوقفان عادةً) */
     fun startMemoRecording(): String? {
         if (_isRecording.value) return "التسجيل جارٍ بالفعل"
+        if (isLiveProvider()) {
+            return "التسجيل أثناء البث المباشر غير متاح — أوقف البث أولاً ثم سجّل فقرة تحضيرية"
+        }
         return begin(RecordingSource.MEMO)
     }
 
-    /**
-     * v0.51.0: بدء تسجيل البث الكامل — المايك **وكل ما يشغله التطبيق**
-     * (المكتبة، الكارتس، نغمة الإعلان) بمستوياتها الفعلية على الهواء،
-     * عبر ناقل التابات [BroadcastMixBus] — بلا أي التقاط نظامي (جذر
-     * بلاغَي v0.50.0: المنصة تستثني صوت التطبيق نفسه من AudioPlaybackCapture).
-     */
-    fun startMixRecording(bus: BroadcastMixBus): String? {
-        if (_isRecording.value) return "التسجيل جارٍ بالفعل"
-        if (!isLiveProvider()) return "ابدأ البث المباشر أولاً ثم سجّله"
-        val mixError = bus.start { pcm, n -> onMixedPcm(pcm, n) }
-        if (mixError != null) return "تعذر بدء تسجيل البث الكامل: $mixError"
-        mixBus = bus
-        val beginError = begin(RecordingSource.MIX)
-        if (beginError != null) {
-            // الكاتب فشل — لا ناقل يتيم يبقى يستهلك التابات
-            runCatching { bus.stop() }
-            mixBus = null
-            return beginError
-        }
-        return null
-    }
-
-    /** المسار المشترك للوضعين: اختيار الترميز ثم تهيئة الكاتب ثم التجهيز حسب الوضع */
+    /** المسار المشترك: اختيار الترميز ثم تهيئة الكاتب ثم فتح الميكروفون */
     private fun begin(newSource: RecordingSource): String? {
         val startedAt = System.currentTimeMillis()
         val dir = recordingsDir()
@@ -159,7 +121,7 @@ class RecordingManager(
             val w = OpusFileWriter(f.absolutePath)
             val err = w.start()
             if (err == null) {
-                return startCommon(w, newSource, usesOpus = true)
+                return startCommon(w, usesOpus = true)
             }
             // فشل تهيئة Opus (جهاز شاذ) — رجوع شفاف إلى AAC بدل إفشال التسجيل كله
             opusError = err
@@ -172,77 +134,30 @@ class RecordingManager(
             return if (opusError != null) "تعذر بدء التسجيل: $opusError — وAAC أيضاً: $err2"
             else "تعذر بدء التسجيل: $err2"
         }
-        return startCommon(w2, newSource, usesOpus = false)
+        return startCommon(w2, usesOpus = false)
     }
 
     /** التجهيز المشترك بعد نجاح تهيئة الكاتب (v0.29.0: استُخرج لدعم الترميزين) */
-    private fun startCommon(w: PcmAudioWriter, newSource: RecordingSource, usesOpus: Boolean): String? {
+    private fun startCommon(w: PcmAudioWriter, usesOpus: Boolean): String? {
         writer = w
         writerUsesOpus = usesOpus
-        source = newSource
-        _mode.value = newSource
+        _mode.value = RecordingSource.MEMO
         _elapsedMs.value = 0L
-        _recordLevel.value = 0f // v0.12.0: موجة جديدة تبدأ من الصمت
+        _recordLevel.value = 0f // الموجة الجديدة تبدأ من الصمت
 
-        return if (newSource == RecordingSource.MEMO) {
-            startMemoCapture(w) // في وضع الفقرة نفتح الميكروفون بأنفسنا
-        } else {
-            _isRecording.value = true // في وضع البث ستتدفق الدفعات من حلقة PTT
-            null
-        }
-    }
-
-    /**
-     * نقطة الربط من حلقة البث الحي — تُستدعى من خيط PTT كل ~10ms.
-     * خفيفة عمداً: تمرير واحد + تحديث مؤقّت (StateFlow يكتم التحديثات المتتالية).
-     */
-    fun feedLivePcm(pcm: ShortArray, n: Int) {
-        val w = writer ?: return
-        if (!_isRecording.value) return
-        // v0.51.0: في وضع البث الكامل المايك يدخل عبر تاب الناقل لا الكاتب مباشرة
-        if (source == RecordingSource.MIX) {
-            mixBus?.pushMicPcm(pcm, n)
-            return
-        }
-        if (source != RecordingSource.PTT) return
-        w.feed(pcm, n)
-        _elapsedMs.value = w.totalSamples * 1000L / MicrophoneController.SAMPLE_RATE
-        // v0.12.0: نفس الدفعة تكفي لحساب مستوى الموجة الحية (كلفة 480 عملية/10ms)
-        _recordLevel.value = WaveformLogic.normalize(rmsOf(pcm, n))
-    }
-
-    /** v0.49.0: دفعات المزيج المدموج من خيط الالتقاط — مستوى الموجة من الملف نفسه */
-    private fun onMixedPcm(pcm: ShortArray, n: Int) {
-        val w = writer ?: return
-        if (!_isRecording.value || source != RecordingSource.MIX) return
-        w.feed(pcm, n)
-        _elapsedMs.value = w.totalSamples * 1000L / MicrophoneController.SAMPLE_RATE
-        _recordLevel.value = WaveformLogic.normalize(rmsOf(pcm, n))
-    }
-
-    /** يُنادى تلقائياً عند توقف البث الحي — ينقذ الملف قبل فتح الميكروفون */
-    fun onLiveBroadcastStopped() {
-        if (_isRecording.value &&
-            (source == RecordingSource.PTT || source == RecordingSource.MIX)
-        ) {
-            stopRecording()
-        }
+        return startMemoCapture(w) // نفتح الميكروفون بأنفسنا
     }
 
     /** إيقاف التسجيل وحفظ السجل في الأرشيف — آمن من أي خيط */
     fun stopRecording() {
         if (!_isRecording.value && memoRecord == null) return
         _isRecording.value = false
-        _recordLevel.value = 0f // v0.12.0: الموجة تعود إلى الصمت فوراً
+        _recordLevel.value = 0f // الموجة تعود إلى الصمت فوراً
         // v0.15.0: إيقاف خيط الفقرة قد ينتظر حتى 400ms — يُنفّذ خارج الخيط
-        // المستدعي (قد يكون الخيط الرئيسي أثناء إنهاء البث) وبدرع runCatching
+        // المستدعي (قد يكون الخيط الرئيسي) وبدرع runCatching
         com.saidjte.schoolradio.core.util.CrashGuard.runOnIo {
             runCatching { stopMemoCapture() }
                 .onFailure { CrashGuard.record("stopMemoCapture", it) }
-            // v0.51.0: خيط الخلط ينحل وتُعطَّل التابات — بلا تسريب ولا استهلاك لاحق
-            runCatching { mixBus?.stop() }
-                .onFailure { CrashGuard.record("mixBus.stop", it) }
-            mixBus = null
             finishRecording()
         }
     }
@@ -251,7 +166,6 @@ class RecordingManager(
     private fun finishRecording() {
         val w = writer
         writer = null
-        val finishedSource = source
         if (w == null) return
 
         // الإغلاق الكامل (EOS + تفريغ) على خيط IO — قد يأخذ حتى بضع مئات ms
@@ -274,12 +188,12 @@ class RecordingManager(
             val user = runCatching { currentUserProvider() }.getOrNull()
             repository.insert(
                 RecordingEntity(
-                    title = RecordingLogic.defaultTitle(finishedSource, System.currentTimeMillis()),
+                    title = RecordingLogic.defaultTitle(RecordingSource.MEMO, System.currentTimeMillis()),
                     // المسار الحقيقي الذي كتبه الكاتب (وليس مجلد جديد) — الملف نفسه في الأرشيف
                     filePath = w.filePath,
                     durationMs = durationMs,
                     sizeBytes = sizeBytes,
-                    source = finishedSource.name,
+                    source = RecordingSource.MEMO.name,
                     // v0.29.0: نوع MIME حسب الترميز الفعلي — يقود التشغيل/المشاركة/التصدير/الشارة
                     mimeType = RecordingCodecLogic.mimeType(writerUsesOpus),
                     recordedByName = user?.name,
@@ -340,7 +254,7 @@ class RecordingManager(
                 if (n > 0) {
                     w.feed(chunk, n)
                     _elapsedMs.value = w.totalSamples * 1000L / MicrophoneController.SAMPLE_RATE
-                    // v0.12.0: الموجة الحية للفقرة التمهيدية — من دفعاتها نفسها
+                    // الموجة الحية للفقرة التمهيدية — من دفعاتها نفسها
                     _recordLevel.value = WaveformLogic.normalize(rmsOf(chunk, n))
                 }
             }
@@ -358,7 +272,7 @@ class RecordingManager(
         memoRecord = null
     }
 
-    /** v0.12.0: RMS دفعة PCM كنسبة من المدى الكامل — خفيفة عمداً (حلقة واحدة) */
+    /** RMS دفعة PCM كنسبة من المدى الكامل — خفيفة عمداً (حلقة واحدة) */
     private fun rmsOf(x: ShortArray, n: Int): Float {
         if (n <= 0) return 0f
         var acc = 0L
