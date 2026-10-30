@@ -58,7 +58,19 @@ class BroadcastTapProcessor(private val tap: BroadcastTap) : BaseAudioProcessor(
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         val remaining = inputBuffer.remaining()
-        if (tap.enabled && remaining > 0) {
+        if (remaining == 0) {
+            // لا مدخلات = لا مخرجات — نفس عقد المعالجات الرسمية حرفياً
+            // (TeeAudioProcessor: «if (remaining == 0) return» وSonic: «if
+            // (!inputBuffer.hasRemaining()) return»): AudioProcessingPipeline
+            // يُغيِّط queueInput بـEMPTY_BUFFER في أول دورة تفريغ على pipeline
+            // حديثة (getOutput → processData(EMPTY_BUFFER) قبل أي بيانات حقيقية)،
+            // وreplaceOutputBuffer(0) على معالج طازج يعيد EMPTY_BUFFER المشترك
+            // نفسه (buffer.capacity()=0 ليس أصغر من 0) فيصبح out === inputBuffer
+            // وينفجر put باستثناء «The source buffer is this buffer» — الجذر
+            // الواحد وراء موت كل مشغلات media3 في الإصدارات 0.51–0.53.
+            return
+        }
+        if (tap.enabled) {
             try {
                 tapChunk(inputBuffer.duplicate())
             } catch (t: Throwable) {
