@@ -1,6 +1,24 @@
 # worklog — سجل النشر والدروس المستفادة (school-radio-android)
 
 ---
+## v0.57.0 — خاتمة «عند تشغيل التسجيلات وتشغيل الميكروفون ينهار التطبيق وعند تسجيل البث الكامل ينهار التطبيق» — الإزالة الكاملة لمعماريا تسجيل البث الكامل بتفويض الأستاذ (versionCode 58)
+
+**البلاغ**: انهيار التطبيق عند (تشغيل التسجيلات + الميكروفون) وعند (تسجيل البث الكامل) — وطلب صريح: «الأولوية البث المباشر وتشغيل الموسيقى — يمكنك إلغاء تسجيل البث الكامل والاكتفاء بالتسجيل التحضيري فقط — لا داعي لتسجيل البث المباشر».
+
+**القرار الجذري**: المعمارية المحذوفة هي نفسها مصدر كل سلسلة الأعطال منذ 0.51 — تاب PCM مخصص يُغرس داخل خيط تشغيل الصوت في media3 (BroadcastTapProcessor عبر renderersFactoryWithTap) يمر على **كل دفعة صوتية** في كل مشغلات التطبيق. أعطاله الموثقة بسجلات حقيقية: انفجار «The source buffer is this buffer» على أول إطار (v0.54.0)، ثم «index=-1 على مصفوفة 2304» كل 26ms (v0.56.0) — وكل دفعة تمر عبر كود مخصص على جهاز متوسط وسط بث حي وتسجيل متزامن تبقى مخاطرة مستمرة بلا مقابل يطلبه الأستاذ. الاستقرار بالبناء لا بالدرع: المشغلات عادت media3 أصلياً حرفياً (DefaultRenderersFactory) — صفر كود مخصص في خيط الصوت.
+
+**المحذوف** (−1210 أسطر): BroadcastTapProcessor.kt، BroadcastTap.kt، BroadcastMixBus.kt (خيط الخلط MAX_PRIORITY)، BroadcastTapLogic.kt (كل رياضيات التابات: foldChannelsInto/sumInto/floatToShort/estimateResampled/LinearResampler/MicFrameRing)، اختباراتها (28)، وكل نقاط الدفع: pushMicPcm من حلقة البث، pushTonePcm من خيط النغمة، مزامنة gain من PlaybackConnection، مزامنة مستويات CartPlayer.
+
+**التسجيل = وضع واحد**: الفقرة التحضيرية MEMO بميكروفونها المستقل + قاعدة «مسجّل واحد أبداً» — أثناء البث الحي يرفض التسجيل برسالة صادقة (لا AudioRecord ثانٍ ينافس ميكروفون البث إطلاقاً). أزيلت مسارات البدء الميتة: startLiveRecording (PTT) وfeedLivePcm وonMixedPcm وonLiveBroadcastStopped وstartBroadcastRecording. زر التسجيل أثناء البث يرشد: «أوقف البث أولاً ثم سجّل فقرة تحضيرية».
+
+**التوافق**: أرشيف القديم سليم حرفياً — قيم PTT/MIX باقية في RecordingSource وتُعرض بعناوينها الأصلية (الإزالة شملت مسار البدء حصراً). خط المايك الحي (MicrophoneController) لم يُمس ببت واحد — هو القلب المطلوب سلاسته والمجرَّب منذ v0.15.0.
+
+**التسليم**: commit 2cae260، CI runs 41047636083 + 41047636391 (success)، Release id 428951886، APK 14,958,323 بايت، البصمة على نسخة CDN `083219aa51f36d15…4c64f4` مطابقة، HTTP 200، aapt2: versionCode 58 / versionName 0.57.0. الرابط: `https://github.com/saidjte/school-radio-android/releases/download/v0.57.0/SchoolRadio_v0.57.0.apk`
+
+**الدرس**: أثقل درع معالجة استثناءات لا يضمن استقرار خيط لا تملكه — الكود المخصص داخل خيط صوت المنصة (AudioSink pipeline) مسؤولية دائمة على كل دفعة وكل جهاز؛ حذف المعمارية غير الضرورية أضمن من إصلاحها الصبور. والميزة التي يطلبها المستخدم بمخاطرة معمارية دائمة يجب وزنها أمامه بصدق قبل قبولها.
+
+---
+
 ## v0.56.0 — خاتمة «ArrayIndexOutOfBoundsException: index=-1 على مصفوفة 2304 في LinearResampler.resample» — تشارك إطارين مخرجين فهرس آخر عينة عند الرفع (versionCode 57)
 
 **البلاغ الحقيقي** (أول سجل أعطال يوثّق القلم داخل إعادة القلّم نفسها): `java.lang.ArrayIndexOutOfBoundsException: length=2304; index=-1` عند `LinearResampler.resample(BroadcastTapLogic.kt:126)` من `tapChunk(BroadcastTapProcessor.kt:145)` من `queueInput(:75)` — يتكرر كل ~26ms (17 انفجاراً في 448ms = إطار MP3 كامل 1152 إطاراً ستيريو لكل دفعة).
