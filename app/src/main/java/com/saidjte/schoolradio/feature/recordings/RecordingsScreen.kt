@@ -57,9 +57,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -95,6 +93,9 @@ import kotlinx.coroutines.launch
  *    وبرنامجه والحَكَم أُزيلوا: المحرك الذي أثبت الأستاذ أنه يشغل الملفات هو المستعمل
  *  - مشغل سطر كامل: شريط تقديم تفاعلي + زر إيقاف + مؤشر تشغيل متحرك
  *  - تسمية وحذف محميان بالأدوار: معلم أو مشرف فقط
+ *  - v0.58.0: حُذفت نافذة المشغل المصغر بأزرار السرعة التي كانت تنبثق أسفل
+ *    الأرشيف عند تشغيل أي تسجيل — التحكم في سطر التسجيل نفسه وفي شريط
+ *    المشغل الرئيسي
  */
 enum class RecFilter(val labelAr: String) {
     ALL("الكل"), LIVE("بث مباشر"), MEMO("تحضيرية")
@@ -328,15 +329,10 @@ fun RecordingsScreen(
                 body = "جرّب كلمة بحث مختلفة أو غيّر المرشّح"
             )
         } else {
-            // v0.41.0: المشغل السفلي المثبّت — سطر قائمة بكامل الارتفاع المتبقي
-            // التسجيل النشط = العنصر الحالي في المشغل الرئيسي وهو موسوم isRecording
-            val currentRec = remember(
-                playback.currentTrackId, playback.currentIsRecording, recordings
-            ) {
-                if (playback.currentIsRecording)
-                    recordings.firstOrNull { it.id == playback.currentTrackId } else null
-            }
-            // لقطة حالة المشغل الرئيسي حين يكون مشغّلاً تسجيلاً — للمشغل المصغر والسطور
+            // v0.41.0: التسجيل النشط = العنصر الحالي في المشغل الرئيسي وهو موسوم isRecording
+            // لقطة حالة المشغل الرئيسي حين يكون مشغّلاً تسجيلاً — لإبراز سطره في القائمة
+            // v0.58.0: حُذفت currentRec وvisibleIndex مع النافذة المنبثقة التي كانت
+            // مستهلكها الوحيد (مشغل التسجيلات المصغر بأزرار السرعة)
             val recPb = RecPlayback(
                 isActive = playback.currentIsRecording,
                 isPlaying = playback.isPlaying,
@@ -344,8 +340,6 @@ fun RecordingsScreen(
                 durationMs = playback.durationMs,
                 speed = playback.speed
             )
-            // v0.10.0: موقع التسجيل الحالي داخل القائمة المرئية — للسابق/التالي والعدّاد
-            val visibleIndex = currentRec?.let { visible.indexOfFirst { r -> r.id == it.id } } ?: -1
 
             LazyColumn(
                 Modifier.weight(1f),
@@ -391,31 +385,12 @@ fun RecordingsScreen(
                 item { Spacer(Modifier.height(12.dp)) }
             }
 
-            // ===== v0.10.0: مشغل التسجيلات المثبّت — سابق/تالي + ±15ث + سرعة + تقدم كامل =====
-            // v0.41.0: الأوامر كلها عبر المشغل الرئيسي (المكتبة نفسها)
-            if (currentRec != null) {
-                RecordingsMiniPlayer(
-                    state = recPb,
-                    title = currentRec.title,
-                    positionText = if (visibleIndex >= 0 && visible.isNotEmpty())
-                        "${visibleIndex + 1} من ${visible.size}" else null,
-                    canGoPrevious = visibleIndex > 0,
-                    canGoNext = visibleIndex in 0 until visible.size - 1,
-                    onToggle = { togglePreview(currentRec) },
-                    onStop = { locator.playback.stopAll() },
-                    onSeek = { ms -> locator.playback.seekTo(ms) },
-                    onSkip = { delta -> locator.playback.seekTo(playback.positionMs + delta) },
-                    onSpeed = { speed -> locator.playback.setSpeed(speed) },
-                    // v0.10.0: التنقل بين التسجيلات من المشغل نفسه — بلا عودة للقائمة
-                    onPrevious = {
-                        if (visibleIndex > 0) togglePreview(visible[visibleIndex - 1])
-                    },
-                    onNext = {
-                        if (visibleIndex in 0 until visible.size - 1)
-                            togglePreview(visible[visibleIndex + 1])
-                    }
-                )
-            }
+            // v0.58.0: حُذفت النافذة المنبثقة أسفل الأرشيف (مشغل التسجيلات المصغر
+            // بأزرار السرعة 0.75×–2× و±15ث والتنقل السابق/التالي) بطلب صريح من
+            // الأستاذ: «احدف النافدة المنبتقة عند تشغيل التسجيلات — النافدة التي
+            // تحتوي أزرار التحكم في السرعة». كان ظهورها يضيق مساحة القائمة ويكرّر
+            // أدوات موجودة: سطر التسجيل نفسه فيه تشغيل/إيقاف وسحب للتقدم، وشريط
+            // المشغل الرئيسي أسفل الشاشة فيه السابق/التالي والإيقاف وقائمة الانتظار.
         }
     }
 
@@ -484,142 +459,6 @@ fun RecordingsScreen(
                 TextButton(onClick = { deleteTarget = null }) { Text("إلغاء") }
             }
         )
-    }
-}
-
-/**
- * v0.10.0: مشغل التسجيلات المثبّت أسفل الأرشيف — أداة احترافية كاملة:
- * تشغيل/إيقاف، شريط تقدم تفاعلي، قفزات ±15 ثانية، سرعات تشغيل (0.75× حتى 2×)،
- * وتنقّل سابق/تالي بين تسجيلات القائمة المرئية مع عدّاد الموضع (3 من 12).
- * يظهر فقط عند وجود تسجيل مختار ويبقى ثابتاً أثناء تمرير القائمة.
- */
-@Composable
-private fun RecordingsMiniPlayer(
-    state: RecPlayback,
-    title: String,
-    positionText: String? = null,
-    canGoPrevious: Boolean = false,
-    canGoNext: Boolean = false,
-    onToggle: () -> Unit,
-    onStop: () -> Unit,
-    onSeek: (Long) -> Unit,
-    onSkip: (Long) -> Unit,
-    onSpeed: (Float) -> Unit,
-    onPrevious: () -> Unit = {},
-    onNext: () -> Unit = {}
-) {
-    val isPlaying = state.isPlaying
-    Surface(
-        Modifier.fillMaxWidth().padding(top = 8.dp),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-        shadowElevation = 8.dp
-    ) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                FilledTonalIconButton(
-                    onClick = onToggle,
-                    modifier = Modifier.size(44.dp),
-                    colors = IconButtonDefaults.filledTonalIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    )
-                ) {
-                    Icon(
-                        if (isPlaying) AppIcons.Pause else Icons.Filled.PlayArrow,
-                        "تشغيل/إيقاف مؤقت"
-                    )
-                }
-                Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                    Text(
-                        title,
-                        style = MaterialTheme.typography.titleSmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        "${RecordingLogic.formatElapsed(state.positionMs)} / " +
-                            RecordingLogic.formatElapsed(state.durationMs) +
-                            (positionText?.let { "  •  $it" } ?: ""),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                IconButton(onClick = onStop) {
-                    Icon(
-                        AppIcons.Stop, "إيقاف كامل",
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-
-            Slider(
-                value = if (state.durationMs > 0)
-                    (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f,
-                onValueChange = { ratio -> onSeek((ratio * state.durationMs).toLong()) },
-                enabled = state.durationMs > 0,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                // v0.10.0: التسجيل السابق في القائمة المرئية
-                FilledTonalIconButton(
-                    onClick = onPrevious,
-                    enabled = canGoPrevious,
-                    modifier = Modifier.size(38.dp)
-                ) {
-                    Icon(AppIcons.SkipPrevious, "التسجيل السابق", Modifier.size(20.dp))
-                }
-                // قفزة للخلف 15 ثانية
-                FilledTonalIconButton(
-                    onClick = { onSkip(-15_000L) },
-                    modifier = Modifier.size(38.dp)
-                ) {
-                    Text("-15ث", fontSize = 11.sp)
-                }
-                // قفزة للأمام 15 ثانية
-                FilledTonalIconButton(
-                    onClick = { onSkip(15_000L) },
-                    modifier = Modifier.size(38.dp)
-                ) {
-                    Text("+15ث", fontSize = 11.sp)
-                }
-                // v0.10.0: التسجيل التالي في القائمة المرئية
-                FilledTonalIconButton(
-                    onClick = onNext,
-                    enabled = canGoNext,
-                    modifier = Modifier.size(38.dp)
-                ) {
-                    Icon(AppIcons.SkipNext, "التسجيل التالي", Modifier.size(20.dp))
-                }
-            }
-
-            // سرعات التشغيل — صف مستقل كي لا يتكدس السطر أعلاه على الشاشات الضيقة
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.padding(top = 4.dp)
-            ) {
-                Text(
-                    "السرعة:",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                listOf(0.75f, 1f, 1.5f, 2f).forEach { s ->
-                    FilterChip(
-                        selected = kotlin.math.abs(state.speed - s) < 0.02f,
-                        onClick = { onSpeed(s) },
-                        label = {
-                            Text("${if (s == 1f) "1" else String.format(java.util.Locale.US, "%.2f", s).trimEnd('0', '.')}×",
-                                fontSize = 11.sp)
-                        }
-                    )
-                }
-            }
-        }
     }
 }
 
