@@ -178,6 +178,80 @@ class BroadcastTapLogicTest {
         }
     }
 
+    @Test
+    fun `إطاران مخرجان يتشاركان فهرس آخر عينة عند الرفع — لا فهرس سالب أبدا`() {
+        // البلاغ الحقيقي v0.55.0: «index=-1 على مصفوفة 2304» — إطار MP3 ستيريو
+        // 1152×2 يُطوى مونو فيصل الدفعة 1152 إطاراً وعند الرفع 44.1k→48k قد
+        // يتشارك إطارا مخرجَان متتاليان فهرس s0 = آخر عينة الدفعة: الأول يُعلَّق
+        // ويُستكمل، والثاني كان يقرأ input[-1]. أضيق إعادة إنتاج: دفعتان من
+        // إطار واحد — الثانية كانت ترمي ArrayIndexOutOfBoundsException حرفياً.
+        val r = LinearResampler(44_100, 48_000)
+        val out1 = ShortArray(4)
+        val w1 = r.resample(shortArrayOf(100), 1, out1) // الإطار المخرج 0 يُعلَّق (s1 في الدفعة القادمة)
+        assertEquals(0, w1)
+        val out2 = ShortArray(4)
+        val w2 = r.resample(shortArrayOf(200), 1, out2) // كان ينفجر هنا: input[-1]
+        // الإطار 0 اكتمل (موضعه 0 بالضبط = قيمة العينة الأولى حرفياً) والإطار 1
+        // (موضعه 0.91875) استُوفى من carryS0 بعينته الأولى في الدفعة الجديدة
+        assertEquals(2, w2)
+        assertEquals(100.toShort(), out2[0])
+        assertEquals(191.toShort(), out2[1]) // 100 + (200-100)×44100/48000 = 191.875
+    }
+
+    @Test
+    fun `دفعات فك ترميز MP3 الحقيقية 1152 إطارا تطابق الدفعة الواحدة حرفيا`() {
+        // نمط البلاغ الحقيقي: فك ترميز MP3 يخرج إطاراً كاملاً كل ~26ms —
+        // النسخة السابقة كانت تنفجر في الدفعة التاسعة (offset 9216) ثم تعلق
+        // حالة القلّم فيتفقد الأرشيف صوت المشغل كلياً على مقاطع 44.1kHz
+        val srcRate = 44_100
+        val oneSec = 44_100
+        val input = ShortArray(oneSec) { i -> (12_000.0 * sin(2 * PI * 1000.0 * i / srcRate)).toInt().toShort() }
+
+        val single = LinearResampler(srcRate, 48_000)
+        val outSingle = ShortArray(BroadcastTapLogic.estimateResampled(srcRate, 48_000, oneSec))
+        val nSingle = single.resample(input, oneSec, outSingle)
+
+        val chunked = LinearResampler(srcRate, 48_000)
+        val outChunked = ShortArray(BroadcastTapLogic.estimateResampled(srcRate, 48_000, oneSec))
+        var nChunked = 0
+        var off = 0
+        val piece = ShortArray(1_152) // إطار MP3 واحد — نمط فك الترميز الفعلي
+        val tmp = ShortArray(BroadcastTapLogic.estimateResampled(srcRate, 48_000, 1_152))
+        while (off < oneSec) {
+            val len = minOf(1_152, oneSec - off)
+            System.arraycopy(input, off, piece, 0, len)
+            val got = chunked.resample(piece, len, tmp)
+            System.arraycopy(tmp, 0, outChunked, nChunked, got)
+            nChunked += got
+            off += len
+        }
+        assertEquals(nSingle, nChunked)
+        for (i in 0 until nSingle) {
+            assertEquals("انحراف عند العينة $i", outSingle[i], outChunked[i])
+        }
+    }
+
+    @Test
+    fun `الرفع بخطوة نصف إطار بدفعات عينة واحدة ينتج الاستيفاء المتصل الكامل`() {
+        // fromRate=1/toRate=2: كل عينة مدخل يليها إطار مخرج عند نصفها — أبسط
+        // حالة يظهر فيها تشارك فهرس s0 عبر حد الدفعة في كل مرة بلا استثناء.
+        // المتوقع من تيار [10, 20, 30] كدفعة واحدة: 10, 15, 20, 25, 30
+        val r = LinearResampler(1, 2)
+        val sz = BroadcastTapLogic.estimateResampled(1, 2, 1)
+        val acc = ArrayList<Short>()
+        fun feed(s: Short) {
+            val out = ShortArray(sz)
+            val got = r.resample(shortArrayOf(s), 1, out)
+            for (i in 0 until got) acc.add(out[i])
+        }
+        feed(10) // تعليق بلا مخرج — s1 في الدفعة القادمة
+        feed(20) // كان ينفجر input[-1] هنا حرفياً
+        feed(30)
+        feed(30) // إطعام العينة الأخيرة ثانية لإتمام الإطار المعلق (نهاية التيار)
+        // الاستيفاء المتصل الحرفي: 10 ثم منتصف 10-20 ثم 20 ثم منتصف 20-30 ثم 30
+        assertEquals(shortArrayOf(10, 15, 20, 25, 30).toList(), acc.take(5).toList())
+    }
+
     // ===== MicFrameRing: خزان التابات بين خيوط الصوت والخلط =====
 
     @Test

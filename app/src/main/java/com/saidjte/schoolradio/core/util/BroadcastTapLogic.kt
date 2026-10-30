@@ -80,6 +80,11 @@ object BroadcastTapLogic {
  *
  * الإطار الذي تحتاج عينته الثانية دفعةً قادمة يُعلَّق بعينته الأولى وكسره
  * الصحيح ويكتمل مع أول عينة في الدفعة التالية — الاستيفاء متصل كتيار واحد.
+ * وقد يتشارك إطارا مخرجَان متتاليان فهرس العينة الأولى نفسه عند الرفع
+ * (fromRate < toRate — الخطوة أصغر من إطار): كلاهما ينتظر آخر عينة في
+ * الدفعة، فالأول يُستكمل بعينة الدفعة الجديدة والثاني يُستوفى من قيمة s0
+ * المحفوظة في التعليق نفسه — وإلا قرأ الثاني input[-1]: بلاغ v0.55.0
+ * الحقيقي «index=-1 على مصفوفة 2304» (إطار MP3 ستيريو 1152×2) كل 26ms.
  * دقة الخطية كافية تماماً لأرشيف بث (نفس منهج مكبرات الاستوديو، بلا كلفة).
  */
 class LinearResampler(private val fromRate: Int, private val toRate: Int) {
@@ -114,6 +119,25 @@ class LinearResampler(private val fromRate: Int, private val toRate: Int) {
             val i0g = pNum / toRate                 // فهرس s0 العالمي
             val fracNum = (pNum % toRate).toInt()   // بسط الكسر على toRate
             val local = i0g - framesIn              // فهرس s0 المحلي في هذه الدفعة
+            if (local < 0) {
+                // s0 آخر عينة الدفعة السابقة (i0g == framesIn-1 حرفياً — i0g لا
+                // يتراجع أبداً والحد الأدنى عند دخول الحلقة framesIn-1) وقيمتها
+                // محفوظة في carryS0 من تعليق الدفعة الماضية: عند الرفع (from<to)
+                // قد يتشارك إطارا مخرجَان متتاليان فهرس s0 نفسه — الأول اكتمل
+                // من التعليق أعلاه وهذا الثاني يُستوفى من الحفظ نفسه بكسره
+                // الصحيح، بلا مسّ المدخل إلا عينته الأولى (s1). حذف هذا الفرع
+                // كان input[local] بفهرس -1: بلاغ «index=-1 على مصفوفة 2304»
+                // المتكرر كل chunk (~26ms = إطار MP3) على 44.1kHz→48kHz.
+                val s1 = input[0].toDouble()
+                val v = (carryS0 + (s1 - carryS0) * fracNum / toRate).toInt()
+                out[written++] = when {
+                    v > Short.MAX_VALUE -> Short.MAX_VALUE
+                    v < Short.MIN_VALUE -> Short.MIN_VALUE
+                    else -> v.toShort()
+                }
+                k++
+                continue
+            }
             if (local >= n - 1) {
                 if (local == n - 1L) {
                     // s0 آخر عينة هنا و s1 في الدفعة القادمة — علّق الإطار
